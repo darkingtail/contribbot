@@ -1,0 +1,36 @@
+{
+  "name": "contrib",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Contributor agent - MCP Server for open source project maintenance",
+  "license": "MIT",
+  "bin": {
+    "contrib": "./dist/mcp/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsx src/mcp/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ofetch": "^1.4.1",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "tsdown": "0.20.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3"
+  }
+}
