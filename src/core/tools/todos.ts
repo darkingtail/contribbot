@@ -1,136 +1,198 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { parseRepo } from '../clients/github.js'
+import { join } from 'node:path'
+import { getIssue, parseRepo } from '../clients/github.js'
+import { TodoStore } from '../storage/todo-store.js'
+import type { TodoDifficulty, TodoItem, TodoStatus, TodoType } from '../storage/todo-store.js'
 
-function getTodosPath(owner: string, name: string): string {
-  return join(homedir(), '.contrib', owner, name, 'todos.md')
+function getContribDir(owner: string, name: string): string {
+  return join(homedir(), '.contrib', owner, name)
 }
 
-function ensureDir(filePath: string): void {
-  const dir = dirname(filePath)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+function difficultyEmoji(d: TodoDifficulty | null): string {
+  if (d === 'easy') return '🟢'
+  if (d === 'medium') return '🟡'
+  if (d === 'hard') return '🔴'
+  return '—'
 }
 
-interface TodoItem {
-  index: number
-  done: boolean
-  text: string
-  raw: string
+function refLink(ref: string | null, owner: string, name: string): string {
+  if (!ref) return '—'
+  const num = ref.replace('#', '')
+  return `[${ref}](https://github.com/${owner}/${name}/issues/${num})`
 }
 
-function splitTodoText(text: string): { title: string, note: string } {
-  // Split at first （...） or ：to extract note
-  const parenMatch = text.match(/^(.+?)（(.+)）(.*)$/)
-  if (parenMatch) {
-    const title = parenMatch[1].trim()
-    const note = parenMatch[3] ? `${parenMatch[2]}${parenMatch[3]}`.trim() : parenMatch[2].trim()
-    return { title, note }
-  }
-  const colonIdx = text.indexOf('：')
-  if (colonIdx !== -1) {
-    return { title: text.slice(0, colonIdx).trim(), note: text.slice(colonIdx + 1).trim() }
-  }
-  return { title: text, note: '' }
+function prLink(pr: number | null, owner: string, name: string): string {
+  if (!pr) return '—'
+  return `[#${pr}](https://github.com/${owner}/${name}/pull/${pr})`
 }
 
-function parseTodos(content: string): TodoItem[] {
-  return content
-    .split('\n')
-    .map((line, i) => {
-      const match = line.match(/^- \[([ x])\] (.+)/)
-      if (!match) return null
-      return { index: i, done: match[1] === 'x', text: match[2], raw: line }
-    })
-    .filter((item): item is TodoItem => item !== null)
+function refSortKey(ref: string | null): number {
+  if (!ref) return Infinity
+  return Number.parseInt(ref.replace('#', ''), 10) || Infinity
 }
 
-export function todoList(repo?: string): string {
+function detectTypeFromLabels(labels: Array<{ name: string } | string>): TodoType {
+  const names = labels.map(l => (typeof l === 'string' ? l : l.name).toLowerCase())
+  if (names.some(n => n.includes('bug'))) return 'bug'
+  if (names.some(n => n.includes('feature') || n.includes('enhancement'))) return 'feature'
+  if (names.some(n => n.includes('doc'))) return 'docs'
+  return 'chore'
+}
+
+export function todoList(repo?: string, status?: string): string {
   const { owner, name } = parseRepo(repo)
-  const path = getTodosPath(owner, name)
+  const store = new TodoStore(getContribDir(owner, name))
+  const allTodos = store.listSorted()
 
-  if (!existsSync(path)) {
+  if (allTodos.length === 0) {
     return `## Todos — ${owner}/${name}\n\n_No todos yet. Use \`todo_add\` to create one._`
   }
 
-  const content = readFileSync(path, 'utf-8')
-  const todos = parseTodos(content)
+  // Filter by status if specified
+  const todos = status
+    ? allTodos.filter(t => t.status === status)
+    : allTodos
 
   if (todos.length === 0) {
-    return `## Todos — ${owner}/${name}\n\n_No todos yet._`
+    return `## Todos — ${owner}/${name}\n\n_No todos with status "${status}"._`
   }
 
-  const open = todos.filter(t => !t.done)
-  const done = todos.filter(t => t.done)
+  const active = todos
+    .filter(t => t.status === 'active' || t.status === 'pr_submitted')
+    .sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
 
-  const lines = [
+  const backlogIdeas = todos
+    .filter(t => t.status === 'idea' || t.status === 'backlog')
+    .sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
+
+  const done = todos
+    .filter(t => t.status === 'done')
+    .sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
+
+  const lines: string[] = [
     `## Todos — ${owner}/${name}`,
-    `> ${open.length} open · ${done.length} done`,
+    '',
+    `> ${active.length} active · ${backlogIdeas.filter(t => t.status === 'backlog').length} backlog · ${backlogIdeas.filter(t => t.status === 'idea').length} idea · ${done.length} done`,
     '',
   ]
 
-  if (open.length > 0) {
-    lines.push('### Open')
-    lines.push('| # | Todo | 备注 |')
-    lines.push('| --- | --- | --- |')
-    open.forEach((t, i) => {
-      const { title, note } = splitTodoText(t.text)
-      lines.push(`| ${i + 1} | ${title} | ${note || '—'} |`)
+  // Active table
+  if (active.length > 0) {
+    lines.push('### Active')
+    lines.push('| # | Ref | Type | Title | Difficulty | Status | PR |')
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |')
+    active.forEach((t, i) => {
+      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${t.status} | ${prLink(t.pr, owner, name)} |`)
     })
     lines.push('')
   }
 
+  // Backlog & Ideas table
+  if (backlogIdeas.length > 0) {
+    lines.push('### Backlog & Ideas')
+    lines.push('| # | Ref | Type | Title | Status |')
+    lines.push('| --- | --- | --- | --- | --- |')
+    backlogIdeas.forEach((t, i) => {
+      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${t.status} |`)
+    })
+    lines.push('')
+  }
+
+  // Done table
   if (done.length > 0) {
     lines.push('### Done')
-    done.forEach(t => lines.push(`- ~~${t.text}~~`))
+    lines.push('| # | Ref | Type | Title | Difficulty | PR |')
+    lines.push('| --- | --- | --- | --- | --- | --- |')
+    done.forEach((t, i) => {
+      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${prLink(t.pr, owner, name)} |`)
+    })
+    lines.push('')
   }
 
   return lines.join('\n')
 }
 
-export function todoAdd(text: string, repo?: string): string {
+export async function todoAdd(text: string, ref?: string, repo?: string): Promise<string> {
   const { owner, name } = parseRepo(repo)
-  const path = getTodosPath(owner, name)
-  ensureDir(path)
+  const store = new TodoStore(getContribDir(owner, name))
 
-  const existing = existsSync(path) ? readFileSync(path, 'utf-8') : ''
-  const newLine = `- [ ] ${text}`
-  const updated = existing ? `${existing.trimEnd()}\n${newLine}\n` : `${newLine}\n`
-  writeFileSync(path, updated, 'utf-8')
+  let issueRef: string | null = null
+  let type: TodoType = 'chore'
+  let title = text
 
-  return `Added: ${text}`
+  // Determine ref: explicit parameter or extracted from text
+  const effectiveRef = ref || (() => {
+    const match = text.match(/^#(\d+)\s*/)
+    if (match) {
+      title = text.slice(match[0].length).trim() || text
+      return `#${match[1]}`
+    }
+    return null
+  })()
+
+  if (effectiveRef) {
+    const refStr = effectiveRef.startsWith('#') ? effectiveRef : `#${effectiveRef}`
+    const issueNumber = Number.parseInt(refStr.replace('#', ''), 10)
+    issueRef = refStr
+
+    try {
+      const issue = await getIssue(owner, name, issueNumber)
+      type = detectTypeFromLabels(issue.labels)
+      // If title is same as raw text with ref, use issue title
+      if (!ref && title === text) {
+        title = issue.title
+      }
+      else if (ref && !text.trim()) {
+        title = issue.title
+      }
+    }
+    catch {
+      // GitHub API failed, use defaults
+    }
+  }
+
+  const item = store.add({ ref: issueRef, title, type })
+  return `Added todo: **${item.title}** (${item.type}${item.ref ? `, ref: ${item.ref}` : ''})`
 }
 
 export function todoDone(indexOrText: string, repo?: string): string {
   const { owner, name } = parseRepo(repo)
-  const path = getTodosPath(owner, name)
+  const store = new TodoStore(getContribDir(owner, name))
+  const allTodos = store.list()
 
-  if (!existsSync(path)) {
-    return 'Error: No todos file found.'
+  // Only consider open todos (not done)
+  const openIndices: number[] = []
+  allTodos.forEach((t, i) => {
+    if (t.status !== 'done') openIndices.push(i)
+  })
+
+  if (openIndices.length === 0) {
+    return 'Error: No open todos found.'
   }
 
-  const content = readFileSync(path, 'utf-8')
-  const lines = content.split('\n')
-  const todos = parseTodos(content)
-
-  // Match by 1-based index or by text substring
   const num = Number.parseInt(indexOrText, 10)
-  const openTodos = todos.filter(t => !t.done)
-  let target: TodoItem | undefined
+  let targetStoreIndex: number | undefined
 
-  if (!Number.isNaN(num) && num >= 1 && num <= openTodos.length) {
-    target = openTodos[num - 1]
+  if (!Number.isNaN(num) && num >= 1 && num <= openIndices.length) {
+    // 1-based index into open todos
+    targetStoreIndex = openIndices[num - 1]
   }
   else {
-    target = openTodos.find(t => t.text.toLowerCase().includes(indexOrText.toLowerCase()))
+    // Text substring match
+    const match = openIndices.find(i =>
+      allTodos[i].title.toLowerCase().includes(indexOrText.toLowerCase()),
+    )
+    targetStoreIndex = match
   }
 
-  if (!target) {
+  if (targetStoreIndex === undefined) {
     return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
   }
 
-  lines[target.index] = lines[target.index].replace('- [ ]', '- [x]')
-  writeFileSync(path, lines.join('\n'), 'utf-8')
+  const updated = store.update(targetStoreIndex, { status: 'done' })
+  if (!updated) {
+    return `Error: Failed to update todo at index ${targetStoreIndex}.`
+  }
 
-  return `Done: ~~${target.text}~~`
+  return `Done: ~~${updated.title}~~${updated.ref ? ` (${updated.ref})` : ''}`
 }

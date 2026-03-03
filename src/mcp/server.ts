@@ -16,11 +16,33 @@ import { skillList, skillRead, skillWrite } from '../core/tools/skills.js'
 
 const repoParam = z.string().optional().describe('GitHub repo "owner/name". Default: antdv-next/antdv-next')
 
+const INSTRUCTIONS = `
+contrib 是开源贡献助手，帮助开发者高效参与开源项目维护。
+
+## 工具组合逻辑
+
+工具围绕贡献工作流设计，不是孤立使用的：
+
+1. **建立上下文**：project_dashboard → 了解项目全貌（issues/PRs/commits/release）
+2. **确认任务**：my_missions → 我的活跃任务；todo_list → 本地待办
+3. **深入调查**：issue_detail / pr_summary / discussion_detail → 具体问题的完整上下文
+4. **同步上游**：upstream_sync_check → 对比上游 release 变更同步状态；sync_history → 历史记录
+5. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
+6. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
+7. **记录沉淀**：todo_add/todo_done → 管理待办；skill_write → 沉淀可复用经验
+
+## 注意事项
+
+- 大多数工具的 repo 参数默认 antdv-next/antdv-next，跨项目时需显式传 "owner/repo"
+- vc_dependency_status 和 component_test_coverage 作为全局 MCP 运行时，需要传 project_root 参数
+- 所有输出为 markdown 格式，表格类输出带备注列提供上下文
+`.trim()
+
 export function createServer(): McpServer {
-  const server = new McpServer({
-    name: 'contrib',
-    version: '0.1.0',
-  })
+  const server = new McpServer(
+    { name: 'contrib', version: '0.1.0' },
+    { instructions: INSTRUCTIONS },
+  )
 
   // ── Project ──────────────────────────────────────────────
 
@@ -49,24 +71,28 @@ export function createServer(): McpServer {
 
   server.tool(
     'todo_list',
-    'List personal todos stored locally in ~/.contrib/{owner}/{repo}/todos.md',
-    { repo: repoParam },
-    async ({ repo }) => ({ content: [{ type: 'text', text: todoList(repo) }] }),
+    'List personal todos stored locally in ~/.contrib/{owner}/{repo}/todos.yaml (YAML-based)',
+    {
+      repo: repoParam,
+      status: z.string().optional().describe('Filter by status: idea | backlog | active | pr_submitted | done'),
+    },
+    async ({ repo, status }) => ({ content: [{ type: 'text', text: todoList(repo, status) }] }),
   )
 
   server.tool(
     'todo_add',
-    'Add a personal todo. Can reference an issue number, e.g. "#259 研究 Cascader 方案"',
+    'Add a personal todo. Optionally reference an issue to auto-detect type from labels.',
     {
-      text: z.string().describe('Todo text, e.g. "#259 研究 Cascader showSearch + loadData 共存方案"'),
+      text: z.string().describe('Todo title, e.g. "研究 Cascader showSearch + loadData 共存方案"'),
+      ref: z.string().optional().describe('Issue reference, e.g. "#259". Auto-fetches labels to detect type.'),
       repo: repoParam,
     },
-    async ({ text, repo }) => ({ content: [{ type: 'text', text: todoAdd(text, repo) }] }),
+    async ({ text, ref, repo }) => ({ content: [{ type: 'text', text: await todoAdd(text, ref, repo) }] }),
   )
 
   server.tool(
     'todo_done',
-    'Mark a todo as done. Pass the 1-based index number or a text substring to match.',
+    'Mark a todo as done. Pass the 1-based index number (of open todos) or a text substring to match.',
     {
       item: z.string().describe('Todo index (1, 2, 3…) or text substring to match'),
       repo: repoParam,
