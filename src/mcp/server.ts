@@ -8,6 +8,7 @@ import { projectDashboard } from '../core/tools/project-dashboard.js'
 import { upstreamSyncCheck, syncHistory } from '../core/tools/upstream-sync-check.js'
 import { myMissions } from '../core/tools/my-missions.js'
 import { todoList, todoAdd, todoDone } from '../core/tools/todos.js'
+import { todoDetail } from '../core/tools/todo-detail.js'
 import { discussionList, discussionDetail } from '../core/tools/discussion-list.js'
 import { actionsStatus } from '../core/tools/actions-status.js'
 import { securityOverview } from '../core/tools/security-overview.js'
@@ -98,6 +99,16 @@ export function createServer(): McpServer {
       repo: repoParam,
     },
     async ({ item, repo }) => ({ content: [{ type: 'text', text: todoDone(item, repo) }] }),
+  )
+
+  server.tool(
+    'todo_detail',
+    'Show detailed implementation record for a todo, with auto-refresh of PR reviews',
+    {
+      item: z.string().describe('Todo index (1-based among all sorted todos) or text substring to match'),
+      repo: repoParam,
+    },
+    async ({ item, repo }) => ({ content: [{ type: 'text', text: await todoDetail(item, repo) }] }),
   )
 
   // ── Issues & PRs ─────────────────────────────────────────
