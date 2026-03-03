@@ -8,7 +8,11 @@ import { projectDashboard } from '../core/tools/project-dashboard.js'
 import { upstreamSyncCheck, syncHistory } from '../core/tools/upstream-sync-check.js'
 import { myMissions } from '../core/tools/my-missions.js'
 import { todoList, todoAdd, todoDone } from '../core/tools/todos.js'
+import { todoActivate } from '../core/tools/todo-activate.js'
 import { todoDetail } from '../core/tools/todo-detail.js'
+import { todoUpdate } from '../core/tools/todo-update.js'
+import { upstreamList, upstreamDetail, upstreamUpdate } from '../core/tools/upstream-manage.js'
+import { upstreamDaily, upstreamDailyAct } from '../core/tools/upstream-daily.js'
 import { discussionList, discussionDetail } from '../core/tools/discussion-list.js'
 import { actionsStatus } from '../core/tools/actions-status.js'
 import { securityOverview } from '../core/tools/security-overview.js'
@@ -26,11 +30,14 @@ contrib 是开源贡献助手，帮助开发者高效参与开源项目维护。
 
 1. **建立上下文**：project_dashboard → 了解项目全貌（issues/PRs/commits/release）
 2. **确认任务**：my_missions → 我的活跃任务；todo_list → 本地待办
-3. **深入调查**：issue_detail / pr_summary / discussion_detail → 具体问题的完整上下文
-4. **同步上游**：upstream_sync_check → 对比上游 release 变更同步状态；sync_history → 历史记录
-5. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
-6. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
-7. **记录沉淀**：todo_add/todo_done → 管理待办；skill_write → 沉淀可复用经验
+3. **任务管理**：todo_add → 添加待办；todo_activate → 激活并创建实施记录；todo_detail → 查看实施详情；todo_update → 更新状态/关联PR/添加笔记；todo_done → 完成待办
+4. **深入调查**：issue_detail / pr_summary / discussion_detail → 具体问题的完整上下文
+5. **同步上游**：upstream_sync_check → 对比上游 release 变更同步状态；sync_history → 历史记录
+6. **上游版本管理**：upstream_list → 版本同步总览；upstream_detail → 版本详情；upstream_update → 更新同步条目
+7. **上游每日追踪**：upstream_daily → 抓取上游最新提交并去重；upstream_daily_act → 标记提交动作（skip/todo/issue/pr）
+8. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
+9. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
+10. **记录沉淀**：skill_write → 沉淀可复用经验
 
 ## 注意事项
 
@@ -102,13 +109,38 @@ export function createServer(): McpServer {
   )
 
   server.tool(
-    'todo_detail',
-    'Show detailed implementation record for a todo, with auto-refresh of PR reviews',
+    'todo_activate',
+    'Activate a todo: fetch issue details, assess difficulty, create implementation record file',
     {
-      item: z.string().describe('Todo index (1-based among all sorted todos) or text substring to match'),
+      item: z.string().describe('Todo index (1-based) or text substring to match'),
+      repo: repoParam,
+    },
+    async ({ item, repo }) => ({ content: [{ type: 'text', text: await todoActivate(item, repo) }] }),
+  )
+
+  server.tool(
+    'todo_detail',
+    'View todo implementation record with auto-refreshed PR reviews',
+    {
+      item: z.string().describe('Todo index (1-based) or text substring to match'),
       repo: repoParam,
     },
     async ({ item, repo }) => ({ content: [{ type: 'text', text: await todoDetail(item, repo) }] }),
+  )
+
+  server.tool(
+    'todo_update',
+    'Update todo: change status, link PR, add notes',
+    {
+      item: z.string().describe('Todo index (1-based) or text substring to match'),
+      status: z.string().optional().describe('New status: idea | backlog | active | pr_submitted | done'),
+      pr: z.number().optional().describe('PR number to link'),
+      note: z.string().optional().describe('Note to append to implementation record'),
+      repo: repoParam,
+    },
+    async ({ item, status, pr, note, repo }) => ({
+      content: [{ type: 'text', text: todoUpdate(item, { status, pr, note }, repo) }],
+    }),
   )
 
   // ── Issues & PRs ─────────────────────────────────────────
@@ -198,6 +230,76 @@ export function createServer(): McpServer {
     'List all saved upstream sync records for a repo',
     { repo: repoParam },
     async ({ repo }) => ({ content: [{ type: 'text', text: syncHistory(repo) }] }),
+  )
+
+  server.tool(
+    'upstream_list',
+    'List upstream sync status: versions + daily commits summary',
+    {
+      repo: repoParam,
+      upstream_repo: z.string().optional().describe('Filter by upstream repo, e.g. "ant-design/ant-design"'),
+    },
+    async ({ repo, upstream_repo }) => ({
+      content: [{ type: 'text', text: upstreamList(repo, upstream_repo) }],
+    }),
+  )
+
+  server.tool(
+    'upstream_detail',
+    'View upstream version sync details or implementation record',
+    {
+      upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
+      version: z.string().describe('Release version, e.g. "6.3.1"'),
+      repo: repoParam,
+    },
+    async ({ upstream_repo, version, repo }) => ({
+      content: [{ type: 'text', text: await upstreamDetail(upstream_repo, version, repo) }],
+    }),
+  )
+
+  server.tool(
+    'upstream_update',
+    'Update upstream sync item: status, PR, difficulty',
+    {
+      upstream_repo: z.string().describe('Upstream repo'),
+      version: z.string().describe('Release version'),
+      item: z.number().describe('Item index (1-based)'),
+      status: z.string().optional().describe('New status: active | pr_submitted | done'),
+      pr: z.number().optional().describe('PR number'),
+      difficulty: z.string().optional().describe('Difficulty: easy | medium | hard'),
+      repo: repoParam,
+    },
+    async ({ upstream_repo, version, item, status, pr, difficulty, repo }) => ({
+      content: [{ type: 'text', text: upstreamUpdate(upstream_repo, version, item, { status, pr, difficulty }, repo) }],
+    }),
+  )
+
+  server.tool(
+    'upstream_daily',
+    'Fetch upstream master commits, deduplicate, auto-detect existing issues/PRs',
+    {
+      upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
+      days: z.number().optional().describe('Number of days to look back (default: 7)'),
+      repo: repoParam,
+    },
+    async ({ upstream_repo, days, repo }) => ({
+      content: [{ type: 'text', text: await upstreamDaily(upstream_repo, days, repo) }],
+    }),
+  )
+
+  server.tool(
+    'upstream_daily_act',
+    'Mark a daily commit with an action: skip, todo, issue, or pr',
+    {
+      upstream_repo: z.string().describe('Upstream repo'),
+      sha: z.string().describe('Commit SHA (or prefix)'),
+      action: z.string().describe('Action: skip | todo | issue | pr'),
+      ref: z.string().optional().describe('Related issue/PR reference, e.g. "#42"'),
+      repo: repoParam,
+    },
+    async ({ upstream_repo, sha, action, ref, repo }) => ({
+      content: [{ type: 'text', text: upstreamDailyAct(upstream_repo, sha, action, ref, repo) }],
+    }),
   )
 
   server.tool(
