@@ -20,17 +20,20 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "dev": "tsx src/mcp/index.ts"
+    "dev": "tsx src/mcp/index.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "ofetch": "^1.4.1",
+    "yaml": "^2.8.2",
     "zod": "^3.25.67"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
     "tsdown": "0.20.1",
     "tsx": "^4.21.0",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^4.0.18"
   }
 }
