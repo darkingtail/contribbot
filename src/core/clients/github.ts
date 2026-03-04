@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { DEFAULT_REPO_NAME, DEFAULT_REPO_OWNER } from '../utils/config.js'
 
@@ -11,45 +11,84 @@ function getAuthMode(): 'gh-cli' | 'token' {
 
 // --- gh CLI backend ---
 
-async function ghApiCli<T>(path: string, params: Record<string, string | number> = {}, extraArgs: string[] = []): Promise<T> {
+async function ghApiCli<T>(path: string, params: Record<string, string | number> = {}, extraArgs: string[] = [], method?: string, body?: Record<string, unknown>): Promise<T> {
   const searchParams = new URLSearchParams(
     Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
   )
   const url = searchParams.toString() ? `${path}?${searchParams}` : path
-  const { stdout } = await execFileAsync('gh', ['api', url, ...extraArgs])
+  const args = ['api', url]
+  if (method) args.push('--method', method)
+  if (body) args.push('--input', '-')
+  args.push(...extraArgs)
+
+  if (body) {
+    return new Promise<T>((resolve, reject) => {
+      const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
+      child.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+      child.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`gh exited with code ${code}: ${stderr}`))
+          return
+        }
+        if (!stdout.trim()) {
+          resolve(undefined as unknown as T)
+          return
+        }
+        try {
+          resolve(JSON.parse(stdout) as T)
+        }
+        catch {
+          reject(new Error(`Failed to parse gh output: ${stdout}`))
+        }
+      })
+      child.stdin.write(JSON.stringify(body))
+      child.stdin.end()
+    })
+  }
+
+  const { stdout } = await execFileAsync('gh', args)
+  if (!stdout.trim()) return undefined as unknown as T
   return JSON.parse(stdout) as T
 }
 
 // --- Token (fetch) backend ---
 
-async function ghApiToken<T>(path: string, params: Record<string, string | number> = {}, extraHeaders: Record<string, string> = {}): Promise<T> {
+async function ghApiToken<T>(path: string, params: Record<string, string | number> = {}, extraHeaders: Record<string, string> = {}, method: string = 'GET', body?: Record<string, unknown>): Promise<T> {
   const token = process.env.GITHUB_TOKEN!
   const searchParams = new URLSearchParams(
     Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
   )
   const url = `https://api.github.com${path}${searchParams.toString() ? `?${searchParams}` : ''}`
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `token ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'antdv-next-agent',
-      ...extraHeaders,
-    },
-  })
+  const headers: Record<string, string> = {
+    Authorization: `token ${token}`,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'contribbot',
+    ...extraHeaders,
+  }
+  const fetchOpts: RequestInit = { method, headers }
+  if (body) {
+    headers['Content-Type'] = 'application/json'
+    fetchOpts.body = JSON.stringify(body)
+  }
+  const res = await fetch(url, fetchOpts)
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`GitHub API error ${res.status}: ${text}`)
   }
+  if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
 }
 
 // --- Unified dispatcher ---
 
-export async function ghApi<T>(path: string, params: Record<string, string | number> = {}, extra: { args?: string[], headers?: Record<string, string> } = {}): Promise<T> {
+export async function ghApi<T>(path: string, params: Record<string, string | number> = {}, extra: { args?: string[], headers?: Record<string, string>, method?: string, body?: Record<string, unknown> } = {}): Promise<T> {
   if (getAuthMode() === 'token') {
-    return ghApiToken<T>(path, params, extra.headers)
+    return ghApiToken<T>(path, params, extra.headers, extra.method, extra.body)
   }
-  return ghApiCli<T>(path, params, extra.args ?? [])
+  return ghApiCli<T>(path, params, extra.args ?? [], extra.method, extra.body)
 }
 
 // --- Exported helpers ---
@@ -62,7 +101,7 @@ export function parseRepo(repo?: string): { owner: string, name: string } {
 }
 
 // GitHub REST API response types (minimal)
-interface GitHubIssue {
+export interface GitHubIssue {
   number: number
   title: string
   state: string
@@ -77,7 +116,7 @@ interface GitHubIssue {
   html_url: string
 }
 
-interface GitHubPull {
+export interface GitHubPull {
   number: number
   title: string
   state: string
@@ -110,11 +149,12 @@ interface GitHubRelease {
   published_at: string | null
 }
 
-interface GitHubComment {
+export interface GitHubComment {
   id: number
   user: { login: string } | null
   body: string
   created_at: string
+  html_url?: string
 }
 
 interface GitHubPullFile {
@@ -265,7 +305,7 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
       headers: {
         Authorization: `token ${token}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'contrib',
+        'User-Agent': 'contribbot',
       },
       body: JSON.stringify({ query, variables }),
     })
@@ -281,4 +321,55 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
   }
   const { stdout } = await execFileAsync('gh', args)
   return (JSON.parse(stdout) as { data: T }).data
+}
+
+// --- Write helper types ---
+
+export interface GitHubReviewComment {
+  id: number
+  pull_request_review_id: number
+  user: { login: string } | null
+  body: string
+  path: string
+  line: number | null
+  side: string
+  diff_hunk: string
+  created_at: string
+  html_url: string
+}
+
+// --- Write helpers ---
+
+export async function createIssue(owner: string, repo: string, title: string, body?: string, labels?: string[]): Promise<GitHubIssue> {
+  const payload: Record<string, unknown> = { title }
+  if (body) payload.body = body
+  if (labels?.length) payload.labels = labels
+  return ghApi<GitHubIssue>(`/repos/${owner}/${repo}/issues`, {}, { method: 'POST', body: payload })
+}
+
+export async function closeIssue(owner: string, repo: string, issueNumber: number): Promise<GitHubIssue> {
+  return ghApi<GitHubIssue>(`/repos/${owner}/${repo}/issues/${issueNumber}`, {}, { method: 'PATCH', body: { state: 'closed' } })
+}
+
+export async function createComment(owner: string, repo: string, issueNumber: number, body: string): Promise<GitHubComment> {
+  return ghApi<GitHubComment>(`/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {}, { method: 'POST', body: { body } })
+}
+
+export async function createPull(owner: string, repo: string, title: string, head: string, base: string, body?: string, draft?: boolean): Promise<GitHubPull> {
+  const payload: Record<string, unknown> = { title, head, base }
+  if (body) payload.body = body
+  if (draft !== undefined) payload.draft = draft
+  return ghApi<GitHubPull>(`/repos/${owner}/${repo}/pulls`, {}, { method: 'POST', body: payload })
+}
+
+export async function updatePull(owner: string, repo: string, prNumber: number, fields: Record<string, unknown>): Promise<GitHubPull> {
+  return ghApi<GitHubPull>(`/repos/${owner}/${repo}/pulls/${prNumber}`, {}, { method: 'PATCH', body: fields })
+}
+
+export async function getPullReviewComments(owner: string, repo: string, prNumber: number): Promise<GitHubReviewComment[]> {
+  return ghApi<GitHubReviewComment[]>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { per_page: 100 })
+}
+
+export async function replyToReviewComment(owner: string, repo: string, prNumber: number, commentId: number, body: string): Promise<GitHubComment> {
+  return ghApi<GitHubComment>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments/${commentId}/replies`, {}, { method: 'POST', body: { body } })
 }

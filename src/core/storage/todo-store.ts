@@ -21,6 +21,16 @@ interface TodosFile {
   todos: TodoItem[]
 }
 
+// Sort order: #N (by number) → slug (alphabetical, at Number.MAX_SAFE_INTEGER) → null (Infinity)
+function refSortKey(ref: string | null): number {
+  if (!ref) return Infinity
+  if (ref.startsWith('#')) {
+    const num = Number.parseInt(ref.slice(1), 10)
+    return Number.isNaN(num) ? Number.MAX_SAFE_INTEGER : num
+  }
+  return Number.MAX_SAFE_INTEGER
+}
+
 export class TodoStore {
   private yamlPath: string
 
@@ -37,11 +47,7 @@ export class TodoStore {
 
   listSorted(): TodoItem[] {
     const todos = this.list()
-    return todos.sort((a, b) => {
-      const aNum = a.ref ? Number.parseInt(a.ref.replace('#', ''), 10) : Infinity
-      const bNum = b.ref ? Number.parseInt(b.ref.replace('#', ''), 10) : Infinity
-      return aNum - bNum
-    })
+    return todos.sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
   }
 
   get(index: number): TodoItem | undefined {

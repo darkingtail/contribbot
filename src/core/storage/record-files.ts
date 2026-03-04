@@ -132,6 +132,32 @@ export class RecordFiles {
     return filePath
   }
 
+  createSlugRecord(slug: string, title: string): string {
+    const dir = join(this.baseDir, 'todos')
+    this.ensureDir(dir)
+
+    const content = [
+      `# ${title}`,
+      '',
+      '## 分析',
+      '',
+      '_待分析_',
+      '',
+      '## 实现计划',
+      '',
+      '_待规划_',
+      '',
+      '## PR 反馈',
+      '',
+      PR_FEEDBACK_MARKER,
+      '',
+    ].join('\n')
+
+    const filePath = join(dir, `${slug}.md`)
+    writeFileSync(filePath, content, 'utf-8')
+    return filePath
+  }
+
   readRecord(ref: string): string | null {
     const filePath = this.resolveRefPath(ref)
     if (!filePath || !existsSync(filePath)) return null
@@ -172,7 +198,8 @@ export class RecordFiles {
       return join(this.baseDir, 'upstream', owner, name, `${version}.md`)
     }
 
-    return null
+    // Custom slug → todos/{slug}.md
+    return join(this.baseDir, 'todos', `${ref}.md`)
   }
 
   private getNextIdeaId(dir: string): number {

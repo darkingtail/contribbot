@@ -60,6 +60,15 @@ describe('TodoStore', () => {
     expect(sorted.map(t => t.ref)).toEqual(['#159', '#313', null])
   })
 
+  it('sorts slug refs after issue refs but before null refs', () => {
+    store.add({ ref: '#313', title: 'Bug fix', type: 'bug' })
+    store.add({ ref: null, title: 'Idea', type: 'feature' })
+    store.add({ ref: 'playground', title: 'Playground', type: 'chore' })
+    store.add({ ref: '#159', title: 'Tests', type: 'feature' })
+    const sorted = store.listSorted()
+    expect(sorted.map(t => t.ref)).toEqual(['#159', '#313', 'playground', null])
+  })
+
   it('finds todo by index', () => {
     store.add({ ref: '#281', title: 'Fix docs', type: 'docs' })
     store.add({ ref: '#313', title: 'Bug fix', type: 'bug' })

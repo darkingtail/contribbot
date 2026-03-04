@@ -1,11 +1,11 @@
 {
-  "name": "contrib",
+  "name": "contribbot",
   "version": "0.1.0",
   "type": "module",
   "description": "Contributor agent - MCP Server for open source project maintenance",
   "license": "MIT",
   "bin": {
-    "contrib": "./dist/mcp/index.js"
+    "contribbot": "./dist/mcp/index.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

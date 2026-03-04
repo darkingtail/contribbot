@@ -21,7 +21,7 @@ export interface DailyCommit {
   message: string
   type: string
   date: string
-  action: 'skip' | 'todo' | 'issue' | 'pr' | null
+  action: 'skip' | 'todo' | 'issue' | 'pr' | 'synced' | null
   ref: string | null
 }
 
@@ -154,6 +154,27 @@ export class UpstreamStore {
     Object.assign(commit, fields)
 
     this.save(data)
+  }
+
+  /**
+   * Mark all pending daily commits on or before a given date as 'synced'.
+   * Used when a version sync covers those commits.
+   */
+  markDailyAsSynced(repo: string, beforeDate: string): number {
+    const data = this.load()
+    const repoData = data[repo]
+    if (!repoData) return 0
+
+    let count = 0
+    for (const commit of repoData.daily.commits) {
+      if (commit.action === null && commit.date <= beforeDate) {
+        commit.action = 'synced'
+        count++
+      }
+    }
+
+    if (count > 0) this.save(data)
+    return count
   }
 
   // --- Private ---

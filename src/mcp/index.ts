@@ -13,7 +13,7 @@ function checkAuth(): 'token' | 'gh-cli' {
   }
   catch {
     console.error(`
-[contrib] GitHub auth not configured. Please set up one of:
+[contribbot] GitHub auth not configured. Please set up one of:
 
   Option A - gh CLI (recommended):
     gh auth login
@@ -22,9 +22,9 @@ function checkAuth(): 'token' | 'gh-cli' {
     Set GITHUB_TOKEN environment variable in .mcp.json:
     {
       "mcpServers": {
-        "contrib": {
+        "contribbot": {
           "command": "npx",
-          "args": ["tsx", "packages/contrib/src/mcp/index.ts"],
+          "args": ["tsx", "packages/contribbot/src/mcp/index.ts"],
           "env": { "GITHUB_TOKEN": "<your-token>" }
         }
       }
@@ -39,7 +39,7 @@ async function main() {
   const server = createServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  console.error(`contrib MCP server running (auth: ${authMode})`)
+  console.error(`contribbot MCP server running (auth: ${authMode})`)
 }
 
 main().catch((error) => {

@@ -83,6 +83,35 @@ describe('RecordFiles', () => {
     expect(records.readRecord('#999')).toBeNull()
   })
 
+  it('creates slug record file', () => {
+    const path = records.createSlugRecord('playground', 'Playground 实验')
+    expect(path).toContain('playground.md')
+    expect(existsSync(path)).toBe(true)
+    const content = readFileSync(path, 'utf-8')
+    expect(content).toContain('# Playground 实验')
+    expect(content).toContain('_待分析_')
+  })
+
+  it('resolves slug ref to todos/{slug}.md', () => {
+    records.createSlugRecord('playground', 'Playground 实验')
+    const content = records.readRecord('playground')
+    expect(content).toContain('# Playground 实验')
+  })
+
+  it('returns null for non-existent slug record', () => {
+    expect(records.readRecord('nonexistent')).toBeNull()
+  })
+
+  it('appends PR feedback to slug record', () => {
+    records.createSlugRecord('playground', 'Playground 实验')
+    records.appendPRFeedback('playground', 99, '2026-03-03', [
+      { user: 'reviewer1', body: 'Looks good' },
+    ])
+    const content = records.readRecord('playground')
+    expect(content).toContain('PR #99')
+    expect(content).toContain('Looks good')
+  })
+
   it('appends PR feedback to record file', () => {
     records.createIssueRecord(281, {
       title: 'Fix docs',
