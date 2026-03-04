@@ -4,7 +4,7 @@ import { parseRepo, getRepoCommits, searchIssues } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
 
 function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contrib', owner, name)
+  return join(homedir(), '.contribbot', owner, name)
 }
 
 function parseCommitType(message: string): string {
@@ -18,7 +18,6 @@ function parseCommitType(message: string): string {
 
 function extractSubject(message: string): string {
   const firstLine = message.split('\n')[0]
-  // Remove conventional commit prefix like "feat(scope): " or "fix: "
   return firstLine.replace(/^\w+(\([^)]*\))?\s*:\s*/, '').trim()
 }
 
@@ -26,14 +25,12 @@ function extractSearchKeywords(message: string): string | null {
   const subject = extractSubject(message)
   if (!subject) return null
 
-  // Try to extract component/scope name from conventional commit
   const firstLine = message.split('\n')[0]
   const scopeMatch = firstLine.match(/^\w+\(([^)]+)\)/)
   if (scopeMatch) {
     return scopeMatch[1]
   }
 
-  // Take first few significant words from subject
   const words = subject
     .split(/[\s:,]+/)
     .filter(w => w.length > 2)
@@ -42,8 +39,68 @@ function extractSearchKeywords(message: string): string | null {
   return words.length > 0 ? words.join(' ') : null
 }
 
+// ── Noise Detection ──────────────────────────────────────
+
+const NOISE_TYPES = new Set(['ci', 'build', 'style'])
+
+const NOISE_SCOPE_PATTERNS = [
+  /^deps$/i,
+  /^dep$/i,
+]
+
+const NOISE_MESSAGE_PATTERNS = [
+  /\bbump\b/i,
+  /\bupgrade\s+dep/i,
+  /\bdeps?\b.*\bupdate/i,
+  /\bworkflow[_-]?run\b/i,
+  /\bactions?\//i,
+  /\b@types\/react\b/i,
+  /\breact[- ]compiler\b/i,
+  /\breact[- ]naming[- ]convention\b/i,
+  /\bsponsor\b/i,
+  /\bfunding\b/i,
+  /\bchangelog\b/i,
+  /\bpermissions\b.*\byaml\b/i,
+]
+
+/**
+ * Suggest whether a commit should be skipped (noise) or is relevant.
+ * Returns 'skip' for noise, null for relevant commits.
+ */
+export function suggestAction(type: string, message: string): 'skip' | null {
+  // Type-based noise
+  if (NOISE_TYPES.has(type)) return 'skip'
+
+  // chore(deps) pattern
+  if (type === 'chore') {
+    const firstLine = message.split('\n')[0]
+    const scopeMatch = firstLine.match(/^chore\(([^)]+)\)/i)
+    if (scopeMatch) {
+      const scope = scopeMatch[1]
+      if (NOISE_SCOPE_PATTERNS.some(p => p.test(scope))) return 'skip'
+    }
+  }
+
+  // docs that are clearly noise (sponsor, changelog)
+  if (type === 'docs') {
+    const lower = message.toLowerCase()
+    if (lower.includes('sponsor') || lower.includes('changelog') || lower.includes('funding')) {
+      return 'skip'
+    }
+  }
+
+  // Message pattern matching
+  const firstLine = message.split('\n')[0]
+  if (NOISE_MESSAGE_PATTERNS.some(p => p.test(firstLine))) return 'skip'
+
+  return null
+}
+
+// ── Output Helpers ──────────────────────────────────────
+
 function actionLabel(action: string | null): string {
   if (!action) return '—'
+  if (action === 'synced') return '✓ synced'
   return action
 }
 
@@ -53,6 +110,8 @@ function formatDate(isoDate: string): string {
   const day = String(d.getDate()).padStart(2, '0')
   return `${month}-${day}`
 }
+
+// ── Main Functions ──────────────────────────────────────
 
 export async function upstreamDaily(
   upstreamRepo: string,
@@ -65,13 +124,10 @@ export async function upstreamDaily(
   const contribDir = getContribDir(tgtOwner, tgtName)
   const store = new UpstreamStore(contribDir)
 
-  // Calculate perPage from days (roughly 5 commits/day, max 100)
   const perPage = Math.min(effectiveDays * 5, 100)
 
-  // Fetch recent commits from upstream
   const commits = await getRepoCommits(upOwner, upName, perPage)
 
-  // Filter by date
   const cutoffDate = new Date()
   cutoffDate.setDate(cutoffDate.getDate() - effectiveDays)
 
@@ -81,12 +137,10 @@ export async function upstreamDaily(
     return new Date(commitDate) >= cutoffDate
   })
 
-  // Deduplicate against existing daily commits
   const existingDaily = store.getDaily(`${upOwner}/${upName}`)
   const existingShas = new Set(existingDaily.commits.map(c => c.sha))
   const newCommits = recentCommits.filter(c => !existingShas.has(c.sha))
 
-  // For new commits, try auto-detection of related issues/PRs in target repo
   interface NewCommitEntry {
     sha: string
     message: string
@@ -106,7 +160,6 @@ export async function upstreamDaily(
     let action: 'issue' | 'pr' | null = null
     let ref: string | null = null
 
-    // Best-effort: search for related issue/PR in target repo
     const keyword = extractSearchKeywords(commit.commit.message)
     if (keyword) {
       try {
@@ -118,7 +171,7 @@ export async function upstreamDaily(
         }
       }
       catch {
-        // Ignore search failures — best-effort
+        // Ignore search failures
       }
     }
 
@@ -132,7 +185,6 @@ export async function upstreamDaily(
     })
   }
 
-  // Persist new commits
   if (newEntries.length > 0) {
     store.addDailyCommits(
       `${upOwner}/${upName}`,
@@ -144,7 +196,6 @@ export async function upstreamDaily(
       })),
     )
 
-    // Update action/ref for auto-detected ones
     for (const entry of newEntries) {
       if (entry.action) {
         store.updateDailyCommit(`${upOwner}/${upName}`, entry.sha, {
@@ -155,32 +206,46 @@ export async function upstreamDaily(
     }
   }
 
-  // Render output — combine existing + new
+  // Render output
   const allDaily = store.getDaily(`${upOwner}/${upName}`)
   const allCommits = allDaily.commits
 
-  const linkedCount = allCommits.filter(c => c.action !== null && c.action !== 'skip').length
-  const pendingCount = allCommits.filter(c => c.action === null).length
+  // Count categories
+  const pending = allCommits.filter(c => c.action === null)
+  const pendingRelevant = pending.filter(c => suggestAction(c.type, c.message) === null)
+  const pendingNoise = pending.filter(c => suggestAction(c.type, c.message) === 'skip')
+  const linkedCount = allCommits.filter(c => c.action !== null && c.action !== 'skip' && c.action !== 'synced').length
+  const skippedCount = allCommits.filter(c => c.action === 'skip').length
+  const syncedCount = allCommits.filter(c => c.action === 'synced').length
 
   const lines: string[] = [
     `## Daily — ${upOwner}/${upName}`,
-    `> 最后检查: ${allDaily.last_checked ?? '—'} · ${newEntries.length} new · ${linkedCount} 已关联 · ${pendingCount} 待处理`,
+    `> 最后检查: ${allDaily.last_checked ?? '—'} · ${newEntries.length} new · ${linkedCount} 已关联 · ${pendingRelevant.length} 待处理${pendingNoise.length > 0 ? ` · ${pendingNoise.length} 建议skip` : ''}${skippedCount > 0 ? ` · ${skippedCount} skipped` : ''}${syncedCount > 0 ? ` · ${syncedCount} synced` : ''}`,
     '',
-    '| # | Date | Type | Commit | Action | Ref |',
-    '|---|------|------|--------|--------|-----|',
   ]
 
-  // Show commits sorted by date descending
-  const sorted = [...allCommits].sort((a, b) => b.date.localeCompare(a.date))
+  // Only show pending commits by default (actionable view)
+  const sorted = [...allCommits]
+    .filter(c => c.action === null)
+    .sort((a, b) => b.date.localeCompare(a.date))
 
-  sorted.forEach((commit, i) => {
-    const refText = commit.ref
-      ? `[${commit.ref}](https://github.com/${tgtOwner}/${tgtName}/issues/${commit.ref.replace('#', '')})`
-      : '—'
-    lines.push(
-      `| ${i + 1} | ${formatDate(commit.date)} | ${commit.type} | ${commit.message} | ${actionLabel(commit.action)} | ${refText} |`,
-    )
-  })
+  if (sorted.length === 0) {
+    lines.push('_All commits processed. No pending items._')
+  }
+  else {
+    lines.push('| # | Date | Type | Commit | Suggest | Action | Ref |')
+    lines.push('|---|------|------|--------|---------|--------|-----|')
+
+    sorted.forEach((commit, i) => {
+      const refText = commit.ref
+        ? `[${commit.ref}](https://github.com/${tgtOwner}/${tgtName}/issues/${commit.ref.replace('#', '')})`
+        : '—'
+      const suggest = suggestAction(commit.type, commit.message) ?? '—'
+      lines.push(
+        `| ${i + 1} | ${formatDate(commit.date)} | ${commit.type} | ${commit.message} | ${suggest} | ${actionLabel(commit.action)} | ${refText} |`,
+      )
+    })
+  }
 
   return lines.join('\n')
 }
@@ -192,7 +257,7 @@ export function upstreamDailyAct(
   ref?: string,
   repo?: string,
 ): string {
-  const validActions = ['skip', 'todo', 'issue', 'pr']
+  const validActions = ['skip', 'todo', 'issue', 'pr', 'synced']
   if (!validActions.includes(action)) {
     return `Error: Invalid action "${action}". Must be one of: ${validActions.join(', ')}`
   }
@@ -210,9 +275,38 @@ export function upstreamDailyAct(
   }
 
   store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {
-    action: action as 'skip' | 'todo' | 'issue' | 'pr',
+    action: action as 'skip' | 'todo' | 'issue' | 'pr' | 'synced',
     ref: ref ?? null,
   })
 
   return `Updated ${upOwner}/${upName} commit ${commit.sha.slice(0, 7)}: action → ${action}${ref ? `, ref → ${ref}` : ''}`
+}
+
+/**
+ * Batch skip all commits that are suggested as noise.
+ */
+export function upstreamDailySkipNoise(
+  upstreamRepo: string,
+  repo?: string,
+): string {
+  const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
+  const { owner: tgtOwner, name: tgtName } = parseRepo(repo)
+  const contribDir = getContribDir(tgtOwner, tgtName)
+  const store = new UpstreamStore(contribDir)
+
+  const daily = store.getDaily(`${upOwner}/${upName}`)
+  let skipped = 0
+
+  for (const commit of daily.commits) {
+    if (commit.action === null && suggestAction(commit.type, commit.message) === 'skip') {
+      store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, { action: 'skip' })
+      skipped++
+    }
+  }
+
+  if (skipped === 0) {
+    return `No noise commits to skip for ${upOwner}/${upName}.`
+  }
+
+  return `Skipped **${skipped}** noise commits for ${upOwner}/${upName}. Use \`upstream_daily\` to see remaining.`
 }

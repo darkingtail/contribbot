@@ -6,7 +6,7 @@ import { TodoStore } from '../storage/todo-store.js'
 import type { TodoDifficulty } from '../storage/todo-store.js'
 
 function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contrib', owner, name)
+  return join(homedir(), '.contribbot', owner, name)
 }
 
 export async function todoActivate(item: string, repo?: string): Promise<string> {
@@ -47,9 +47,9 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
   const todo = allTodos[targetStoreIndex]
   let difficulty: TodoDifficulty = 'medium'
 
-  if (todo.ref) {
-    // Has a ref like #281 — fetch issue info
-    const issueNumber = Number.parseInt(todo.ref.replace('#', ''), 10)
+  if (todo.ref && todo.ref.startsWith('#')) {
+    // Issue ref like #281 — fetch issue info
+    const issueNumber = Number.parseInt(todo.ref.slice(1), 10)
 
     try {
       const [issue, comments] = await Promise.all([
@@ -109,6 +109,10 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
       }
       return `Activated: **${updated.title}** (difficulty: ${difficulty}) — ⚠️ GitHub fetch failed: ${message}`
     }
+  }
+  else if (todo.ref) {
+    // Custom slug ref — create slug record
+    records.createSlugRecord(todo.ref, todo.title)
   }
   else {
     // No ref — create idea record

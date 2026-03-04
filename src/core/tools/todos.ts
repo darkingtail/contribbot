@@ -5,7 +5,7 @@ import { TodoStore } from '../storage/todo-store.js'
 import type { TodoDifficulty, TodoItem, TodoStatus, TodoType } from '../storage/todo-store.js'
 
 function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contrib', owner, name)
+  return join(homedir(), '.contribbot', owner, name)
 }
 
 function difficultyEmoji(d: TodoDifficulty | null): string {
@@ -17,8 +17,11 @@ function difficultyEmoji(d: TodoDifficulty | null): string {
 
 function refLink(ref: string | null, owner: string, name: string): string {
   if (!ref) return '—'
-  const num = ref.replace('#', '')
-  return `[${ref}](https://github.com/${owner}/${name}/issues/${num})`
+  if (ref.startsWith('#')) {
+    const num = ref.slice(1)
+    return `[${ref}](https://github.com/${owner}/${name}/issues/${num})`
+  }
+  return ref
 }
 
 function prLink(pr: number | null, owner: string, name: string): string {
@@ -28,7 +31,11 @@ function prLink(pr: number | null, owner: string, name: string): string {
 
 function refSortKey(ref: string | null): number {
   if (!ref) return Infinity
-  return Number.parseInt(ref.replace('#', ''), 10) || Infinity
+  if (ref.startsWith('#')) {
+    const num = Number.parseInt(ref.slice(1), 10)
+    return Number.isNaN(num) ? Number.MAX_SAFE_INTEGER : num
+  }
+  return Number.MAX_SAFE_INTEGER
 }
 
 function detectTypeFromLabels(labels: Array<{ name: string } | string>): TodoType {
@@ -116,7 +123,7 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
   const { owner, name } = parseRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
 
-  let issueRef: string | null = null
+  let finalRef: string | null = null
   let type: TodoType = 'chore'
   let title = text
 
@@ -131,27 +138,35 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
   })()
 
   if (effectiveRef) {
-    const refStr = effectiveRef.startsWith('#') ? effectiveRef : `#${effectiveRef}`
-    const issueNumber = Number.parseInt(refStr.replace('#', ''), 10)
-    issueRef = refStr
+    // Check if it's a numeric issue ref (pure number or #N)
+    const isIssueRef = /^#?\d+$/.test(effectiveRef)
 
-    try {
-      const issue = await getIssue(owner, name, issueNumber)
-      type = detectTypeFromLabels(issue.labels)
-      // If title is same as raw text with ref, use issue title
-      if (!ref && title === text) {
-        title = issue.title
+    if (isIssueRef) {
+      const refStr = effectiveRef.startsWith('#') ? effectiveRef : `#${effectiveRef}`
+      const issueNumber = Number.parseInt(refStr.replace('#', ''), 10)
+      finalRef = refStr
+
+      try {
+        const issue = await getIssue(owner, name, issueNumber)
+        type = detectTypeFromLabels(issue.labels)
+        if (!ref && title === text) {
+          title = issue.title
+        }
+        else if (ref && !text.trim()) {
+          title = issue.title
+        }
       }
-      else if (ref && !text.trim()) {
-        title = issue.title
+      catch {
+        // GitHub API failed, use defaults
       }
     }
-    catch {
-      // GitHub API failed, use defaults
+    else {
+      // Custom slug ref (e.g. "playground")
+      finalRef = effectiveRef
     }
   }
 
-  const item = store.add({ ref: issueRef, title, type })
+  const item = store.add({ ref: finalRef, title, type })
   return `Added todo: **${item.title}** (${item.type}${item.ref ? `, ref: ${item.ref}` : ''})`
 }
 

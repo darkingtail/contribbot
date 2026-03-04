@@ -5,7 +5,7 @@ import { UpstreamStore } from '../storage/upstream-store.js'
 import { RecordFiles } from '../storage/record-files.js'
 
 function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contrib', owner, name)
+  return join(homedir(), '.contribbot', owner, name)
 }
 
 function difficultyLabel(d: string | null): string {

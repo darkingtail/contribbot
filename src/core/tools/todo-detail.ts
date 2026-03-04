@@ -7,7 +7,7 @@ import { RecordFiles } from '../storage/record-files.js'
 import type { TodoItem } from '../storage/todo-store.js'
 
 function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contrib', owner, name)
+  return join(homedir(), '.contribbot', owner, name)
 }
 
 function formatTodoBasicInfo(todo: TodoItem, owner: string, name: string): string {
@@ -43,7 +43,8 @@ function resolveRecordFilePath(baseDir: string, ref: string): string | null {
     const [owner, repoName] = repo.split('/')
     return join(baseDir, 'upstream', owner, repoName, `${version}.md`)
   }
-  return null
+  // Custom slug → todos/{ref}.md
+  return join(baseDir, 'todos', `${ref}.md`)
 }
 
 function isCacheStale(filePath: string): boolean {

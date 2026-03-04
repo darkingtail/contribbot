@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { parseRepo } from '../clients/github.js'
 
 function getSkillsDir(owner: string, name: string): string {
-  return join(homedir(), '.contrib', owner, name, 'skills')
+  return join(homedir(), '.contribbot', owner, name, 'skills')
 }
 
 function getSkillPath(owner: string, repo: string, skillName: string): string {

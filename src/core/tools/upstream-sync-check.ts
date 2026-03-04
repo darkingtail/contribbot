@@ -9,6 +9,7 @@ import {
 } from '../utils/config.js'
 import { markdownTable } from '../utils/format.js'
 import { getReleaseByTag, getLatestRelease, searchCommits, parseRepo } from '../clients/github.js'
+import { UpstreamStore } from '../storage/upstream-store.js'
 
 type PRType = 'feat' | 'fix' | 'other'
 
@@ -63,7 +64,7 @@ function extractComponent(title: string): string | null {
 }
 
 function getSyncDir(owner: string, repo: string): string {
-  return join(homedir(), '.contrib', owner, repo, 'sync')
+  return join(homedir(), '.contribbot', owner, repo, 'sync')
 }
 
 const statusIcon = (s: SyncItem['status']) => {
@@ -206,7 +207,20 @@ export async function upstreamSyncCheck(
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     const filePath = join(dir, `${release.tag_name}.md`)
     writeFileSync(filePath, output, 'utf-8')
-    return `${output}\n\n> 📁 Saved to ~/.contrib/${tgtOwner}/${tgtName}/sync/${release.tag_name}.md`
+
+    // Auto-mark daily commits before this release date as 'synced'
+    const releaseDate = release.published_at?.slice(0, 10)
+    let syncedMsg = ''
+    if (releaseDate) {
+      const contribDir = join(homedir(), '.contribbot', tgtOwner, tgtName)
+      const store = new UpstreamStore(contribDir)
+      const count = store.markDailyAsSynced(`${upOwner}/${upName}`, releaseDate)
+      if (count > 0) {
+        syncedMsg = `\n> ✓ Marked ${count} daily commits (≤ ${releaseDate}) as synced`
+      }
+    }
+
+    return `${output}\n\n> 📁 Saved to ~/.contrib/${tgtOwner}/${tgtName}/sync/${release.tag_name}.md${syncedMsg}`
   }
 
   return output
