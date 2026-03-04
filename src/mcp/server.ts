@@ -6,38 +6,59 @@ import { issueDetail } from '../core/tools/issue-detail.js'
 import { prSummary } from '../core/tools/pr-summary.js'
 import { projectDashboard } from '../core/tools/project-dashboard.js'
 import { upstreamSyncCheck, syncHistory } from '../core/tools/upstream-sync-check.js'
-import { myMissions } from '../core/tools/my-missions.js'
 import { todoList, todoAdd, todoDone } from '../core/tools/todos.js'
 import { todoActivate } from '../core/tools/todo-activate.js'
 import { todoDetail } from '../core/tools/todo-detail.js'
 import { todoUpdate } from '../core/tools/todo-update.js'
 import { upstreamList, upstreamDetail, upstreamUpdate } from '../core/tools/upstream-manage.js'
-import { upstreamDaily, upstreamDailyAct } from '../core/tools/upstream-daily.js'
+import { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from '../core/tools/upstream-daily.js'
 import { discussionList, discussionDetail } from '../core/tools/discussion-list.js'
 import { actionsStatus } from '../core/tools/actions-status.js'
 import { securityOverview } from '../core/tools/security-overview.js'
 import { repoInfo } from '../core/tools/repo-info.js'
+import { syncFork } from '../core/tools/sync-fork.js'
+import { projectList } from '../core/tools/project-list.js'
+import { repoConfig } from '../core/tools/repo-config-tool.js'
+import { commentCreate } from '../core/tools/comment-create.js'
+import { issueClose } from '../core/tools/issue-close.js'
+import { issueCreate } from '../core/tools/issue-create.js'
+import { prUpdate } from '../core/tools/pr-update.js'
+import { prCreate } from '../core/tools/pr-create.js'
+import { prReviewComments } from '../core/tools/pr-review-comments.js'
+import { prReviewReply } from '../core/tools/pr-review-reply.js'
+import { contributionStats } from '../core/tools/contribution-stats.js'
 import { skillList, skillRead, skillWrite } from '../core/tools/skills.js'
 
 const repoParam = z.string().optional().describe('GitHub repo "owner/name". Default: antdv-next/antdv-next')
 
 const INSTRUCTIONS = `
-contrib 是开源贡献助手，帮助开发者高效参与开源项目维护。
+contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护。
 
 ## 工具组合逻辑
 
 工具围绕贡献工作流设计，不是孤立使用的：
 
-1. **建立上下文**：project_dashboard → 了解项目全貌（issues/PRs/commits/release）
-2. **确认任务**：my_missions → 我的活跃任务；todo_list → 本地待办
-3. **任务管理**：todo_add → 添加待办；todo_activate → 激活并创建实施记录；todo_detail → 查看实施详情；todo_update → 更新状态/关联PR/添加笔记；todo_done → 完成待办
-4. **深入调查**：issue_detail / pr_summary / discussion_detail → 具体问题的完整上下文
-5. **同步上游**：upstream_sync_check → 对比上游 release 变更同步状态；sync_history → 历史记录
-6. **上游版本管理**：upstream_list → 版本同步总览；upstream_detail → 版本详情；upstream_update → 更新同步条目
-7. **上游每日追踪**：upstream_daily → 抓取上游最新提交并去重；upstream_daily_act → 标记提交动作（skip/todo/issue/pr）
-8. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
-9. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
-10. **记录沉淀**：skill_write → 沉淀可复用经验
+1. **同步 fork**：sync_fork → 开始工作前先同步上游
+2. **建立上下文**：project_dashboard → 了解项目全貌（issues/PRs/commits/release）
+3. **确认任务**：todo_list → 本地待办
+4. **任务管理**：todo_add → 添加待办；todo_activate → 激活并创建实施记录；todo_detail → 查看实施详情；todo_update → 更新状态/关联PR/添加笔记；todo_done → 完成待办
+5. **深入调查**：issue_detail / pr_summary / discussion_detail → 具体问题的完整上下文
+6. **同步上游**：upstream_sync_check → 对比上游 release 变更同步状态；sync_history → 历史记录
+7. **上游版本管理**：upstream_list → 版本同步总览；upstream_detail → 版本详情；upstream_update → 更新同步条目
+8. **上游每日追踪**：upstream_daily → 抓取上游最新提交并去重；upstream_daily_act → 标记提交动作（skip/todo/issue/pr）
+9. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
+10. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
+11. **记录沉淀**：skill_write → 沉淀可复用经验
+12. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply → 完整读写闭环
+13. **全局视图**：project_list → 跨项目概况
+14. **贡献统计**：contribution_stats → 个人贡献节奏
+
+## Agent 行为规则
+
+- 创建 PR 后，如果有对应的 active todo，自动调 todo_update 关联
+- 创建 issue 后，如果来自 upstream daily，自动调 upstream_daily_act 关联
+- 关闭 issue 时，如果有对应的 todo，自动标记 done
+- 回复 review 前，先用 pr_review_comments 获取评论列表
 
 ## 注意事项
 
@@ -48,7 +69,7 @@ contrib 是开源贡献助手，帮助开发者高效参与开源项目维护。
 
 export function createServer(): McpServer {
   const server = new McpServer(
-    { name: 'contrib', version: '0.1.0' },
+    { name: 'contribbot', version: '0.1.0' },
     { instructions: INSTRUCTIONS },
   )
 
@@ -68,18 +89,40 @@ export function createServer(): McpServer {
     async ({ repo }) => ({ content: [{ type: 'text', text: await repoInfo(repo) }] }),
   )
 
-  // ── My Work ──────────────────────────────────────────────
-
   server.tool(
-    'my_missions',
-    'My active work: open PRs I authored, issues assigned to me, issues I commented on, issues that mention me',
-    { repo: repoParam },
-    async ({ repo }) => ({ content: [{ type: 'text', text: await myMissions(repo) }] }),
+    'repo_config',
+    'View or update repo config (role, org, fork, upstream). Auto-detects on first access.',
+    {
+      repo: repoParam,
+      upstream: z.string().optional().describe('Set upstream repo, e.g. "ant-design/ant-design"'),
+    },
+    async ({ repo, upstream }) => ({ content: [{ type: 'text', text: await repoConfig(repo, upstream) }] }),
   )
 
   server.tool(
+    'sync_fork',
+    'Sync fork default branch with upstream. Reads fork from config.yaml automatically.',
+    {
+      repo: repoParam,
+      branch: z.string().optional().describe('Branch to sync. Default: repo default branch (usually main)'),
+    },
+    async ({ repo, branch }) => ({ content: [{ type: 'text', text: await syncFork(repo, branch) }] }),
+  )
+
+  server.tool(
+    'project_list',
+    'List all tracked projects with todo and upstream stats',
+    {},
+    async () => ({
+      content: [{ type: 'text', text: projectList() }],
+    }),
+  )
+
+  // ── Todos ──────────────────────────────────────────────
+
+  server.tool(
     'todo_list',
-    'List personal todos stored locally in ~/.contrib/{owner}/{repo}/todos.yaml (YAML-based)',
+    'List personal todos stored locally in ~/.contribbot/{owner}/{repo}/todos.yaml (YAML-based)',
     {
       repo: repoParam,
       status: z.string().optional().describe('Filter by status: idea | backlog | active | pr_submitted | done'),
@@ -92,7 +135,7 @@ export function createServer(): McpServer {
     'Add a personal todo. Optionally reference an issue to auto-detect type from labels.',
     {
       text: z.string().describe('Todo title, e.g. "研究 Cascader showSearch + loadData 共存方案"'),
-      ref: z.string().optional().describe('Issue reference, e.g. "#259". Auto-fetches labels to detect type.'),
+      ref: z.string().optional().describe('标识：issue 编号（如 #259）或自定义名称（如 playground）'),
       repo: repoParam,
     },
     async ({ text, ref, repo }) => ({ content: [{ type: 'text', text: await todoAdd(text, ref, repo) }] }),
@@ -165,6 +208,109 @@ export function createServer(): McpServer {
     async ({ pr_number, repo }) => ({ content: [{ type: 'text', text: await prSummary(pr_number, repo) }] }),
   )
 
+  server.tool(
+    'comment_create',
+    'Create a comment on an issue or PR',
+    {
+      number: z.number().describe('Issue or PR number'),
+      body: z.string().describe('Comment body (markdown)'),
+      repo: repoParam,
+    },
+    async ({ number, body, repo }) => ({
+      content: [{ type: 'text', text: await commentCreate(number, body, repo) }],
+    }),
+  )
+
+  server.tool(
+    'issue_close',
+    'Close a GitHub issue, optionally with a comment and auto-complete todo',
+    {
+      issue_number: z.number().describe('Issue number to close'),
+      comment: z.string().optional().describe('Closing comment'),
+      todo_item: z.string().optional().describe('Todo index or text to mark as done'),
+      repo: repoParam,
+    },
+    async ({ issue_number, comment, todo_item, repo }) => ({
+      content: [{ type: 'text', text: await issueClose(issue_number, comment, todo_item, repo) }],
+    }),
+  )
+
+  server.tool(
+    'issue_create',
+    'Create a GitHub issue, optionally link to upstream commit and auto-create todo',
+    {
+      title: z.string().describe('Issue title'),
+      body: z.string().optional().describe('Issue body (markdown)'),
+      labels: z.string().optional().describe('Comma-separated labels, e.g. "bug,sync"'),
+      upstream_sha: z.string().optional().describe('Upstream daily commit SHA to link'),
+      upstream_repo: z.string().optional().describe('Upstream repo for the commit, e.g. "ant-design/ant-design"'),
+      auto_todo: z.boolean().optional().describe('Auto-create a todo for this issue (default: true)'),
+      repo: repoParam,
+    },
+    async ({ title, body, labels, upstream_sha, upstream_repo, auto_todo, repo }) => ({
+      content: [{ type: 'text', text: await issueCreate(title, body, labels, upstream_sha, upstream_repo, auto_todo, repo) }],
+    }),
+  )
+
+  server.tool(
+    'pr_update',
+    'Update a pull request (title, body, state, draft)',
+    {
+      pr_number: z.number().describe('PR number'),
+      title: z.string().optional().describe('New title'),
+      body: z.string().optional().describe('New body'),
+      state: z.string().optional().describe('New state: open | closed'),
+      draft: z.boolean().optional().describe('Draft status'),
+      repo: repoParam,
+    },
+    async ({ pr_number, title, body, state, draft, repo }) => ({
+      content: [{ type: 'text', text: await prUpdate(pr_number, { title, body, state, draft }, repo) }],
+    }),
+  )
+
+  server.tool(
+    'pr_create',
+    'Create a pull request, optionally link to a todo',
+    {
+      title: z.string().describe('PR title'),
+      head: z.string().describe('Source branch (e.g. "user:feature-branch" or "feature-branch")'),
+      base: z.string().optional().describe('Target branch (default: main)'),
+      body: z.string().optional().describe('PR description (markdown)'),
+      draft: z.boolean().optional().describe('Create as draft PR (default: false)'),
+      todo_item: z.string().optional().describe('Todo index or text to link (auto-sets status to pr_submitted)'),
+      repo: repoParam,
+    },
+    async ({ title, head, base, body, draft, todo_item, repo }) => ({
+      content: [{ type: 'text', text: await prCreate(title, head, base, body, draft, todo_item, repo) }],
+    }),
+  )
+
+  server.tool(
+    'pr_review_comments',
+    'List all review comments on a PR with comment IDs, diff context, and content',
+    {
+      pr_number: z.number().describe('PR number'),
+      repo: repoParam,
+    },
+    async ({ pr_number, repo }) => ({
+      content: [{ type: 'text', text: await prReviewComments(pr_number, repo) }],
+    }),
+  )
+
+  server.tool(
+    'pr_review_reply',
+    'Reply to a specific review comment on a PR',
+    {
+      pr_number: z.number().describe('PR number'),
+      comment_id: z.number().describe('Review comment ID (from pr_review_comments)'),
+      body: z.string().describe('Reply content (markdown)'),
+      repo: repoParam,
+    },
+    async ({ pr_number, comment_id, body, repo }) => ({
+      content: [{ type: 'text', text: await prReviewReply(pr_number, comment_id, body, repo) }],
+    }),
+  )
+
   // ── Discussions ───────────────────────────────────────────
 
   server.tool(
@@ -218,7 +364,7 @@ export function createServer(): McpServer {
       upstream_repo: z.string().optional().describe('Upstream repo, e.g. "makeplane/plane". Default: ant-design/ant-design'),
       target_repo: z.string().optional().describe('Your fork, e.g. "darkingtail/plane". Default: antdv-next/antdv-next'),
       target_branch: z.string().optional().describe('Branch in target repo to check sync status against, e.g. "feature/dev". Omit to search all branches.'),
-      save: z.boolean().optional().describe('Save the result to ~/.contrib/{target}/sync/{version}.md for historical tracking'),
+      save: z.boolean().optional().describe('Save the result to ~/.contribbot/{target}/sync/{version}.md for historical tracking'),
     },
     async ({ version, upstream_repo, target_repo, target_branch, save }) => ({
       content: [{ type: 'text', text: await upstreamSyncCheck(version, upstream_repo, target_repo, save ?? false, target_branch) }],
@@ -289,16 +435,28 @@ export function createServer(): McpServer {
 
   server.tool(
     'upstream_daily_act',
-    'Mark a daily commit with an action: skip, todo, issue, or pr',
+    'Mark a daily commit with an action: skip, todo, issue, pr, or synced',
     {
       upstream_repo: z.string().describe('Upstream repo'),
       sha: z.string().describe('Commit SHA (or prefix)'),
-      action: z.string().describe('Action: skip | todo | issue | pr'),
+      action: z.string().describe('Action: skip | todo | issue | pr | synced'),
       ref: z.string().optional().describe('Related issue/PR reference, e.g. "#42"'),
       repo: repoParam,
     },
     async ({ upstream_repo, sha, action, ref, repo }) => ({
       content: [{ type: 'text', text: upstreamDailyAct(upstream_repo, sha, action, ref, repo) }],
+    }),
+  )
+
+  server.tool(
+    'upstream_daily_skip_noise',
+    'Batch skip all noise commits (CI, deps, build, React-only, sponsor, etc.)',
+    {
+      upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
+      repo: repoParam,
+    },
+    async ({ upstream_repo, repo }) => ({
+      content: [{ type: 'text', text: upstreamDailySkipNoise(upstream_repo, repo) }],
     }),
   )
 
@@ -326,11 +484,24 @@ export function createServer(): McpServer {
     }),
   )
 
+  server.tool(
+    'contribution_stats',
+    'Personal contribution stats: PRs created, issues opened, reviews given',
+    {
+      days: z.number().optional().describe('Stats period in days (default: 7)'),
+      author: z.string().optional().describe('GitHub username (default: current user)'),
+      repo: repoParam.describe('Target repo, or "all" for all tracked projects (default: all)'),
+    },
+    async ({ days, author, repo }) => ({
+      content: [{ type: 'text', text: await contributionStats(days, author, repo) }],
+    }),
+  )
+
   // ── Skills ────────────────────────────────────────────────
 
   server.tool(
     'skill_list',
-    'List all personal skills stored in ~/.contrib/{owner}/{repo}/skills/',
+    'List all personal skills stored in ~/.contribbot/{owner}/{repo}/skills/',
     { repo: repoParam },
     async ({ repo }) => ({ content: [{ type: 'text', text: skillList(repo) }] }),
   )
@@ -347,7 +518,7 @@ export function createServer(): McpServer {
 
   server.tool(
     'skill_write',
-    'Create or update a personal skill in ~/.contrib/{owner}/{repo}/skills/{name}/SKILL.md',
+    'Create or update a personal skill in ~/.contribbot/{owner}/{repo}/skills/{name}/SKILL.md',
     {
       name: z.string().describe('Skill directory name, e.g. "upstream-sync"'),
       content: z.string().describe('Full SKILL.md content including frontmatter'),
