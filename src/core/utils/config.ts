@@ -40,6 +40,16 @@ export function getComponentsDir(projectRoot?: string): string {
   return join(getAntdvPackagePath(projectRoot), 'src')
 }
 
+const SAFE_SEGMENT = /^[\w][\w.\-]*$/
+
+export function validatePathSegment(segment: string): string {
+  const trimmed = segment.trim()
+  if (!trimmed || !SAFE_SEGMENT.test(trimmed)) {
+    throw new Error(`Invalid path segment: "${segment}"`)
+  }
+  return trimmed
+}
+
 export function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
+  return join(homedir(), '.contribbot', validatePathSegment(owner), validatePathSegment(name))
 }

@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseRepo } from '../clients/github.js'
-import { getContribDir } from '../utils/config.js'
+import { getContribDir, validatePathSegment } from '../utils/config.js'
 
 function getSkillsDir(owner: string, name: string): string {
   return join(getContribDir(owner, name), 'skills')
 }
 
 function getSkillPath(owner: string, repo: string, skillName: string): string {
-  return join(getSkillsDir(owner, repo), skillName, 'SKILL.md')
+  return join(getSkillsDir(owner, repo), validatePathSegment(skillName), 'SKILL.md')
 }
 
 interface SkillMeta {
