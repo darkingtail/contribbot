@@ -1,16 +1,10 @@
 import { parseRepo } from '../clients/github.js'
 import { getIssue } from '../clients/github.js'
-import { TodoStore } from '../storage/todo-store.js'
-import type { TodoDifficulty, TodoType } from '../enums.js'
+import { TodoStore, refSortKey } from '../storage/todo-store.js'
+import type { TodoType } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { difficultyEmoji } from '../utils/format.js'
 import { detectTypeFromLabels } from '../utils/github-helpers.js'
-
-function difficultyEmoji(d: TodoDifficulty | null): string {
-  if (d === 'easy') return '🟢'
-  if (d === 'medium') return '🟡'
-  if (d === 'hard') return '🔴'
-  return '—'
-}
 
 function refLink(ref: string | null, owner: string, name: string): string {
   if (!ref) return '—'
@@ -24,15 +18,6 @@ function refLink(ref: string | null, owner: string, name: string): string {
 function prLink(pr: number | null, owner: string, name: string): string {
   if (!pr) return '—'
   return `[#${pr}](https://github.com/${owner}/${name}/pull/${pr})`
-}
-
-function refSortKey(ref: string | null): number {
-  if (!ref) return Infinity
-  if (ref.startsWith('#')) {
-    const num = Number.parseInt(ref.slice(1), 10)
-    return Number.isNaN(num) ? Number.MAX_SAFE_INTEGER : num
-  }
-  return Number.MAX_SAFE_INTEGER
 }
 
 export function todoList(repo?: string, status?: string): string {

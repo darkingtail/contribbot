@@ -4,13 +4,7 @@ import { RecordFiles } from '../storage/record-files.js'
 import { UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, validateEnum } from '../enums.js'
 import type { UpstreamItemStatus, TodoDifficulty } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
-
-function difficultyLabel(d: string | null): string {
-  if (d === 'easy') return '🟢 easy'
-  if (d === 'medium') return '🟡 medium'
-  if (d === 'hard') return '🔴 hard'
-  return '—'
-}
+import { difficultyLabel } from '../utils/format.js'
 
 function statusIcon(s: string): string {
   if (s === 'done') return '✅'

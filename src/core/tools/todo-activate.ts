@@ -4,6 +4,7 @@ import { TodoStore } from '../storage/todo-store.js'
 import { RepoConfig } from '../storage/repo-config.js'
 import type { TodoDifficulty } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { difficultyLabel } from '../utils/format.js'
 
 function generateBranchName(todo: { ref: string | null; title: string; type: string }): string {
   const prefix = todo.type === 'bug' ? 'fix' : todo.type === 'docs' ? 'docs' : 'feat'
@@ -147,6 +148,5 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
     throw new Error(`Failed to update todo at index ${storeIndex}.`)
   }
 
-  const difficultyLabel = difficulty === 'easy' ? '🟢 easy' : difficulty === 'hard' ? '🔴 hard' : '🟡 medium'
-  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel}${branchMsg}`
+  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel(difficulty)}${branchMsg}`
 }

@@ -1,3 +1,19 @@
+import type { TodoDifficulty } from '../enums.js'
+
+export function difficultyEmoji(d: TodoDifficulty | null): string {
+  if (d === 'easy') return '🟢'
+  if (d === 'medium') return '🟡'
+  if (d === 'hard') return '🔴'
+  return '—'
+}
+
+export function difficultyLabel(d: TodoDifficulty | null): string {
+  if (d === 'easy') return '🟢 easy'
+  if (d === 'medium') return '🟡 medium'
+  if (d === 'hard') return '🔴 hard'
+  return '—'
+}
+
 export function todayDate(): string {
   const d = new Date()
   const year = d.getFullYear()

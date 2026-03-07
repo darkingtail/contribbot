@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { parseRepo } from '../clients/github.js'
 import { getContribDir, validatePathSegment } from '../utils/config.js'
+import { parseFrontmatter } from '../utils/frontmatter.js'
 
 function getSkillsDir(owner: string, name: string): string {
   return join(getContribDir(owner, name), 'skills')
@@ -9,21 +10,6 @@ function getSkillsDir(owner: string, name: string): string {
 
 function getSkillPath(owner: string, repo: string, skillName: string): string {
   return join(getSkillsDir(owner, repo), validatePathSegment(skillName), 'SKILL.md')
-}
-
-interface SkillMeta {
-  name: string
-  description: string
-}
-
-function parseFrontmatter(content: string): SkillMeta {
-  const match = content.match(/^---\n([\s\S]*?)\n---/)
-  if (!match) return { name: '', description: '' }
-
-  const frontmatter = match[1] ?? ''
-  const name = frontmatter.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? ''
-  const description = frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? ''
-  return { name, description }
 }
 
 export function skillList(repo?: string): string {
