@@ -1,6 +1,7 @@
 import { parseRepo } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
 import { RecordFiles } from '../storage/record-files.js'
+import { UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, validateEnum } from '../enums.js'
 import type { UpstreamItemStatus, TodoDifficulty } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
 
@@ -110,7 +111,7 @@ export async function upstreamDetail(
   const ver = versions.find(v => v.version === version)
 
   if (!ver) {
-    return `Error: Version "${version}" not found for ${upstreamRepo}. Use \`upstream_list\` to see available versions.`
+    throw new Error(`Version "${version}" not found for ${upstreamRepo}. Use upstream_list to see available versions.`)
   }
 
   const lines: string[] = [
@@ -150,13 +151,13 @@ export function upstreamUpdate(
   const ver = versions.find(v => v.version === version)
 
   if (!ver) {
-    return `Error: Version "${version}" not found for ${upstreamRepo}.`
+    throw new Error(`Version "${version}" not found for ${upstreamRepo}.`)
   }
 
   // Convert 1-based index to 0-based
   const idx = itemIndex - 1
   if (idx < 0 || idx >= ver.items.length) {
-    return `Error: Item index ${itemIndex} out of range (1-${ver.items.length}).`
+    throw new Error(`Item index ${itemIndex} out of range (1-${ver.items.length}).`)
   }
 
   const item = ver.items[idx]!
@@ -165,7 +166,7 @@ export function upstreamUpdate(
   const updateFields: { status?: UpstreamItemStatus; pr?: number; difficulty?: TodoDifficulty | null } = {}
 
   if (fields.status) {
-    updateFields.status = fields.status as UpstreamItemStatus
+    updateFields.status = validateEnum(UPSTREAM_ITEM_STATUSES, fields.status, 'status')
     changes.push(`status → ${fields.status}`)
   }
 
@@ -181,7 +182,7 @@ export function upstreamUpdate(
   }
 
   if (fields.difficulty) {
-    updateFields.difficulty = fields.difficulty as TodoDifficulty
+    updateFields.difficulty = validateEnum(TODO_DIFFICULTIES, fields.difficulty, 'difficulty')
     changes.push(`difficulty → ${fields.difficulty}`)
   }
 

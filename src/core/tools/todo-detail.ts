@@ -47,7 +47,7 @@ export async function todoDetail(item: string, repo?: string): Promise<string> {
   const todo = store.resolveItemFromAll(item)
 
   if (!todo) {
-    return `Todo not found: "${item}". Use \`todo_list\` to see available items.`
+    throw new Error(`Todo not found: "${item}". Use todo_list to see available items.`)
   }
 
   // If no ref, there's no record file

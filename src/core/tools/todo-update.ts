@@ -2,6 +2,7 @@ import { appendFileSync, existsSync } from 'node:fs'
 import { parseRepo } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
 import { RecordFiles } from '../storage/record-files.js'
+import { TODO_STATUSES, validateEnum } from '../enums.js'
 import type { TodoStatus } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
 import { todayDate } from '../utils/format.js'
@@ -18,7 +19,7 @@ export function todoUpdate(
 
   const resolved = store.resolveItem(item)
   if (!resolved) {
-    return `Error: Todo not found: "${item}". Use todo_list to see available items.`
+    throw new Error(`Todo not found: "${item}". Use todo_list to see available items.`)
   }
 
   const { storeIndex } = resolved
@@ -45,14 +46,14 @@ export function todoUpdate(
 
   // If status is provided, use it (overrides auto-set from pr)
   if (fields.status) {
-    updateFields.status = fields.status as TodoStatus
+    updateFields.status = validateEnum(TODO_STATUSES, fields.status, 'status')
     changes.push(`status → ${fields.status}`)
   }
 
   // Persist the update
   const updated = store.update(storeIndex, updateFields)
   if (!updated) {
-    return `Error: Failed to update todo at index ${storeIndex}.`
+    throw new Error(`Failed to update todo at index ${storeIndex}.`)
   }
 
   // If note is provided, append to record file

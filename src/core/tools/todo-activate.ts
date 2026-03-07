@@ -44,7 +44,7 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
 
   const resolved = store.resolveItem(item)
   if (!resolved) {
-    return `Error: Todo not found: "${item}". Use todo_list to see available items.`
+    throw new Error(`Todo not found: "${item}". Use todo_list to see available items.`)
   }
 
   const { storeIndex, item: todo } = resolved
@@ -108,7 +108,7 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
       const message = err instanceof Error ? err.message : String(err)
       const updated = store.update(storeIndex, { status: 'active', difficulty })
       if (!updated) {
-        return `Error: Failed to update todo at index ${storeIndex}.`
+        throw new Error(`Failed to update todo at index ${storeIndex}.`)
       }
       return `Activated: **${updated.title}** (difficulty: ${difficulty}) — ⚠️ GitHub fetch failed: ${message}`
     }
@@ -144,7 +144,7 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
   // Update todo status to active with assessed difficulty and branch
   const updated = store.update(storeIndex, { status: 'active', difficulty, branch: branchName })
   if (!updated) {
-    return `Error: Failed to update todo at index ${storeIndex}.`
+    throw new Error(`Failed to update todo at index ${storeIndex}.`)
   }
 
   const difficultyLabel = difficulty === 'easy' ? '🟢 easy' : difficulty === 'hard' ? '🔴 hard' : '🟡 medium'

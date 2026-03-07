@@ -1,5 +1,6 @@
 import { parseRepo, getRepoCommits, searchIssues } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
+import { DAILY_COMMIT_ACTIONS, validateEnum } from '../enums.js'
 import type { DailyCommitAction } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
 
@@ -256,11 +257,11 @@ export function upstreamDailyAct(
   const commit = daily.commits.find(c => c.sha === sha || c.sha.startsWith(sha))
 
   if (!commit) {
-    return `Error: Commit "${sha}" not found in daily data for ${upOwner}/${upName}.`
+    throw new Error(`Commit "${sha}" not found in daily data for ${upOwner}/${upName}.`)
   }
 
   store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {
-    action: action as DailyCommitAction,
+    action: validateEnum(DAILY_COMMIT_ACTIONS, action, 'action'),
     ref: ref ?? null,
   })
 

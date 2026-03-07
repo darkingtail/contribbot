@@ -37,7 +37,7 @@ export async function prCreate(
   }
 
   if (!effectiveHead) {
-    return 'Error: `head` branch is required. Provide it explicitly or link a todo with a branch.'
+    throw new Error('`head` branch is required. Provide it explicitly or link a todo with a branch.')
   }
 
   const pr = await createPull(owner, name, title, effectiveHead, base ?? 'main', body, draft)

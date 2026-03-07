@@ -186,12 +186,12 @@ export function todoDelete(indexOrText: string, repo?: string): string {
 
   const resolved = store.resolveItem(indexOrText)
   if (!resolved) {
-    return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
+    throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
   }
 
   const deleted = store.delete(resolved.storeIndex)
   if (!deleted) {
-    return `Error: Failed to delete todo at index ${resolved.storeIndex}.`
+    throw new Error(`Failed to delete todo at index ${resolved.storeIndex}.`)
   }
 
   return `Deleted: ~~${deleted.title}~~${deleted.ref ? ` (${deleted.ref})` : ''}`
@@ -203,12 +203,12 @@ export function todoDone(indexOrText: string, repo?: string): string {
 
   const resolved = store.resolveItem(indexOrText)
   if (!resolved) {
-    return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
+    throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
   }
 
   const archived = store.archiveAndDelete(resolved.storeIndex)
   if (!archived) {
-    return `Error: Failed to archive todo at index ${resolved.storeIndex}.`
+    throw new Error(`Failed to archive todo at index ${resolved.storeIndex}.`)
   }
 
   return `Done & archived: ~~${archived.title}~~${archived.ref ? ` (${archived.ref})` : ''}`
