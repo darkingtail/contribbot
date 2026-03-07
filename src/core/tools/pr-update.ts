@@ -7,13 +7,19 @@ export async function prUpdate(
 ): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
-  await updatePull(owner, name, prNumber, fields)
+  const payload: Record<string, unknown> = {}
+  if (fields.title !== undefined) payload.title = fields.title
+  if (fields.body !== undefined) payload.body = fields.body
+  if (fields.state !== undefined) payload.state = fields.state
+  if (fields.draft !== undefined) payload.draft = fields.draft
+
+  await updatePull(owner, name, prNumber, payload)
 
   const changes: string[] = []
-  if (fields.title) changes.push(`title → "${fields.title}"`)
+  if (fields.title) changes.push(`title -> "${fields.title}"`)
   if (fields.body) changes.push(`body updated`)
-  if (fields.state) changes.push(`state → ${fields.state}`)
-  if (fields.draft !== undefined) changes.push(`draft → ${fields.draft}`)
+  if (fields.state) changes.push(`state -> ${fields.state}`)
+  if (fields.draft !== undefined) changes.push(`draft -> ${fields.draft}`)
 
   return `Updated **${owner}/${name}#${prNumber}**: ${changes.join(', ')}`
 }
