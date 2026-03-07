@@ -1,18 +1,24 @@
 export function todayDate(): string {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function markdownTable(headers: string[], rows: string[][]): string {
+  const escape = (s: string) => s.replace(/\|/g, '\\|')
   const separator = headers.map(() => '---')
   const lines = [
-    `| ${headers.join(' | ')} |`,
+    `| ${headers.map(escape).join(' | ')} |`,
     `| ${separator.join(' | ')} |`,
-    ...rows.map(row => `| ${row.join(' | ')} |`),
+    ...rows.map(row => `| ${row.map(escape).join(' | ')} |`),
   ]
   return lines.join('\n')
 }
 
 export function truncate(str: string, maxLen: number): string {
+  if (maxLen < 4) return str.slice(0, maxLen)
   if (str.length <= maxLen) return str
   return `${str.slice(0, maxLen - 3)}...`
 }
