@@ -1,12 +1,13 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
+import { TODO_STATUSES, UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, DAILY_COMMIT_ACTIONS } from '../core/enums.js'
 import { componentTestCoverage } from '../core/tools/component-test-coverage.js'
 import { vcDependencyStatus } from '../core/tools/vc-dependency-status.js'
 import { issueDetail } from '../core/tools/issue-detail.js'
 import { prSummary } from '../core/tools/pr-summary.js'
 import { projectDashboard } from '../core/tools/project-dashboard.js'
 import { upstreamSyncCheck, syncHistory } from '../core/tools/upstream-sync-check.js'
-import { todoList, todoAdd, todoDone } from '../core/tools/todos.js'
+import { todoList, todoAdd, todoDone, todoDelete, todoArchive } from '../core/tools/todos.js'
 import { todoActivate } from '../core/tools/todo-activate.js'
 import { todoDetail } from '../core/tools/todo-detail.js'
 import { todoUpdate } from '../core/tools/todo-update.js'
@@ -27,9 +28,23 @@ import { prCreate } from '../core/tools/pr-create.js'
 import { prReviewComments } from '../core/tools/pr-review-comments.js'
 import { prReviewReply } from '../core/tools/pr-review-reply.js'
 import { contributionStats } from '../core/tools/contribution-stats.js'
-import { skillList, skillRead, skillWrite } from '../core/tools/skills.js'
+import { issueList, prList } from '../core/tools/issue-list.js'
+import { skillWrite } from '../core/tools/skills.js'
+import { listAllSkills, readSkill } from '../core/tools/skill-resources.js'
 
 const repoParam = z.string().optional().describe('GitHub repo "owner/name". Default: antdv-next/antdv-next')
+
+function wrapHandler(fn: (args: Record<string, unknown>) => Promise<string> | string) {
+  return async (args: Record<string, unknown>) => {
+    try {
+      const text = await fn(args)
+      return { content: [{ type: 'text' as const, text }] }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { content: [{ type: 'text' as const, text: `## Error\n\n${msg}` }], isError: true }
+    }
+  }
+}
 
 const INSTRUCTIONS = `
 contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护。
@@ -41,17 +56,18 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 1. **同步 fork**：sync_fork → 开始工作前先同步上游
 2. **建立上下文**：project_dashboard → 了解项目全貌（issues/PRs/commits/release）
 3. **确认任务**：todo_list → 本地待办
-4. **任务管理**：todo_add → 添加待办；todo_activate → 激活并创建实施记录；todo_detail → 查看实施详情；todo_update → 更新状态/关联PR/添加笔记；todo_done → 完成待办
+4. **任务管理**：todo_add → 添加待办；todo_activate → 激活并创建实施记录；todo_detail → 查看实施详情；todo_update → 更新状态/关联PR/添加笔记；todo_done → 完成待办；todo_delete → 永久删除；todo_archive → 归档所有已完成
 5. **深入调查**：issue_detail / pr_summary / discussion_detail → 具体问题的完整上下文
 6. **同步上游**：upstream_sync_check → 对比上游 release 变更同步状态；sync_history → 历史记录
 7. **上游版本管理**：upstream_list → 版本同步总览；upstream_detail → 版本详情；upstream_update → 更新同步条目
-8. **上游每日追踪**：upstream_daily → 抓取上游最新提交并去重；upstream_daily_act → 标记提交动作（skip/todo/issue/pr）
+8. **上游每日追踪**：upstream_daily → 抓取上游最新提交并去重；upstream_daily_act → 标记提交动作（skip/todo/issue/pr）；upstream_daily_skip_noise → 批量跳过噪音
 9. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
 10. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
-11. **记录沉淀**：skill_write → 沉淀可复用经验
+11. **记录沉淀**：skill_write → 沉淀可复用经验；skills 以 MCP Resource 暴露（skill://{repo}/{name}），连接时自动可见
 12. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply → 完整读写闭环
-13. **全局视图**：project_list → 跨项目概况
+13. **全局视图**：project_list → 跨项目概况；repo_config → 仓库配置
 14. **贡献统计**：contribution_stats → 个人贡献节奏
+15. **搜索**：issue_list / pr_list → 按状态/标签/关键词搜索
 
 ## Agent 行为规则
 
@@ -79,14 +95,14 @@ export function createServer(): McpServer {
     'project_dashboard',
     'Project overview: open issues/PRs stats, labels distribution, recent commits, latest release',
     { repo: repoParam },
-    async ({ repo }) => ({ content: [{ type: 'text', text: await projectDashboard(repo) }] }),
+    wrapHandler(async ({ repo }) => projectDashboard(repo as string | undefined)),
   )
 
   server.tool(
     'repo_info',
     'Repository metadata: stars, forks, topics, license, contributors',
     { repo: repoParam },
-    async ({ repo }) => ({ content: [{ type: 'text', text: await repoInfo(repo) }] }),
+    wrapHandler(async ({ repo }) => repoInfo(repo as string | undefined)),
   )
 
   server.tool(
@@ -96,7 +112,7 @@ export function createServer(): McpServer {
       repo: repoParam,
       upstream: z.string().optional().describe('Set upstream repo, e.g. "ant-design/ant-design"'),
     },
-    async ({ repo, upstream }) => ({ content: [{ type: 'text', text: await repoConfig(repo, upstream) }] }),
+    wrapHandler(async ({ repo, upstream }) => repoConfig(repo as string | undefined, upstream as string | undefined)),
   )
 
   server.tool(
@@ -106,16 +122,14 @@ export function createServer(): McpServer {
       repo: repoParam,
       branch: z.string().optional().describe('Branch to sync. Default: repo default branch (usually main)'),
     },
-    async ({ repo, branch }) => ({ content: [{ type: 'text', text: await syncFork(repo, branch) }] }),
+    wrapHandler(async ({ repo, branch }) => syncFork(repo as string | undefined, branch as string | undefined)),
   )
 
   server.tool(
     'project_list',
     'List all tracked projects with todo and upstream stats',
     {},
-    async () => ({
-      content: [{ type: 'text', text: projectList() }],
-    }),
+    wrapHandler(() => projectList()),
   )
 
   // ── Todos ──────────────────────────────────────────────
@@ -125,9 +139,9 @@ export function createServer(): McpServer {
     'List personal todos stored locally in ~/.contribbot/{owner}/{repo}/todos.yaml (YAML-based)',
     {
       repo: repoParam,
-      status: z.string().optional().describe('Filter by status: idea | backlog | active | pr_submitted | done'),
+      status: z.enum(TODO_STATUSES).optional().describe('Filter by status'),
     },
-    async ({ repo, status }) => ({ content: [{ type: 'text', text: todoList(repo, status) }] }),
+    wrapHandler(({ repo, status }) => todoList(repo as string | undefined, status as string | undefined)),
   )
 
   server.tool(
@@ -138,7 +152,7 @@ export function createServer(): McpServer {
       ref: z.string().optional().describe('标识：issue 编号（如 #259）或自定义名称（如 playground）'),
       repo: repoParam,
     },
-    async ({ text, ref, repo }) => ({ content: [{ type: 'text', text: await todoAdd(text, ref, repo) }] }),
+    wrapHandler(async ({ text, ref, repo }) => todoAdd(text as string, ref as string | undefined, repo as string | undefined)),
   )
 
   server.tool(
@@ -148,7 +162,24 @@ export function createServer(): McpServer {
       item: z.string().describe('Todo index (1, 2, 3…) or text substring to match'),
       repo: repoParam,
     },
-    async ({ item, repo }) => ({ content: [{ type: 'text', text: todoDone(item, repo) }] }),
+    wrapHandler(({ item, repo }) => todoDone(item as string, repo as string | undefined)),
+  )
+
+  server.tool(
+    'todo_delete',
+    'Delete a todo permanently. Pass the 1-based index number (of open todos) or a text substring to match.',
+    {
+      item: z.string().describe('Todo index (1, 2, 3…) or text substring to match'),
+      repo: repoParam,
+    },
+    wrapHandler(({ item, repo }) => todoDelete(item as string, repo as string | undefined)),
+  )
+
+  server.tool(
+    'todo_archive',
+    'Archive all done todos: move from todos.yaml to archive.yaml',
+    { repo: repoParam },
+    wrapHandler(({ repo }) => todoArchive(repo as string | undefined)),
   )
 
   server.tool(
@@ -158,7 +189,7 @@ export function createServer(): McpServer {
       item: z.string().describe('Todo index (1-based) or text substring to match'),
       repo: repoParam,
     },
-    async ({ item, repo }) => ({ content: [{ type: 'text', text: await todoActivate(item, repo) }] }),
+    wrapHandler(async ({ item, repo }) => todoActivate(item as string, repo as string | undefined)),
   )
 
   server.tool(
@@ -168,7 +199,7 @@ export function createServer(): McpServer {
       item: z.string().describe('Todo index (1-based) or text substring to match'),
       repo: repoParam,
     },
-    async ({ item, repo }) => ({ content: [{ type: 'text', text: await todoDetail(item, repo) }] }),
+    wrapHandler(async ({ item, repo }) => todoDetail(item as string, repo as string | undefined)),
   )
 
   server.tool(
@@ -176,17 +207,45 @@ export function createServer(): McpServer {
     'Update todo: change status, link PR, add notes',
     {
       item: z.string().describe('Todo index (1-based) or text substring to match'),
-      status: z.string().optional().describe('New status: idea | backlog | active | pr_submitted | done'),
+      status: z.enum(TODO_STATUSES).optional().describe('New status'),
       pr: z.number().optional().describe('PR number to link'),
+      branch: z.string().optional().describe('Branch name to associate with the todo'),
       note: z.string().optional().describe('Note to append to implementation record'),
       repo: repoParam,
     },
-    async ({ item, status, pr, note, repo }) => ({
-      content: [{ type: 'text', text: todoUpdate(item, { status, pr, note }, repo) }],
-    }),
+    wrapHandler(({ item, status, pr, branch, note, repo }) =>
+      todoUpdate(item as string, { status: status as string | undefined, pr: pr as number | undefined, branch: branch as string | undefined, note: note as string | undefined }, repo as string | undefined),
+    ),
   )
 
   // ── Issues & PRs ─────────────────────────────────────────
+
+  server.tool(
+    'issue_list',
+    'Search issues by state, labels, or keywords',
+    {
+      repo: repoParam,
+      state: z.enum(['open', 'closed']).optional().describe('Filter: open | closed (default: open)'),
+      labels: z.string().optional().describe('Comma-separated labels, e.g. "bug,sync"'),
+      query: z.string().optional().describe('Additional search keywords'),
+    },
+    wrapHandler(async ({ repo, state, labels, query }) =>
+      issueList(repo as string | undefined, state as string | undefined, labels as string | undefined, query as string | undefined),
+    ),
+  )
+
+  server.tool(
+    'pr_list',
+    'Search pull requests by state or keywords',
+    {
+      repo: repoParam,
+      state: z.enum(['open', 'closed', 'merged']).optional().describe('Filter: open | closed | merged (default: open)'),
+      query: z.string().optional().describe('Additional search keywords'),
+    },
+    wrapHandler(async ({ repo, state, query }) =>
+      prList(repo as string | undefined, state as string | undefined, query as string | undefined),
+    ),
+  )
 
   server.tool(
     'issue_detail',
@@ -195,7 +254,7 @@ export function createServer(): McpServer {
       issue_number: z.number().describe('GitHub issue number'),
       repo: repoParam,
     },
-    async ({ issue_number, repo }) => ({ content: [{ type: 'text', text: await issueDetail(issue_number, repo) }] }),
+    wrapHandler(async ({ issue_number, repo }) => issueDetail(issue_number as number, repo as string | undefined)),
   )
 
   server.tool(
@@ -205,20 +264,20 @@ export function createServer(): McpServer {
       pr_number: z.number().describe('GitHub PR number'),
       repo: repoParam,
     },
-    async ({ pr_number, repo }) => ({ content: [{ type: 'text', text: await prSummary(pr_number, repo) }] }),
+    wrapHandler(async ({ pr_number, repo }) => prSummary(pr_number as number, repo as string | undefined)),
   )
 
   server.tool(
     'comment_create',
     'Create a comment on an issue or PR',
     {
-      number: z.number().describe('Issue or PR number'),
+      issue_number: z.number().describe('Issue or PR number'),
       body: z.string().describe('Comment body (markdown)'),
       repo: repoParam,
     },
-    async ({ number, body, repo }) => ({
-      content: [{ type: 'text', text: await commentCreate(number, body, repo) }],
-    }),
+    wrapHandler(async ({ issue_number, body, repo }) =>
+      commentCreate(issue_number as number, body as string, repo as string | undefined),
+    ),
   )
 
   server.tool(
@@ -230,9 +289,9 @@ export function createServer(): McpServer {
       todo_item: z.string().optional().describe('Todo index or text to mark as done'),
       repo: repoParam,
     },
-    async ({ issue_number, comment, todo_item, repo }) => ({
-      content: [{ type: 'text', text: await issueClose(issue_number, comment, todo_item, repo) }],
-    }),
+    wrapHandler(async ({ issue_number, comment, todo_item, repo }) =>
+      issueClose(issue_number as number, comment as string | undefined, todo_item as string | undefined, repo as string | undefined),
+    ),
   )
 
   server.tool(
@@ -247,9 +306,13 @@ export function createServer(): McpServer {
       auto_todo: z.boolean().optional().describe('Auto-create a todo for this issue (default: true)'),
       repo: repoParam,
     },
-    async ({ title, body, labels, upstream_sha, upstream_repo, auto_todo, repo }) => ({
-      content: [{ type: 'text', text: await issueCreate(title, body, labels, upstream_sha, upstream_repo, auto_todo, repo) }],
-    }),
+    wrapHandler(async ({ title, body, labels, upstream_sha, upstream_repo, auto_todo, repo }) =>
+      issueCreate(
+        title as string, body as string | undefined, labels as string | undefined,
+        upstream_sha as string | undefined, upstream_repo as string | undefined,
+        auto_todo as boolean | undefined, repo as string | undefined,
+      ),
+    ),
   )
 
   server.tool(
@@ -259,13 +322,13 @@ export function createServer(): McpServer {
       pr_number: z.number().describe('PR number'),
       title: z.string().optional().describe('New title'),
       body: z.string().optional().describe('New body'),
-      state: z.string().optional().describe('New state: open | closed'),
+      state: z.enum(['open', 'closed']).optional().describe('New state'),
       draft: z.boolean().optional().describe('Draft status'),
       repo: repoParam,
     },
-    async ({ pr_number, title, body, state, draft, repo }) => ({
-      content: [{ type: 'text', text: await prUpdate(pr_number, { title, body, state, draft }, repo) }],
-    }),
+    wrapHandler(async ({ pr_number, title, body, state, draft, repo }) =>
+      prUpdate(pr_number as number, { title, body, state, draft } as Record<string, unknown>, repo as string | undefined),
+    ),
   )
 
   server.tool(
@@ -273,16 +336,20 @@ export function createServer(): McpServer {
     'Create a pull request, optionally link to a todo',
     {
       title: z.string().describe('PR title'),
-      head: z.string().describe('Source branch (e.g. "user:feature-branch" or "feature-branch")'),
+      head: z.string().optional().describe('Source branch (e.g. "user:feature-branch"). Auto-filled from linked todo branch if omitted.'),
       base: z.string().optional().describe('Target branch (default: main)'),
       body: z.string().optional().describe('PR description (markdown)'),
       draft: z.boolean().optional().describe('Create as draft PR (default: false)'),
       todo_item: z.string().optional().describe('Todo index or text to link (auto-sets status to pr_submitted)'),
       repo: repoParam,
     },
-    async ({ title, head, base, body, draft, todo_item, repo }) => ({
-      content: [{ type: 'text', text: await prCreate(title, head, base, body, draft, todo_item, repo) }],
-    }),
+    wrapHandler(async ({ title, head, base, body, draft, todo_item, repo }) =>
+      prCreate(
+        title as string, head as string, base as string | undefined,
+        body as string | undefined, draft as boolean | undefined,
+        todo_item as string | undefined, repo as string | undefined,
+      ),
+    ),
   )
 
   server.tool(
@@ -292,9 +359,7 @@ export function createServer(): McpServer {
       pr_number: z.number().describe('PR number'),
       repo: repoParam,
     },
-    async ({ pr_number, repo }) => ({
-      content: [{ type: 'text', text: await prReviewComments(pr_number, repo) }],
-    }),
+    wrapHandler(async ({ pr_number, repo }) => prReviewComments(pr_number as number, repo as string | undefined)),
   )
 
   server.tool(
@@ -306,9 +371,9 @@ export function createServer(): McpServer {
       body: z.string().describe('Reply content (markdown)'),
       repo: repoParam,
     },
-    async ({ pr_number, comment_id, body, repo }) => ({
-      content: [{ type: 'text', text: await prReviewReply(pr_number, comment_id, body, repo) }],
-    }),
+    wrapHandler(async ({ pr_number, comment_id, body, repo }) =>
+      prReviewReply(pr_number as number, comment_id as number, body as string, repo as string | undefined),
+    ),
   )
 
   // ── Discussions ───────────────────────────────────────────
@@ -320,7 +385,7 @@ export function createServer(): McpServer {
       repo: repoParam,
       category: z.string().optional().describe('Filter by category name, e.g. "Q&A"'),
     },
-    async ({ repo, category }) => ({ content: [{ type: 'text', text: await discussionList(repo, category) }] }),
+    wrapHandler(async ({ repo, category }) => discussionList(repo as string | undefined, category as string | undefined)),
   )
 
   server.tool(
@@ -330,7 +395,7 @@ export function createServer(): McpServer {
       discussion_number: z.number().describe('Discussion number'),
       repo: repoParam,
     },
-    async ({ discussion_number, repo }) => ({ content: [{ type: 'text', text: await discussionDetail(discussion_number, repo) }] }),
+    wrapHandler(async ({ discussion_number, repo }) => discussionDetail(discussion_number as number, repo as string | undefined)),
   )
 
   // ── Actions ───────────────────────────────────────────────
@@ -342,7 +407,7 @@ export function createServer(): McpServer {
       repo: repoParam,
       branch: z.string().optional().describe('Filter by branch name'),
     },
-    async ({ repo, branch }) => ({ content: [{ type: 'text', text: await actionsStatus(repo, branch) }] }),
+    wrapHandler(async ({ repo, branch }) => actionsStatus(repo as string | undefined, branch as string | undefined)),
   )
 
   // ── Security ──────────────────────────────────────────────
@@ -351,7 +416,7 @@ export function createServer(): McpServer {
     'security_overview',
     'Security alerts: Dependabot vulnerabilities, code scanning alerts',
     { repo: repoParam },
-    async ({ repo }) => ({ content: [{ type: 'text', text: await securityOverview(repo) }] }),
+    wrapHandler(async ({ repo }) => securityOverview(repo as string | undefined)),
   )
 
   // ── Sync & Dependencies ───────────────────────────────────
@@ -366,16 +431,20 @@ export function createServer(): McpServer {
       target_branch: z.string().optional().describe('Branch in target repo to check sync status against, e.g. "feature/dev". Omit to search all branches.'),
       save: z.boolean().optional().describe('Save the result to ~/.contribbot/{target}/sync/{version}.md for historical tracking'),
     },
-    async ({ version, upstream_repo, target_repo, target_branch, save }) => ({
-      content: [{ type: 'text', text: await upstreamSyncCheck(version, upstream_repo, target_repo, save ?? false, target_branch) }],
-    }),
+    wrapHandler(async ({ version, upstream_repo, target_repo, target_branch, save }) =>
+      upstreamSyncCheck(
+        version as string | undefined, upstream_repo as string | undefined,
+        target_repo as string | undefined, (save as boolean | undefined) ?? false,
+        target_branch as string | undefined,
+      ),
+    ),
   )
 
   server.tool(
     'sync_history',
     'List all saved upstream sync records for a repo',
     { repo: repoParam },
-    async ({ repo }) => ({ content: [{ type: 'text', text: syncHistory(repo) }] }),
+    wrapHandler(({ repo }) => syncHistory(repo as string | undefined)),
   )
 
   server.tool(
@@ -385,9 +454,7 @@ export function createServer(): McpServer {
       repo: repoParam,
       upstream_repo: z.string().optional().describe('Filter by upstream repo, e.g. "ant-design/ant-design"'),
     },
-    async ({ repo, upstream_repo }) => ({
-      content: [{ type: 'text', text: upstreamList(repo, upstream_repo) }],
-    }),
+    wrapHandler(({ repo, upstream_repo }) => upstreamList(repo as string | undefined, upstream_repo as string | undefined)),
   )
 
   server.tool(
@@ -398,9 +465,9 @@ export function createServer(): McpServer {
       version: z.string().describe('Release version, e.g. "6.3.1"'),
       repo: repoParam,
     },
-    async ({ upstream_repo, version, repo }) => ({
-      content: [{ type: 'text', text: await upstreamDetail(upstream_repo, version, repo) }],
-    }),
+    wrapHandler(async ({ upstream_repo, version, repo }) =>
+      upstreamDetail(upstream_repo as string, version as string, repo as string | undefined),
+    ),
   )
 
   server.tool(
@@ -409,15 +476,19 @@ export function createServer(): McpServer {
     {
       upstream_repo: z.string().describe('Upstream repo'),
       version: z.string().describe('Release version'),
-      item: z.number().describe('Item index (1-based)'),
-      status: z.string().optional().describe('New status: active | pr_submitted | done'),
+      item_index: z.number().describe('Item index (1-based)'),
+      status: z.enum(UPSTREAM_ITEM_STATUSES).optional().describe('New status'),
       pr: z.number().optional().describe('PR number'),
-      difficulty: z.string().optional().describe('Difficulty: easy | medium | hard'),
+      difficulty: z.enum(TODO_DIFFICULTIES).optional().describe('Difficulty'),
       repo: repoParam,
     },
-    async ({ upstream_repo, version, item, status, pr, difficulty, repo }) => ({
-      content: [{ type: 'text', text: upstreamUpdate(upstream_repo, version, item, { status, pr, difficulty }, repo) }],
-    }),
+    wrapHandler(({ upstream_repo, version, item_index, status, pr, difficulty, repo }) =>
+      upstreamUpdate(
+        upstream_repo as string, version as string, item_index as number,
+        { status: status as string | undefined, pr: pr as number | undefined, difficulty: difficulty as string | undefined },
+        repo as string | undefined,
+      ),
+    ),
   )
 
   server.tool(
@@ -428,9 +499,9 @@ export function createServer(): McpServer {
       days: z.number().optional().describe('Number of days to look back (default: 7)'),
       repo: repoParam,
     },
-    async ({ upstream_repo, days, repo }) => ({
-      content: [{ type: 'text', text: await upstreamDaily(upstream_repo, days, repo) }],
-    }),
+    wrapHandler(async ({ upstream_repo, days, repo }) =>
+      upstreamDaily(upstream_repo as string, days as number | undefined, repo as string | undefined),
+    ),
   )
 
   server.tool(
@@ -439,13 +510,13 @@ export function createServer(): McpServer {
     {
       upstream_repo: z.string().describe('Upstream repo'),
       sha: z.string().describe('Commit SHA (or prefix)'),
-      action: z.string().describe('Action: skip | todo | issue | pr | synced'),
+      action: z.enum(DAILY_COMMIT_ACTIONS).describe('Action'),
       ref: z.string().optional().describe('Related issue/PR reference, e.g. "#42"'),
       repo: repoParam,
     },
-    async ({ upstream_repo, sha, action, ref, repo }) => ({
-      content: [{ type: 'text', text: upstreamDailyAct(upstream_repo, sha, action, ref, repo) }],
-    }),
+    wrapHandler(({ upstream_repo, sha, action, ref, repo }) =>
+      upstreamDailyAct(upstream_repo as string, sha as string, action as string, ref as string | undefined, repo as string | undefined),
+    ),
   )
 
   server.tool(
@@ -455,9 +526,7 @@ export function createServer(): McpServer {
       upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
       repo: repoParam,
     },
-    async ({ upstream_repo, repo }) => ({
-      content: [{ type: 'text', text: upstreamDailySkipNoise(upstream_repo, repo) }],
-    }),
+    wrapHandler(({ upstream_repo, repo }) => upstreamDailySkipNoise(upstream_repo as string, repo as string | undefined)),
   )
 
   server.tool(
@@ -467,7 +536,9 @@ export function createServer(): McpServer {
       component: z.string().optional().describe('Filter by name, e.g. "select"'),
       project_root: z.string().optional().describe('Absolute path to project root. Required when running as global MCP server.'),
     },
-    async ({ component, project_root }) => ({ content: [{ type: 'text', text: await vcDependencyStatus(component, project_root) }] }),
+    wrapHandler(async ({ component, project_root }) =>
+      vcDependencyStatus(component as string | undefined, project_root as string | undefined),
+    ),
   )
 
   server.tool(
@@ -479,9 +550,12 @@ export function createServer(): McpServer {
       components_dir: z.string().optional().describe('Absolute or relative-to-root path to components directory. Default: packages/antdv-next/src. For ant-design use: components'),
       tests_subdir: z.string().optional().describe('Name of tests subdirectory inside each component. Default: tests. For ant-design use: __tests__'),
     },
-    async ({ component, project_root, components_dir, tests_subdir }) => ({
-      content: [{ type: 'text', text: await componentTestCoverage(component, project_root, components_dir, tests_subdir) }],
-    }),
+    wrapHandler(async ({ component, project_root, components_dir, tests_subdir }) =>
+      componentTestCoverage(
+        component as string | undefined, project_root as string | undefined,
+        components_dir as string | undefined, tests_subdir as string | undefined,
+      ),
+    ),
   )
 
   server.tool(
@@ -492,28 +566,51 @@ export function createServer(): McpServer {
       author: z.string().optional().describe('GitHub username (default: current user)'),
       repo: repoParam.describe('Target repo, or "all" for all tracked projects (default: all)'),
     },
-    async ({ days, author, repo }) => ({
-      content: [{ type: 'text', text: await contributionStats(days, author, repo) }],
+    wrapHandler(async ({ days, author, repo }) =>
+      contributionStats(days as number | undefined, author as string | undefined, repo as string | undefined),
+    ),
+  )
+
+  // ── Skills (Resource + Tool) ─────────────────────────────
+
+  server.resource(
+    'skill',
+    new ResourceTemplate('skill://{repo}/{skillName}', {
+      list: async () => ({
+        resources: listAllSkills().map(s => ({
+          uri: `skill://${s.repo}/${s.name}`,
+          name: `${s.repo} / ${s.name}`,
+          description: s.description,
+          mimeType: 'text/markdown',
+        })),
+      }),
     }),
-  )
-
-  // ── Skills ────────────────────────────────────────────────
-
-  server.tool(
-    'skill_list',
-    'List all personal skills stored in ~/.contribbot/{owner}/{repo}/skills/',
-    { repo: repoParam },
-    async ({ repo }) => ({ content: [{ type: 'text', text: skillList(repo) }] }),
-  )
-
-  server.tool(
-    'skill_read',
-    'Read the content of a personal skill',
     {
-      name: z.string().describe('Skill directory name, e.g. "component-test"'),
-      repo: repoParam,
+      title: 'Skill',
+      description: 'Personal reusable skills stored in ~/.contribbot/{owner}/{repo}/skills/',
+      mimeType: 'text/markdown',
     },
-    async ({ name, repo }) => ({ content: [{ type: 'text', text: skillRead(name, repo) }] }),
+    async (uri, { repo, skillName }) => {
+      try {
+        const content = readSkill(repo as string, skillName as string)
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: 'text/markdown',
+            text: content ?? `Skill "${skillName}" not found in ${repo}.`,
+          }],
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: 'text/plain',
+            text: `Error reading skill: ${msg}`,
+          }],
+        }
+      }
+    },
   )
 
   server.tool(
@@ -524,7 +621,7 @@ export function createServer(): McpServer {
       content: z.string().describe('Full SKILL.md content including frontmatter'),
       repo: repoParam,
     },
-    async ({ name, content, repo }) => ({ content: [{ type: 'text', text: skillWrite(name, content, repo) }] }),
+    wrapHandler(({ name, content, repo }) => skillWrite(name as string, content as string, repo as string | undefined)),
   )
 
   return server

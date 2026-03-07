@@ -14,10 +14,12 @@ src/
 │   │   ├── todo-store.ts      # TodoStore — todos.yaml 读写
 │   │   ├── upstream-store.ts  # UpstreamStore — upstream.yaml 读写
 │   │   └── record-files.ts    # RecordFiles — 实现记录文件管理
+│   ├── enums.ts               # 统一枚举定义（as const 模式）
 │   ├── tools/                 # 所有工具实现（纯函数）
 │   └── utils/
 │       ├── config.ts          # 默认 repo 配置、项目路径工具
-│       └── format.ts          # markdown table 等输出格式化
+│       ├── format.ts          # markdown table 等输出格式化
+│       └── github-helpers.ts  # GitHub 相关工具函数
 ├── mcp/
 │   ├── index.ts               # MCP Server 入口（stdio）
 │   └── server.ts              # 注册所有工具
@@ -65,14 +67,18 @@ pnpm build        # tsdown 构建
 | `todo_detail` | 查看实现记录，自动刷新 PR reviews（5 分钟缓存） |
 | `todo_update` | 更新状态 / 关联 PR / 追加笔记 |
 | `todo_done` | 标记完成 |
+| `todo_delete` | 删除 todo |
+| `todo_archive` | 归档已完成的 todos |
 
 ### Issues & PRs
 
 | 工具 | 说明 |
 |------|------|
+| `issue_list` | Issue 列表（支持 state/label 过滤） |
 | `issue_detail` | Issue 详情 |
 | `issue_create` | 创建 issue，可关联 upstream commit + 自动建 todo |
 | `issue_close` | 关闭 issue，可附评论 + 自动标记 todo done |
+| `pr_list` | PR 列表（支持 state 过滤） |
 | `pr_summary` | PR 摘要 |
 | `pr_create` | 创建 PR，可关联 todo |
 | `pr_update` | 更新 PR（标题/描述/状态/草稿） |
@@ -93,6 +99,7 @@ pnpm build        # tsdown 构建
 | `upstream_update` | 更新同步条目状态 / 关联 PR / 难度 |
 | `upstream_daily` | 拉取上游 master 近期 commits，去重追加，自动检测已有 issue/PR |
 | `upstream_daily_act` | 对某条 commit 标记动作（skip/todo/issue/pr） |
+| `upstream_daily_skip_noise` | 批量跳过噪音 commits（ci/build/style/deps） |
 
 ### 质量 & 依赖
 
@@ -104,19 +111,27 @@ pnpm build        # tsdown 构建
 | `component_test_coverage` | 组件测试覆盖率扫描 |
 | `contribution_stats` | 个人贡献统计（PR/issue/review） |
 
+### 仓库管理
+
+| 工具 | 说明 |
+|------|------|
+| `repo_config` | 查看/更新仓库配置（上游、角色、分支等） |
+| `sync_fork` | 同步 fork 到上游最新 |
+
 ### 全局
 
 | 工具 | 说明 |
 |------|------|
 | `project_list` | 所有已跟踪项目概况（todos/upstream 统计） |
 
-### Skills
+### Skills（Resource + Tool）
 
-| 工具 | 说明 |
-|------|------|
-| `skill_list` | 查看项目 skills |
-| `skill_read` | 读取 skill 内容 |
-| `skill_write` | 创建/更新 skill |
+Skills 以 MCP Resource 暴露，Agent 连接时自动可见，无需调用 tool 发现。
+
+| 类型 | 标识 | 说明 |
+|------|------|------|
+| Resource | `skill://{repo}/{name}` | 只读访问所有 skills，支持 list + read |
+| Tool | `skill_write` | 创建/更新 skill |
 
 ## 数据存储
 

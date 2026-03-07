@@ -1,12 +1,39 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { getIssue, getIssueComments, parseRepo } from '../clients/github.js'
+import { getIssue, getIssueComments, parseRepo, getRepoDefaultBranch, createBranch } from '../clients/github.js'
 import { RecordFiles } from '../storage/record-files.js'
 import { TodoStore } from '../storage/todo-store.js'
-import type { TodoDifficulty } from '../storage/todo-store.js'
+import { RepoConfig } from '../storage/repo-config.js'
+import type { TodoDifficulty } from '../enums.js'
+import { getContribDir } from '../utils/config.js'
 
-function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
+function generateBranchName(todo: { ref: string | null; title: string; type: string }): string {
+  const prefix = todo.type === 'bug' ? 'fix' : todo.type === 'docs' ? 'docs' : 'feat'
+
+  let slug: string
+  if (todo.ref?.startsWith('#')) {
+    // Issue ref: feat/259-cascader-search
+    const num = todo.ref.slice(1)
+    const words = todo.title
+      .replace(/[^\w\s-]/g, '')
+      .split(/\s+/)
+      .filter(w => /^[a-zA-Z]/.test(w))
+      .map(w => w.toLowerCase())
+      .filter(w => w.length > 1 && !['the', 'and', 'for', 'with', 'from', 'this', 'that'].includes(w))
+      .slice(0, 3)
+    slug = words.length > 0 ? `${num}-${words.join('-')}` : num
+  } else if (todo.ref) {
+    slug = todo.ref
+  } else {
+    const words = todo.title
+      .replace(/[^\w\s-]/g, '')
+      .split(/\s+/)
+      .filter(w => /^[a-zA-Z]/.test(w))
+      .map(w => w.toLowerCase())
+      .filter(w => w.length > 1)
+      .slice(0, 3)
+    slug = words.join('-') || 'task'
+  }
+
+  return `${prefix}/${slug}`
 }
 
 export async function todoActivate(item: string, repo?: string): Promise<string> {
@@ -14,37 +41,13 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
   const contribDir = getContribDir(owner, name)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
-  const allTodos = store.list()
 
-  // Only consider open (non-done) todos
-  const openIndices: number[] = []
-  allTodos.forEach((t, i) => {
-    if (t.status !== 'done') openIndices.push(i)
-  })
-
-  if (openIndices.length === 0) {
-    return 'Error: No open todos found.'
-  }
-
-  // Parse item as 1-based index or text substring match
-  const num = Number.parseInt(item, 10)
-  let targetStoreIndex: number | undefined
-
-  if (!Number.isNaN(num) && num >= 1 && num <= openIndices.length) {
-    targetStoreIndex = openIndices[num - 1]
-  }
-  else {
-    const match = openIndices.find(i =>
-      allTodos[i].title.toLowerCase().includes(item.toLowerCase()),
-    )
-    targetStoreIndex = match
-  }
-
-  if (targetStoreIndex === undefined) {
+  const resolved = store.resolveItem(item)
+  if (!resolved) {
     return `Error: Todo not found: "${item}". Use todo_list to see available items.`
   }
 
-  const todo = allTodos[targetStoreIndex]
+  const { storeIndex, item: todo } = resolved
   let difficulty: TodoDifficulty = 'medium'
 
   if (todo.ref && todo.ref.startsWith('#')) {
@@ -103,9 +106,9 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
     catch (err) {
       // If GitHub API fails, still activate but with default difficulty
       const message = err instanceof Error ? err.message : String(err)
-      const updated = store.update(targetStoreIndex, { status: 'active', difficulty })
+      const updated = store.update(storeIndex, { status: 'active', difficulty })
       if (!updated) {
-        return `Error: Failed to update todo at index ${targetStoreIndex}.`
+        return `Error: Failed to update todo at index ${storeIndex}.`
       }
       return `Activated: **${updated.title}** (difficulty: ${difficulty}) — ⚠️ GitHub fetch failed: ${message}`
     }
@@ -119,12 +122,31 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
     records.createIdeaRecord(todo.title)
   }
 
-  // Update todo status to active with assessed difficulty
-  const updated = store.update(targetStoreIndex, { status: 'active', difficulty })
+  // Create remote branch
+  const branchName = generateBranchName(todo)
+  let branchMsg = ''
+
+  // Determine which repo to create branch on (fork or current repo)
+  const config = new RepoConfig(contribDir)
+  const repoConfig = config.load()
+  const branchOwner = repoConfig?.fork ? parseRepo(repoConfig.fork).owner : owner
+  const branchRepo = repoConfig?.fork ? parseRepo(repoConfig.fork).name : name
+
+  try {
+    const { sha } = await getRepoDefaultBranch(branchOwner, branchRepo)
+    await createBranch(branchOwner, branchRepo, branchName, sha)
+    branchMsg = ` · branch: \`${branchName}\``
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    branchMsg = ` · ⚠️ branch creation failed: ${msg}`
+  }
+
+  // Update todo status to active with assessed difficulty and branch
+  const updated = store.update(storeIndex, { status: 'active', difficulty, branch: branchName })
   if (!updated) {
-    return `Error: Failed to update todo at index ${targetStoreIndex}.`
+    return `Error: Failed to update todo at index ${storeIndex}.`
   }
 
   const difficultyLabel = difficulty === 'easy' ? '🟢 easy' : difficulty === 'hard' ? '🔴 hard' : '🟡 medium'
-  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel}`
+  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel}${branchMsg}`
 }
