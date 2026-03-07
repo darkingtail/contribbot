@@ -1,33 +1,24 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { parseRepo, getRepoCommits, searchIssues } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
-
-function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
-}
+import type { DailyCommitAction } from '../enums.js'
+import { getContribDir } from '../utils/config.js'
 
 function parseCommitType(message: string): string {
-  const firstLine = message.split('\n')[0]
+  const firstLine = message.split('\n')[0] ?? ''
   const match = firstLine.match(/^(\w+)[\s(:]/)
-  if (!match) return 'chore'
+  if (!match?.[1]) return 'chore'
   const prefix = match[1].toLowerCase()
   const known = ['feat', 'fix', 'refactor', 'docs', 'style', 'perf', 'test', 'build', 'ci', 'chore', 'revert']
   return known.includes(prefix) ? prefix : 'chore'
 }
 
-function extractSubject(message: string): string {
-  const firstLine = message.split('\n')[0]
-  return firstLine.replace(/^\w+(\([^)]*\))?\s*:\s*/, '').trim()
-}
-
 function extractSearchKeywords(message: string): string | null {
-  const subject = extractSubject(message)
+  const firstLine = message.split('\n')[0] ?? ''
+  const subject = firstLine.replace(/^\w+(\([^)]*\))?\s*:\s*/, '').trim()
   if (!subject) return null
 
-  const firstLine = message.split('\n')[0]
   const scopeMatch = firstLine.match(/^\w+\(([^)]+)\)/)
-  if (scopeMatch) {
+  if (scopeMatch?.[1]) {
     return scopeMatch[1]
   }
 
@@ -73,10 +64,10 @@ export function suggestAction(type: string, message: string): 'skip' | null {
 
   // chore(deps) pattern
   if (type === 'chore') {
-    const firstLine = message.split('\n')[0]
+    const firstLine = message.split('\n')[0] ?? ''
     const scopeMatch = firstLine.match(/^chore\(([^)]+)\)/i)
     if (scopeMatch) {
-      const scope = scopeMatch[1]
+      const scope = scopeMatch[1] ?? ''
       if (NOISE_SCOPE_PATTERNS.some(p => p.test(scope))) return 'skip'
     }
   }
@@ -90,7 +81,7 @@ export function suggestAction(type: string, message: string): 'skip' | null {
   }
 
   // Message pattern matching
-  const firstLine = message.split('\n')[0]
+  const firstLine = message.split('\n')[0] ?? ''
   if (NOISE_MESSAGE_PATTERNS.some(p => p.test(firstLine))) return 'skip'
 
   return null
@@ -146,26 +137,26 @@ export async function upstreamDaily(
     message: string
     type: string
     date: string
-    action: 'issue' | 'pr' | null
+    action: DailyCommitAction | null
     ref: string | null
   }
 
   const newEntries: NewCommitEntry[] = []
 
   for (const commit of newCommits) {
-    const firstLine = commit.commit.message.split('\n')[0]
+    const firstLine = commit.commit.message.split('\n')[0] ?? ''
     const type = parseCommitType(commit.commit.message)
     const date = commit.commit.author?.date ?? new Date().toISOString()
 
-    let action: 'issue' | 'pr' | null = null
+    let action: DailyCommitAction | null = null
     let ref: string | null = null
 
     const keyword = extractSearchKeywords(commit.commit.message)
     if (keyword) {
       try {
         const results = await searchIssues(`${keyword} repo:${tgtOwner}/${tgtName}`, 3)
-        if (results.length > 0) {
-          const match = results[0]
+        const match = results[0]
+        if (match) {
           action = match.pull_request ? 'pr' : 'issue'
           ref = `#${match.number}`
         }
@@ -196,13 +187,12 @@ export async function upstreamDaily(
       })),
     )
 
-    for (const entry of newEntries) {
-      if (entry.action) {
-        store.updateDailyCommit(`${upOwner}/${upName}`, entry.sha, {
-          action: entry.action,
-          ref: entry.ref,
-        })
-      }
+    // Batch update commits that have auto-detected actions
+    const batchUpdates = newEntries
+      .filter(e => e.action)
+      .map(e => ({ sha: e.sha, fields: { action: e.action!, ref: e.ref } }))
+    if (batchUpdates.length > 0) {
+      store.updateDailyCommitBatch(`${upOwner}/${upName}`, batchUpdates)
     }
   }
 
@@ -257,11 +247,6 @@ export function upstreamDailyAct(
   ref?: string,
   repo?: string,
 ): string {
-  const validActions = ['skip', 'todo', 'issue', 'pr', 'synced']
-  if (!validActions.includes(action)) {
-    return `Error: Invalid action "${action}". Must be one of: ${validActions.join(', ')}`
-  }
-
   const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
   const { owner: tgtOwner, name: tgtName } = parseRepo(repo)
   const contribDir = getContribDir(tgtOwner, tgtName)
@@ -275,7 +260,7 @@ export function upstreamDailyAct(
   }
 
   store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {
-    action: action as 'skip' | 'todo' | 'issue' | 'pr' | 'synced',
+    action: action as DailyCommitAction,
     ref: ref ?? null,
   })
 
@@ -295,18 +280,16 @@ export function upstreamDailySkipNoise(
   const store = new UpstreamStore(contribDir)
 
   const daily = store.getDaily(`${upOwner}/${upName}`)
-  let skipped = 0
 
-  for (const commit of daily.commits) {
-    if (commit.action === null && suggestAction(commit.type, commit.message) === 'skip') {
-      store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, { action: 'skip' })
-      skipped++
-    }
-  }
+  const updates = daily.commits
+    .filter(c => c.action === null && suggestAction(c.type, c.message) === 'skip')
+    .map(c => ({ sha: c.sha, fields: { action: 'skip' as const } }))
 
-  if (skipped === 0) {
+  if (updates.length === 0) {
     return `No noise commits to skip for ${upOwner}/${upName}.`
   }
 
-  return `Skipped **${skipped}** noise commits for ${upOwner}/${upName}. Use \`upstream_daily\` to see remaining.`
+  store.updateDailyCommitBatch(`${upOwner}/${upName}`, updates)
+
+  return `Skipped **${updates.length}** noise commits for ${upOwner}/${upName}. Use \`upstream_daily\` to see remaining.`
 }

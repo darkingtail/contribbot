@@ -1,12 +1,8 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { parseRepo } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
 import { RecordFiles } from '../storage/record-files.js'
-
-function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
-}
+import type { UpstreamItemStatus, TodoDifficulty } from '../enums.js'
+import { getContribDir } from '../utils/config.js'
 
 function difficultyLabel(d: string | null): string {
   if (d === 'easy') return '🟢 easy'
@@ -163,13 +159,13 @@ export function upstreamUpdate(
     return `Error: Item index ${itemIndex} out of range (1-${ver.items.length}).`
   }
 
-  const item = ver.items[idx]
+  const item = ver.items[idx]!
   const changes: string[] = []
 
-  const updateFields: { status?: 'active' | 'pr_submitted' | 'done'; pr?: number; difficulty?: 'easy' | 'medium' | 'hard' | null } = {}
+  const updateFields: { status?: UpstreamItemStatus; pr?: number; difficulty?: TodoDifficulty | null } = {}
 
   if (fields.status) {
-    updateFields.status = fields.status as 'active' | 'pr_submitted' | 'done'
+    updateFields.status = fields.status as UpstreamItemStatus
     changes.push(`status → ${fields.status}`)
   }
 
@@ -185,7 +181,7 @@ export function upstreamUpdate(
   }
 
   if (fields.difficulty) {
-    updateFields.difficulty = fields.difficulty as 'easy' | 'medium' | 'hard'
+    updateFields.difficulty = fields.difficulty as TodoDifficulty
     changes.push(`difficulty → ${fields.difficulty}`)
   }
 

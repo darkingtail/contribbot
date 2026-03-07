@@ -1,13 +1,9 @@
 import { existsSync, readFileSync, renameSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseRepo } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
 import type { TodoItem, TodoStatus, TodoType } from '../storage/todo-store.js'
-
-function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
-}
+import { getContribDir } from '../utils/config.js'
 
 /**
  * Parse a single checkbox line from todos.md into a TodoItem.
@@ -23,8 +19,8 @@ export function parseTodoLine(line: string): TodoItem | null {
   const match = line.match(/^- \[([ xX])\]\s+(.+)$/)
   if (!match) return null
 
-  const checked = match[1].toLowerCase() === 'x'
-  const rest = match[2].trim()
+  const checked = match[1]!.toLowerCase() === 'x'
+  const rest = match[2]!.trim()
 
   const status: TodoStatus = checked ? 'done' : 'idea'
   const today = new Date().toISOString().slice(0, 10)
@@ -34,7 +30,7 @@ export function parseTodoLine(line: string): TodoItem | null {
   let title = rest
 
   const refMatch = rest.match(/^#(\d+)\s+(.*)$/)
-  if (refMatch) {
+  if (refMatch?.[1] && refMatch[2]) {
     ref = `#${refMatch[1]}`
     title = refMatch[2].trim()
   }
@@ -42,7 +38,7 @@ export function parseTodoLine(line: string): TodoItem | null {
   // Detect type from [Bug], [Feature], [Docs] tags (CoPaw format)
   let type: TodoType = 'chore'
   const typeTagMatch = title.match(/^\[(Bug|Feature|Docs|Chore)\]\s*/i)
-  if (typeTagMatch) {
+  if (typeTagMatch?.[1]) {
     const tag = typeTagMatch[1].toLowerCase()
     if (tag === 'bug') type = 'bug'
     else if (tag === 'feature') type = 'feature'
@@ -58,7 +54,7 @@ export function parseTodoLine(line: string): TodoItem | null {
   // Extract PR number if present in the text (PR #NNN)
   let pr: number | null = null
   const prMatch = rest.match(/PR\s+#(\d+)/i)
-  if (prMatch) {
+  if (prMatch?.[1]) {
     pr = Number.parseInt(prMatch[1], 10)
   }
 
@@ -69,6 +65,7 @@ export function parseTodoLine(line: string): TodoItem | null {
     status,
     difficulty: null,
     pr,
+    branch: null,
     created: today,
     updated: today,
   }

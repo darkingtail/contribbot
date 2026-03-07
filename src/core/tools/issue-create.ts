@@ -1,20 +1,8 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { parseRepo, createIssue } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
-
-function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
-}
-
-function detectTypeFromLabels(labels: string[]): 'bug' | 'feature' | 'docs' | 'chore' {
-  const lower = labels.map(l => l.toLowerCase())
-  if (lower.some(l => l.includes('bug'))) return 'bug'
-  if (lower.some(l => l.includes('feature') || l.includes('enhancement'))) return 'feature'
-  if (lower.some(l => l.includes('doc'))) return 'docs'
-  return 'chore'
-}
+import { getContribDir } from '../utils/config.js'
+import { detectTypeFromLabels } from '../utils/github-helpers.js'
 
 export async function issueCreate(
   title: string,

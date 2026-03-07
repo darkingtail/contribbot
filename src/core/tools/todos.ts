@@ -1,12 +1,9 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { getIssue, parseRepo } from '../clients/github.js'
+import { parseRepo } from '../clients/github.js'
+import { getIssue } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
-import type { TodoDifficulty, TodoItem, TodoStatus, TodoType } from '../storage/todo-store.js'
-
-function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
-}
+import type { TodoDifficulty, TodoType } from '../enums.js'
+import { getContribDir } from '../utils/config.js'
+import { detectTypeFromLabels } from '../utils/github-helpers.js'
 
 function difficultyEmoji(d: TodoDifficulty | null): string {
   if (d === 'easy') return '🟢'
@@ -36,14 +33,6 @@ function refSortKey(ref: string | null): number {
     return Number.isNaN(num) ? Number.MAX_SAFE_INTEGER : num
   }
   return Number.MAX_SAFE_INTEGER
-}
-
-function detectTypeFromLabels(labels: Array<{ name: string } | string>): TodoType {
-  const names = labels.map(l => (typeof l === 'string' ? l : l.name).toLowerCase())
-  if (names.some(n => n.includes('bug'))) return 'bug'
-  if (names.some(n => n.includes('feature') || n.includes('enhancement'))) return 'feature'
-  if (names.some(n => n.includes('doc'))) return 'docs'
-  return 'chore'
 }
 
 export function todoList(repo?: string, status?: string): string {
@@ -86,10 +75,11 @@ export function todoList(repo?: string, status?: string): string {
   // Active table
   if (active.length > 0) {
     lines.push('### Active')
-    lines.push('| # | Ref | Type | Title | Difficulty | Status | PR |')
-    lines.push('| --- | --- | --- | --- | --- | --- | --- |')
+    lines.push('| # | Ref | Type | Title | Difficulty | Status | Branch | PR |')
+    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
     active.forEach((t, i) => {
-      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${t.status} | ${prLink(t.pr, owner, name)} |`)
+      const branch = t.branch ? `\`${t.branch}\`` : '—'
+      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${t.status} | ${branch} | ${prLink(t.pr, owner, name)} |`)
     })
     lines.push('')
   }
@@ -137,6 +127,26 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
     return null
   })()
 
+  if (!effectiveRef) {
+    // Auto-generate slug ref from English keywords in title
+    const words = text.match(/[a-zA-Z][a-zA-Z0-9]*/g) ?? []
+    let slug = words
+      .map(w => w.toLowerCase())
+      .filter(w => w.length > 1 && !['the', 'and', 'for', 'with', 'from', 'etc'].includes(w))
+      .slice(0, 3)
+      .join('-')
+    if (!slug) slug = `idea-${Date.now().toString(36).slice(-4)}`
+    // Deduplicate: append -2, -3... if slug already exists
+    const existing = store.list()
+    const existingRefs = new Set(existing.map(t => t.ref))
+    let candidate = slug
+    let counter = 2
+    while (existingRefs.has(candidate)) {
+      candidate = `${slug}-${counter++}`
+    }
+    finalRef = candidate
+  }
+
   if (effectiveRef) {
     // Check if it's a numeric issue ref (pure number or #N)
     const isIssueRef = /^#?\d+$/.test(effectiveRef)
@@ -170,44 +180,59 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
   return `Added todo: **${item.title}** (${item.type}${item.ref ? `, ref: ${item.ref}` : ''})`
 }
 
+export function todoDelete(indexOrText: string, repo?: string): string {
+  const { owner, name } = parseRepo(repo)
+  const store = new TodoStore(getContribDir(owner, name))
+
+  const resolved = store.resolveItem(indexOrText)
+  if (!resolved) {
+    return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
+  }
+
+  const deleted = store.delete(resolved.storeIndex)
+  if (!deleted) {
+    return `Error: Failed to delete todo at index ${resolved.storeIndex}.`
+  }
+
+  return `Deleted: ~~${deleted.title}~~${deleted.ref ? ` (${deleted.ref})` : ''}`
+}
+
 export function todoDone(indexOrText: string, repo?: string): string {
+  const { owner, name } = parseRepo(repo)
+  const store = new TodoStore(getContribDir(owner, name))
+
+  const resolved = store.resolveItem(indexOrText)
+  if (!resolved) {
+    return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
+  }
+
+  const archived = store.archiveAndDelete(resolved.storeIndex)
+  if (!archived) {
+    return `Error: Failed to archive todo at index ${resolved.storeIndex}.`
+  }
+
+  return `Done & archived: ~~${archived.title}~~${archived.ref ? ` (${archived.ref})` : ''}`
+}
+
+export function todoArchive(repo?: string): string {
   const { owner, name } = parseRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
   const allTodos = store.list()
 
-  // Only consider open todos (not done)
-  const openIndices: number[] = []
-  allTodos.forEach((t, i) => {
-    if (t.status !== 'done') openIndices.push(i)
-  })
+  const doneIndices = allTodos
+    .map((t, i) => t.status === 'done' ? i : -1)
+    .filter(i => i >= 0)
 
-  if (openIndices.length === 0) {
-    return 'Error: No open todos found.'
+  if (doneIndices.length === 0) {
+    return 'No done todos to archive.'
   }
 
-  const num = Number.parseInt(indexOrText, 10)
-  let targetStoreIndex: number | undefined
-
-  if (!Number.isNaN(num) && num >= 1 && num <= openIndices.length) {
-    // 1-based index into open todos
-    targetStoreIndex = openIndices[num - 1]
-  }
-  else {
-    // Text substring match
-    const match = openIndices.find(i =>
-      allTodos[i].title.toLowerCase().includes(indexOrText.toLowerCase()),
-    )
-    targetStoreIndex = match
+  // Archive from end to preserve indices
+  let count = 0
+  for (const i of [...doneIndices].reverse()) {
+    const result = store.archiveAndDelete(i)
+    if (result) count++
   }
 
-  if (targetStoreIndex === undefined) {
-    return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
-  }
-
-  const updated = store.update(targetStoreIndex, { status: 'done' })
-  if (!updated) {
-    return `Error: Failed to update todo at index ${targetStoreIndex}.`
-  }
-
-  return `Done: ~~${updated.title}~~${updated.ref ? ` (${updated.ref})` : ''}`
+  return `Archived ${count} done todos to archive.yaml`
 }

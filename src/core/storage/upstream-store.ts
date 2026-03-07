@@ -1,18 +1,20 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
+import { todayDate } from '../utils/format.js'
+import type { UpstreamItemStatus, UpstreamVersionStatus, DailyCommitAction, TodoDifficulty } from '../enums.js'
 
 export interface UpstreamItem {
   title: string
   type: 'feature' | 'bug' | 'chore'
-  difficulty: 'easy' | 'medium' | 'hard' | null
-  status: 'active' | 'pr_submitted' | 'done'
+  difficulty: TodoDifficulty | null
+  status: UpstreamItemStatus
   pr: number | null
 }
 
 export interface UpstreamVersion {
   version: string
-  status: 'active' | 'done'
+  status: UpstreamVersionStatus
   items: UpstreamItem[]
 }
 
@@ -21,7 +23,7 @@ export interface DailyCommit {
   message: string
   type: string
   date: string
-  action: 'skip' | 'todo' | 'issue' | 'pr' | 'synced' | null
+  action: DailyCommitAction | null
   ref: string | null
 }
 
@@ -93,9 +95,10 @@ export class UpstreamStore {
 
     const ver = repoData.versions.find(v => v.version === version)
     if (!ver) return
-    if (itemIndex < 0 || itemIndex >= ver.items.length) return
+    const item = ver.items[itemIndex]
+    if (itemIndex < 0 || itemIndex >= ver.items.length || !item) return
 
-    Object.assign(ver.items[itemIndex], fields)
+    Object.assign(item, fields)
 
     // Auto-mark version done when all items done
     if (ver.items.every(item => item.status === 'done')) {
@@ -134,7 +137,7 @@ export class UpstreamStore {
       existingShas.add(commit.sha)
     }
 
-    repoData.daily.last_checked = new Date().toISOString().slice(0, 10)
+    repoData.daily.last_checked = todayDate()
 
     this.save(data)
   }
@@ -154,6 +157,30 @@ export class UpstreamStore {
     Object.assign(commit, fields)
 
     this.save(data)
+  }
+
+  /**
+   * Batch update multiple daily commits in a single file write.
+   */
+  updateDailyCommitBatch(
+    repo: string,
+    updates: Array<{ sha: string; fields: Partial<Pick<DailyCommit, 'action' | 'ref'>> }>,
+  ): number {
+    const data = this.load()
+    const repoData = data[repo]
+    if (!repoData) return 0
+
+    let count = 0
+    for (const { sha, fields } of updates) {
+      const commit = repoData.daily.commits.find(c => c.sha === sha)
+      if (commit) {
+        Object.assign(commit, fields)
+        count++
+      }
+    }
+
+    if (count > 0) this.save(data)
+    return count
   }
 
   /**

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 export const DEFAULT_REPO_OWNER = 'antdv-next'
@@ -37,4 +38,8 @@ export function getAntdvPackagePath(projectRoot?: string): string {
 
 export function getComponentsDir(projectRoot?: string): string {
   return join(getAntdvPackagePath(projectRoot), 'src')
+}
+
+export function getContribDir(owner: string, name: string): string {
+  return join(homedir(), '.contribbot', owner, name)
 }

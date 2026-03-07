@@ -1,17 +1,16 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   DEFAULT_REPO_NAME,
   DEFAULT_REPO_OWNER,
   UPSTREAM_NAME,
   UPSTREAM_OWNER,
+  getContribDir,
 } from '../utils/config.js'
 import { markdownTable } from '../utils/format.js'
 import { getReleaseByTag, getLatestRelease, searchCommits, parseRepo } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
-
-type PRType = 'feat' | 'fix' | 'other'
+import type { PRType } from '../enums.js'
 
 interface SyncItem {
   prNumber: number
@@ -30,7 +29,8 @@ function extractPRsFromRelease(body: string): { number: number, title: string }[
   for (const line of lines) {
     const matches = [...line.matchAll(prPattern)]
     if (matches.length > 0) {
-      const prNum = Number.parseInt(matches[matches.length - 1][1], 10)
+      const lastMatch = matches[matches.length - 1]!
+      const prNum = Number.parseInt(lastMatch[1] ?? '0', 10)
       const title = line
         .replace(/^[-*]\s*/, '')
         .replace(/\s*\(#\d+\)\s*/g, '')
@@ -60,11 +60,11 @@ function extractType(title: string): PRType {
 
 function extractComponent(title: string): string | null {
   const match = title.match(/^(?:feat|fix|refactor|style|docs|chore|perf|test)?\s*\(?([A-Z][a-zA-Z]+)\)?[:\s]/i)
-  return match ? match[1] : null
+  return match?.[1] ?? null
 }
 
 function getSyncDir(owner: string, repo: string): string {
-  return join(homedir(), '.contribbot', owner, repo, 'sync')
+  return join(getContribDir(owner, repo), 'sync')
 }
 
 const statusIcon = (s: SyncItem['status']) => {
@@ -188,9 +188,10 @@ export async function upstreamSyncCheck(
         5,
         targetBranch,
       )
-      if (commits.length > 0) {
+      const firstCommit = commits[0]
+      if (firstCommit) {
         status = 'synced'
-        ref = commits[0].sha.slice(0, 7)
+        ref = firstCommit.sha.slice(0, 7)
       }
     }
     catch {
@@ -212,7 +213,7 @@ export async function upstreamSyncCheck(
     const releaseDate = release.published_at?.slice(0, 10)
     let syncedMsg = ''
     if (releaseDate) {
-      const contribDir = join(homedir(), '.contribbot', tgtOwner, tgtName)
+      const contribDir = getContribDir(tgtOwner, tgtName)
       const store = new UpstreamStore(contribDir)
       const count = store.markDailyAsSynced(`${upOwner}/${upName}`, releaseDate)
       if (count > 0) {
@@ -220,7 +221,7 @@ export async function upstreamSyncCheck(
       }
     }
 
-    return `${output}\n\n> 📁 Saved to ~/.contrib/${tgtOwner}/${tgtName}/sync/${release.tag_name}.md${syncedMsg}`
+    return `${output}\n\n> 📁 Saved to ~/.contribbot/${tgtOwner}/${tgtName}/sync/${release.tag_name}.md${syncedMsg}`
   }
 
   return output

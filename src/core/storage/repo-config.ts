@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
 
-export type RepoRole = 'external' | 'org_member' | 'collaborator' | 'owner'
+export type { RepoRole } from '../enums.js'
+import type { RepoRole } from '../enums.js'
 
 export interface RepoConfigData {
   role: RepoRole

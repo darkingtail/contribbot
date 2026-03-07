@@ -86,7 +86,7 @@ export async function projectDashboard(repo?: string): Promise<string> {
     const headers = ['SHA', 'Message', 'Author', 'Date']
     const rows = commits.map(c => [
       c.sha.slice(0, 7),
-      truncate(c.commit.message.split('\n')[0], 60),
+      truncate(c.commit.message.split('\n')[0] ?? '', 60),
       `@${c.author?.login ?? c.commit.author?.name ?? '?'}`,
       relativeTime(c.commit.author?.date ?? ''),
     ])

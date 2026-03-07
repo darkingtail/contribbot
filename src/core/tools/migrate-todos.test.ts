@@ -109,9 +109,9 @@ describe('parseTodosMd', () => {
 
     const items = parseTodosMd(content)
     expect(items).toHaveLength(3)
-    expect(items[0].status).toBe('done')
-    expect(items[1].status).toBe('idea')
-    expect(items[2].ref).toBeNull()
+    expect(items[0]!.status).toBe('done')
+    expect(items[1]!.status).toBe('idea')
+    expect(items[2]!.ref).toBeNull()
   })
 
   it('skips blank lines and headings', () => {
@@ -137,10 +137,10 @@ describe('parseTodosMd', () => {
 
     const items = parseTodosMd(content)
     expect(items).toHaveLength(4)
-    expect(items[0].type).toBe('docs')
-    expect(items[1].type).toBe('bug')
-    expect(items[2].type).toBe('feature')
-    expect(items[3].type).toBe('feature')
+    expect(items[0]!.type).toBe('docs')
+    expect(items[1]!.type).toBe('bug')
+    expect(items[2]!.type).toBe('feature')
+    expect(items[3]!.type).toBe('feature')
   })
 })
 
@@ -196,18 +196,18 @@ describe('migrateTodos', () => {
     expect(data.todos).toHaveLength(4)
 
     // Check first item (done)
-    expect(data.todos[0].ref).toBe('#63')
-    expect(data.todos[0].status).toBe('done')
+    expect(data.todos[0]!.ref).toBe('#63')
+    expect(data.todos[0]!.status).toBe('done')
 
     // Check open item
-    expect(data.todos[1].ref).toBe('#168')
-    expect(data.todos[1].status).toBe('idea')
+    expect(data.todos[1]!.ref).toBe('#168')
+    expect(data.todos[1]!.status).toBe('idea')
 
     // Check PR extraction
-    expect(data.todos[2].pr).toBe(210)
+    expect(data.todos[2]!.pr).toBe(210)
 
     // Check null ref
-    expect(data.todos[3].ref).toBeNull()
+    expect(data.todos[3]!.ref).toBeNull()
   })
 
   it('migrates CoPaw format todos.md', () => {
@@ -232,11 +232,11 @@ describe('migrateTodos', () => {
     const yamlContent = readFileSync(yamlPath, 'utf-8')
     const data = parse(yamlContent) as { todos: TodoItem[] }
 
-    expect(data.todos[0].type).toBe('docs')
-    expect(data.todos[0].title).toBe('补充模型下载镜像配置文档（HF_ENDPOINT + ModelScope）')
-    expect(data.todos[1].type).toBe('bug')
-    expect(data.todos[2].type).toBe('feature')
-    expect(data.todos[3].type).toBe('feature')
+    expect(data.todos[0]!.type).toBe('docs')
+    expect(data.todos[0]!.title).toBe('补充模型下载镜像配置文档（HF_ENDPOINT + ModelScope）')
+    expect(data.todos[1]!.type).toBe('bug')
+    expect(data.todos[2]!.type).toBe('feature')
+    expect(data.todos[3]!.type).toBe('feature')
 
     // All should be idea (unchecked)
     data.todos.forEach((t) => {

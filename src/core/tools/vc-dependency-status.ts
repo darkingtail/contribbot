@@ -35,7 +35,7 @@ function parseWorkspaceVcCatalog(rootDir: string): Map<string, string> {
     }
     if (inVcSection) {
       const match = line.match(/^\s+'(@v-c\/[^']+)':\s*(.+)/)
-      if (match) {
+      if (match?.[1] && match[2]) {
         deps.set(match[1], match[2].trim())
       }
     }

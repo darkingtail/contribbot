@@ -1,12 +1,7 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { ghApi, getCurrentUser, parseRepo } from '../clients/github.js'
 import { RepoConfig } from '../storage/repo-config.js'
 import type { RepoConfigData, RepoRole } from '../storage/repo-config.js'
-
-function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name)
-}
+import { getContribDir } from '../utils/config.js'
 
 /**
  * Auto-detect repo config by querying GitHub API.
@@ -25,23 +20,21 @@ async function detectConfig(owner: string, name: string): Promise<RepoConfigData
   }
   catch { /* ignore */ }
 
-  // 2. Check permissions
-  let role: RepoRole = 'external'
+  // 2. Check permissions (GitHub standard: admin > maintain > write > triage > read)
+  let role: RepoRole = 'read'
   try {
-    const repo = await ghApi<{ permissions: { admin: boolean, push: boolean } }>(`/repos/${owner}/${name}`)
+    const repo = await ghApi<{ permissions: { admin: boolean, maintain: boolean, push: boolean, triage: boolean } }>(`/repos/${owner}/${name}`)
     if (repo.permissions.admin) {
-      role = 'owner'
+      role = 'admin'
+    }
+    else if (repo.permissions.maintain) {
+      role = 'maintain'
     }
     else if (repo.permissions.push) {
-      role = 'collaborator'
+      role = 'write'
     }
-    else if (org) {
-      // Check org membership
-      try {
-        await ghApi<unknown>(`/orgs/${org}/members/${login}`)
-        role = 'org_member'
-      }
-      catch { /* not a member */ }
+    else if (repo.permissions.triage) {
+      role = 'triage'
     }
   }
   catch { /* ignore */ }
@@ -106,7 +99,7 @@ export async function repoConfig(repo?: string, upstream?: string): Promise<stri
     `| fork | ${config.fork ? `[${config.fork}](https://github.com/${config.fork})` : '—'} |`,
     `| upstream | ${config.upstream ? `[${config.upstream}](https://github.com/${config.upstream})` : '—'} |`,
     '',
-    `> Config path: \`~/.contrib/${owner}/${name}/config.yaml\``,
+    `> Config path: \`~/.contribbot/${owner}/${name}/config.yaml\``,
   ]
 
   return lines.join('\n')

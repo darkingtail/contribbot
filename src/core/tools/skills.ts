@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseRepo } from '../clients/github.js'
+import { getContribDir } from '../utils/config.js'
 
 function getSkillsDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', owner, name, 'skills')
+  return join(getContribDir(owner, name), 'skills')
 }
 
 function getSkillPath(owner: string, repo: string, skillName: string): string {
@@ -20,8 +20,9 @@ function parseFrontmatter(content: string): SkillMeta {
   const match = content.match(/^---\n([\s\S]*?)\n---/)
   if (!match) return { name: '', description: '' }
 
-  const name = match[1].match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? ''
-  const description = match[1].match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? ''
+  const frontmatter = match[1] ?? ''
+  const name = frontmatter.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? ''
+  const description = frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? ''
   return { name, description }
 }
 
@@ -80,5 +81,5 @@ export function skillWrite(skillName: string, content: string, repo?: string): s
   }
 
   writeFileSync(path, content, 'utf-8')
-  return `Skill "${skillName}" written to ~/.contrib/${owner}/${name}/skills/${skillName}/SKILL.md`
+  return `Skill "${skillName}" written to ~/.contribbot/${owner}/${name}/skills/${skillName}/SKILL.md`
 }

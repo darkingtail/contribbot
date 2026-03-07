@@ -88,7 +88,7 @@ export async function contributionStats(
   ]
 
   if (repos.length === 1) {
-    const s = allStats[0]
+    const s = allStats[0]!
     lines.push(markdownTable(
       ['Metric', 'Count'],
       [
@@ -98,7 +98,7 @@ export async function contributionStats(
       ],
     ))
   } else {
-    const headers = ['Metric', ...repos.map(r => r.split('/')[1]), 'Total']
+    const headers = ['Metric', ...repos.map(r => r.split('/')[1] ?? r), 'Total']
     const rows = [
       ['PRs Created', ...allStats.map(s => String(s.prsCreated)), String(totalPRs)],
       ['Issues Created', ...allStats.map(s => String(s.issuesCreated)), String(totalIssues)],

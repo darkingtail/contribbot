@@ -69,7 +69,9 @@ export class RecordFiles {
   }
 
   createUpstreamRecord(repo: string, version: string, info: UpstreamRecordInfo): string {
-    const [owner, name] = repo.split('/')
+    const parts = repo.split('/')
+    const owner = parts[0] ?? repo
+    const name = parts[1] ?? repo
     const dir = join(this.baseDir, 'upstream', owner, name)
     this.ensureDir(dir)
 
@@ -182,7 +184,7 @@ export class RecordFiles {
     writeFileSync(filePath, content, 'utf-8')
   }
 
-  private resolveRefPath(ref: string): string | null {
+  resolveRefPath(ref: string): string | null {
     // Issue ref: #281
     if (ref.startsWith('#')) {
       const num = ref.slice(1)
@@ -194,7 +196,9 @@ export class RecordFiles {
     if (atIndex !== -1) {
       const repo = ref.slice(0, atIndex)
       const version = ref.slice(atIndex + 1)
-      const [owner, name] = repo.split('/')
+      const parts = repo.split('/')
+      const owner = parts[0] ?? repo
+      const name = parts[1] ?? repo
       return join(this.baseDir, 'upstream', owner, name, `${version}.md`)
     }
 
@@ -210,7 +214,7 @@ export class RecordFiles {
 
     for (const file of files) {
       const match = file.match(/^idea-(\d+)\.md$/)
-      if (match) {
+      if (match?.[1]) {
         const id = Number.parseInt(match[1], 10)
         if (id > maxId) maxId = id
       }

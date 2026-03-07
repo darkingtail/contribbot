@@ -34,7 +34,7 @@ async function ghApiCli<T>(path: string, params: Record<string, string | number>
           return
         }
         if (!stdout.trim()) {
-          resolve(undefined as unknown as T)
+          resolve(null as T)
           return
         }
         try {
@@ -50,14 +50,15 @@ async function ghApiCli<T>(path: string, params: Record<string, string | number>
   }
 
   const { stdout } = await execFileAsync('gh', args)
-  if (!stdout.trim()) return undefined as unknown as T
+  if (!stdout.trim()) return null as T
   return JSON.parse(stdout) as T
 }
 
 // --- Token (fetch) backend ---
 
 async function ghApiToken<T>(path: string, params: Record<string, string | number> = {}, extraHeaders: Record<string, string> = {}, method: string = 'GET', body?: Record<string, unknown>): Promise<T> {
-  const token = process.env.GITHUB_TOKEN!
+  const token = process.env.GITHUB_TOKEN
+  if (!token) throw new Error('GITHUB_TOKEN environment variable is required for token auth mode')
   const searchParams = new URLSearchParams(
     Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
   )
@@ -78,7 +79,7 @@ async function ghApiToken<T>(path: string, params: Record<string, string | numbe
     const text = await res.text()
     throw new Error(`GitHub API error ${res.status}: ${text}`)
   }
-  if (res.status === 204) return undefined as unknown as T
+  if (res.status === 204) return null as T
   return res.json() as Promise<T>
 }
 
@@ -96,7 +97,7 @@ export async function ghApi<T>(path: string, params: Record<string, string | num
 export function parseRepo(repo?: string): { owner: string, name: string } {
   if (!repo) return { owner: DEFAULT_REPO_OWNER, name: DEFAULT_REPO_NAME }
   const parts = repo.split('/')
-  if (parts.length === 2) return { owner: parts[0], name: parts[1] }
+  if (parts.length === 2 && parts[0] && parts[1]) return { owner: parts[0], name: parts[1] }
   return { owner: DEFAULT_REPO_OWNER, name: repo }
 }
 
@@ -299,7 +300,8 @@ export async function getCurrentUser(): Promise<{ login: string, name: string | 
 
 export async function graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
   if (getAuthMode() === 'token') {
-    const token = process.env.GITHUB_TOKEN!
+    const token = process.env.GITHUB_TOKEN
+    if (!token) throw new Error('GITHUB_TOKEN environment variable is required for token auth mode')
     const res = await fetch('https://api.github.com/graphql', {
       method: 'POST',
       headers: {
@@ -368,6 +370,17 @@ export async function updatePull(owner: string, repo: string, prNumber: number, 
 
 export async function getPullReviewComments(owner: string, repo: string, prNumber: number): Promise<GitHubReviewComment[]> {
   return ghApi<GitHubReviewComment[]>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { per_page: 100 })
+}
+
+export async function getRepoDefaultBranch(owner: string, repo: string): Promise<{ branch: string; sha: string }> {
+  const data = await ghApi<{ default_branch: string }>(`/repos/${owner}/${repo}`)
+  const branch = data.default_branch
+  const ref = await ghApi<{ object: { sha: string } }>(`/repos/${owner}/${repo}/git/ref/heads/${branch}`)
+  return { branch, sha: ref.object.sha }
+}
+
+export async function createBranch(owner: string, repo: string, branchName: string, sha: string): Promise<void> {
+  await ghApi(`/repos/${owner}/${repo}/git/refs`, {}, { method: 'POST', body: { ref: `refs/heads/${branchName}`, sha } })
 }
 
 export async function replyToReviewComment(owner: string, repo: string, prNumber: number, commentId: number, body: string): Promise<GitHubComment> {

@@ -1,3 +1,7 @@
+export function todayDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 export function markdownTable(headers: string[], rows: string[][]): string {
   const separator = headers.map(() => '---')
   const lines = [

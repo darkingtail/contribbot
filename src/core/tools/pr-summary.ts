@@ -6,7 +6,7 @@ function groupFilesByComponent(files: { filename: string, status: string, additi
   for (const file of files) {
     // Extract component name from path like packages/antdv-next/src/{component}/...
     const match = file.filename.match(/packages\/antdv-next\/src\/([^/]+)\//)
-    const group = match ? match[1] : '_other'
+    const group = match?.[1] ?? '_other'
     if (!groups.has(group)) groups.set(group, [])
     groups.get(group)!.push(file)
   }
