@@ -11,6 +11,7 @@ interface NpmPackageInfo {
 export async function getPackageInfo(name: string): Promise<NpmPackageInfo> {
   return ofetch<NpmPackageInfo>(`${REGISTRY_URL}/${encodeURIComponent(name)}`, {
     headers: { Accept: 'application/json' },
+    timeout: 15_000,
   })
 }
 

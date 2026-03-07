@@ -24,11 +24,16 @@ async function ghApiCli<T>(path: string, params: Record<string, string | number>
   if (body) {
     return new Promise<T>((resolve, reject) => {
       const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+      const timer = setTimeout(() => {
+        child.kill()
+        reject(new Error('gh command timed out after 30s'))
+      }, 30_000)
       let stdout = ''
       let stderr = ''
       child.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
       child.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
       child.on('close', (code) => {
+        clearTimeout(timer)
         if (code !== 0) {
           reject(new Error(`gh exited with code ${code}: ${stderr}`))
           return
@@ -49,7 +54,7 @@ async function ghApiCli<T>(path: string, params: Record<string, string | number>
     })
   }
 
-  const { stdout } = await execFileAsync('gh', args)
+  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000 })
   if (!stdout.trim()) return null as T
   return JSON.parse(stdout) as T
 }
@@ -74,7 +79,7 @@ async function ghApiToken<T>(path: string, params: Record<string, string | numbe
     headers['Content-Type'] = 'application/json'
     fetchOpts.body = JSON.stringify(body)
   }
-  const res = await fetch(url, fetchOpts)
+  const res = await fetch(url, { ...fetchOpts, signal: AbortSignal.timeout(30_000) })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`GitHub API error ${res.status}: ${text}`)
@@ -312,7 +317,12 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
         'User-Agent': 'contribbot',
       },
       body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(30_000),
     })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`GitHub GraphQL error ${res.status}: ${text}`)
+    }
     const json = await res.json() as { data: T, errors?: unknown[] }
     if (json.errors) throw new Error(JSON.stringify(json.errors))
     return json.data
@@ -323,7 +333,7 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
   for (const [key, val] of Object.entries(variables)) {
     args.push('-F', `${key}=${val}`)
   }
-  const { stdout } = await execFileAsync('gh', args)
+  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000 })
   return (JSON.parse(stdout) as { data: T }).data
 }
 
