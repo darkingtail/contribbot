@@ -34,5 +34,8 @@ export { repoConfig } from './core/tools/repo-config-tool.js'
 export { skillList, skillRead, skillWrite } from './core/tools/skills.js'
 export { listAllSkills, readSkill } from './core/tools/skill-resources.js'
 
+// Utilities
+export { safeWriteFileSync } from './core/utils/fs.js'
+
 // MCP server factory
 export { createServer } from './mcp/server.js'

@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
+import { safeWriteFileSync } from '../utils/fs.js'
 
 export type { RepoRole } from '../enums.js'
 import type { RepoRole } from '../enums.js'
@@ -31,7 +32,7 @@ export class RepoConfig {
 
   save(config: RepoConfigData): void {
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
-    writeFileSync(this.configPath, stringify(config), 'utf-8')
+    safeWriteFileSync(this.configPath, stringify(config))
   }
 
   update(fields: Partial<RepoConfigData>): RepoConfigData | null {

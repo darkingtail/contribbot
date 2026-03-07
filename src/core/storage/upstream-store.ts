@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
 import { todayDate } from '../utils/format.js'
+import { safeWriteFileSync } from '../utils/fs.js'
 import type { UpstreamItemStatus, UpstreamVersionStatus, DailyCommitAction, TodoDifficulty } from '../enums.js'
 
 export interface UpstreamItem {
@@ -215,7 +216,7 @@ export class UpstreamStore {
 
   private save(data: UpstreamFile): void {
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
-    writeFileSync(this.yamlPath, stringify(data), 'utf-8')
+    safeWriteFileSync(this.yamlPath, stringify(data))
   }
 
   private ensureRepo(data: UpstreamFile, repo: string): RepoData {

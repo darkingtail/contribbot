@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
 import { todayDate } from '../utils/format.js'
+import { safeWriteFileSync } from '../utils/fs.js'
 
 export type { TodoType, TodoStatus, TodoDifficulty } from '../enums.js'
 import type { TodoType, TodoStatus, TodoDifficulty } from '../enums.js'
@@ -159,7 +160,13 @@ export class TodoStore {
     if (index < 0 || index >= todos.length || !todo) return undefined
     const today = todayDate()
 
-    // Load existing archive
+    const archivedItem: ArchivedTodoItem = { ...todo, status: 'done', archived: today }
+
+    // Delete from active first (safer: worst case = lost archive entry, not duplicate)
+    todos.splice(index, 1)
+    this.save(todos)
+
+    // Then append to archive
     const archivePath = join(this.baseDir, 'archive.yaml')
     let archived: ArchivedTodoItem[] = []
     if (existsSync(archivePath)) {
@@ -167,18 +174,10 @@ export class TodoStore {
       const data = parse(content) as { todos: ArchivedTodoItem[] } | null
       archived = data?.todos ?? []
     }
-
-    // Append to archive
-    const archivedItem: ArchivedTodoItem = { ...todo, status: 'done', archived: today }
     archived.push(archivedItem)
 
-    // Atomic write: archive first, then delete
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
-    writeFileSync(archivePath, stringify({ todos: archived }), 'utf-8')
-
-    // Delete from active todos
-    todos.splice(index, 1)
-    this.save(todos)
+    safeWriteFileSync(archivePath, stringify({ todos: archived }))
 
     return archivedItem
   }
@@ -186,6 +185,6 @@ export class TodoStore {
   private save(todos: TodoItem[]): void {
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
     const data: TodosFile = { todos }
-    writeFileSync(this.yamlPath, stringify(data), 'utf-8')
+    safeWriteFileSync(this.yamlPath, stringify(data))
   }
 }
