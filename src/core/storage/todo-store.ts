@@ -28,7 +28,7 @@ export interface ArchivedTodoItem extends TodoItem {
 }
 
 // Sort order: #N (by number) → slug (alphabetical, at Number.MAX_SAFE_INTEGER) → null (Infinity)
-function refSortKey(ref: string | null): number {
+export function refSortKey(ref: string | null): number {
   if (!ref) return Infinity
   if (ref.startsWith('#')) {
     const num = Number.parseInt(ref.slice(1), 10)
@@ -53,7 +53,7 @@ export class TodoStore {
 
   listSorted(): TodoItem[] {
     const todos = this.list()
-    return todos.sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
+    return [...todos].sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
   }
 
   get(index: number): TodoItem | undefined {
@@ -137,7 +137,13 @@ export class TodoStore {
     const todo = todos[index]
     if (index < 0 || index >= todos.length || !todo) return undefined
     const today = todayDate()
-    Object.assign(todo, fields, { updated: today })
+    if (fields.status !== undefined) todo.status = fields.status
+    if (fields.difficulty !== undefined) todo.difficulty = fields.difficulty
+    if (fields.pr !== undefined) todo.pr = fields.pr
+    if (fields.branch !== undefined) todo.branch = fields.branch
+    if (fields.title !== undefined) todo.title = fields.title
+    if (fields.type !== undefined) todo.type = fields.type
+    todo.updated = today
     this.save(todos)
     return todo
   }

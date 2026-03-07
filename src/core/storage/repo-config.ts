@@ -38,7 +38,10 @@ export class RepoConfig {
   update(fields: Partial<RepoConfigData>): RepoConfigData | null {
     const config = this.load()
     if (!config) return null
-    Object.assign(config, fields)
+    if (fields.role !== undefined) config.role = fields.role
+    if (fields.org !== undefined) config.org = fields.org
+    if (fields.fork !== undefined) config.fork = fields.fork
+    if (fields.upstream !== undefined) config.upstream = fields.upstream
     this.save(config)
     return config
   }

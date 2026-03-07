@@ -99,7 +99,9 @@ export class UpstreamStore {
     const item = ver.items[itemIndex]
     if (itemIndex < 0 || itemIndex >= ver.items.length || !item) return
 
-    Object.assign(item, fields)
+    if (fields.status !== undefined) item.status = fields.status
+    if (fields.pr !== undefined) item.pr = fields.pr
+    if (fields.difficulty !== undefined) item.difficulty = fields.difficulty
 
     // Auto-mark version done when all items done
     if (ver.items.every(item => item.status === 'done')) {
@@ -155,7 +157,8 @@ export class UpstreamStore {
     const commit = repoData.daily.commits.find(c => c.sha === sha)
     if (!commit) return
 
-    Object.assign(commit, fields)
+    if (fields.action !== undefined) commit.action = fields.action
+    if (fields.ref !== undefined) commit.ref = fields.ref
 
     this.save(data)
   }
@@ -175,7 +178,8 @@ export class UpstreamStore {
     for (const { sha, fields } of updates) {
       const commit = repoData.daily.commits.find(c => c.sha === sha)
       if (commit) {
-        Object.assign(commit, fields)
+        if (fields.action !== undefined) commit.action = fields.action
+        if (fields.ref !== undefined) commit.ref = fields.ref
         count++
       }
     }
