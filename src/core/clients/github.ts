@@ -191,16 +191,16 @@ interface GitHubSearchCommits {
 }
 
 export async function getRepoIssues(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'open', perPage = 30): Promise<GitHubIssue[]> {
-  const data = await ghApi<GitHubIssue[]>(`/repos/${owner}/${repo}/issues`, { state, per_page: perPage })
-  return data.filter(issue => !issue.pull_request)
+  const data = await ghApi<GitHubIssue[] | null>(`/repos/${owner}/${repo}/issues`, { state, per_page: perPage })
+  return (data ?? []).filter(issue => !issue.pull_request)
 }
 
 export async function getRepoPulls(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'open', perPage = 30): Promise<GitHubPull[]> {
-  return ghApi<GitHubPull[]>(`/repos/${owner}/${repo}/pulls`, { state, per_page: perPage })
+  return (await ghApi<GitHubPull[] | null>(`/repos/${owner}/${repo}/pulls`, { state, per_page: perPage })) ?? []
 }
 
 export async function getRepoCommits(owner: string, repo: string, perPage = 10): Promise<GitHubCommit[]> {
-  return ghApi<GitHubCommit[]>(`/repos/${owner}/${repo}/commits`, { per_page: perPage })
+  return (await ghApi<GitHubCommit[] | null>(`/repos/${owner}/${repo}/commits`, { per_page: perPage })) ?? []
 }
 
 export async function getLatestRelease(owner: string, repo: string): Promise<GitHubRelease | null> {
@@ -226,11 +226,11 @@ export async function getIssue(owner: string, repo: string, issueNumber: number)
 }
 
 export async function getIssueComments(owner: string, repo: string, issueNumber: number): Promise<GitHubComment[]> {
-  return ghApi<GitHubComment[]>(`/repos/${owner}/${repo}/issues/${issueNumber}/comments`)
+  return (await ghApi<GitHubComment[] | null>(`/repos/${owner}/${repo}/issues/${issueNumber}/comments`)) ?? []
 }
 
 export async function getIssueTimeline(owner: string, repo: string, issueNumber: number): Promise<unknown[]> {
-  return ghApi<unknown[]>(`/repos/${owner}/${repo}/issues/${issueNumber}/timeline`)
+  return (await ghApi<unknown[] | null>(`/repos/${owner}/${repo}/issues/${issueNumber}/timeline`)) ?? []
 }
 
 export async function getPull(owner: string, repo: string, pullNumber: number): Promise<GitHubPull> {
@@ -238,11 +238,11 @@ export async function getPull(owner: string, repo: string, pullNumber: number): 
 }
 
 export async function getPullFiles(owner: string, repo: string, pullNumber: number): Promise<GitHubPullFile[]> {
-  return ghApi<GitHubPullFile[]>(`/repos/${owner}/${repo}/pulls/${pullNumber}/files`)
+  return (await ghApi<GitHubPullFile[] | null>(`/repos/${owner}/${repo}/pulls/${pullNumber}/files`)) ?? []
 }
 
 export async function getPullReviews(owner: string, repo: string, pullNumber: number): Promise<GitHubReview[]> {
-  return ghApi<GitHubReview[]>(`/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`)
+  return (await ghApi<GitHubReview[] | null>(`/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`)) ?? []
 }
 
 export async function getPullChecks(owner: string, repo: string, ref: string): Promise<GitHubCheckRuns> {
@@ -381,7 +381,7 @@ export async function updatePull(owner: string, repo: string, prNumber: number, 
 }
 
 export async function getPullReviewComments(owner: string, repo: string, prNumber: number): Promise<GitHubReviewComment[]> {
-  return ghApi<GitHubReviewComment[]>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { per_page: 100 })
+  return (await ghApi<GitHubReviewComment[] | null>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { per_page: 100 })) ?? []
 }
 
 export async function getRepoDefaultBranch(owner: string, repo: string): Promise<{ branch: string; sha: string }> {
