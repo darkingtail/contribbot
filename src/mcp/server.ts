@@ -624,5 +624,121 @@ export function createServer(): McpServer {
     wrapHandler(({ name, content, repo }) => skillWrite(name as string, content as string, repo as string | undefined)),
   )
 
+  // ── MCP Prompts ──────────────────────────────────────
+
+  server.registerPrompt('daily-sync', {
+    title: 'Daily Upstream Sync',
+    description: 'Workflow: sync fork, fetch upstream commits, skip noise, triage remaining',
+    argsSchema: { repo: repoParam },
+  }, ({ repo }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          `Execute the daily upstream sync workflow for ${repo ?? 'default repo'}:`,
+          '',
+          '1. `sync_fork` — sync fork to upstream latest',
+          '2. `upstream_daily` — fetch new commits since last tracked version',
+          '3. `upstream_daily_skip_noise` — batch skip CI/deps/build noise',
+          '4. Review remaining pending commits and suggest actions',
+          '5. For relevant commits: create issues or link to existing ones via `upstream_daily_act`',
+          '',
+          'Show a summary when done: how many new, skipped, linked, and still pending.',
+        ].join('\n'),
+      },
+    }],
+  }))
+
+  server.registerPrompt('start-task', {
+    title: 'Start Task',
+    description: 'Workflow: enter project context, pick a todo, activate it, review details',
+    argsSchema: {
+      repo: repoParam,
+      item: z.string().optional().describe('Todo item to activate (index or text match)'),
+    },
+  }, ({ repo, item }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          `Start a task in ${repo ?? 'default repo'}:`,
+          '',
+          '1. `project_dashboard` — understand project state (issues, PRs, recent activity, skills)',
+          '2. `todo_list` — review current todos',
+          item
+            ? `3. \`todo_activate(item="${item}")\` — activate the specified todo`
+            : '3. Help me pick a todo to work on based on priority and difficulty',
+          '4. `todo_detail` — review implementation record and context',
+          '5. Summarize: what the task is, related issues/discussions, suggested approach',
+        ].join('\n'),
+      },
+    }],
+  }))
+
+  server.registerPrompt('pre-submit', {
+    title: 'Pre-Submit Check',
+    description: 'Workflow: review PR changes, check CI, review comments, prepare for merge',
+    argsSchema: {
+      repo: repoParam,
+      pr: z.string().describe('PR number to review'),
+    },
+  }, ({ repo, pr }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          `Pre-submit check for PR #${pr} in ${repo ?? 'default repo'}:`,
+          '',
+          '1. `pr_summary` — review PR changes and description',
+          '2. `pr_review_comments` — check all review comments, ensure none unresolved',
+          '3. `actions_status` — verify CI is passing',
+          '4. If review comments need replies, use `pr_review_reply`',
+          '5. Report: CI status, unresolved comments, merge readiness',
+        ].join('\n'),
+      },
+    }],
+  }))
+
+  server.registerPrompt('weekly-review', {
+    title: 'Weekly Review',
+    description: 'Workflow: review contribution stats, todo progress, upstream sync status',
+    argsSchema: {
+      repo: z.string().optional().describe('Specific repo to review, or omit for cross-project overview'),
+    },
+  }, ({ repo }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          repo
+            ? `Weekly review for ${repo}:`
+            : 'Cross-project weekly review:',
+          '',
+          repo
+            ? [
+                '1. `contribution_stats` — PR/issue/review counts this week',
+                '2. `todo_list` — which todos progressed, which are stuck',
+                '3. `upstream_list` — upstream sync coverage',
+                '4. `todo_archive` — clean up completed todos',
+                '5. Summary: wins, blockers, focus for next week',
+              ].join('\n')
+            : [
+                '1. `project_list` — overview all tracked projects',
+                '2. For each active project:',
+                '   - `contribution_stats` — this week\'s activity',
+                '   - `todo_list` — stuck items',
+                '   - `upstream_list` — sync gaps',
+                '3. `todo_archive` — clean up completed todos across projects',
+                '4. Cross-project summary: total output, blockers, priorities for next week',
+              ].join('\n'),
+        ].join('\n'),
+      },
+    }],
+  }))
+
   return server
 }
