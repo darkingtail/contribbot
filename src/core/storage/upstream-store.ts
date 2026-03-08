@@ -59,6 +59,18 @@ export class UpstreamStore {
     return data[repo]?.versions ?? []
   }
 
+  /**
+   * Get the latest tracked version tag for a given upstream repo.
+   * Returns null if no versions are tracked.
+   */
+  getLatestVersionTag(repo: string): string | null {
+    const versions = this.listVersions(repo)
+    if (versions.length === 0) return null
+    // Return the last version in the array (most recently added)
+    const last = versions[versions.length - 1]
+    return last ? last.version : null
+  }
+
   addVersion(
     repo: string,
     version: string,
