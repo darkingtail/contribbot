@@ -1,5 +1,6 @@
 import { getLatestRelease, getRepoCommits, getRepoIssues, getRepoPulls, parseRepo } from '../clients/github.js'
 import { markdownTable, relativeTime, truncate } from '../utils/format.js'
+import { listAllSkills } from './skill-resources.js'
 
 export async function projectDashboard(repo?: string): Promise<string> {
   const { owner, name } = parseRepo(repo)
@@ -91,6 +92,18 @@ export async function projectDashboard(repo?: string): Promise<string> {
       relativeTime(c.commit.author?.date ?? ''),
     ])
     lines.push(markdownTable(headers, rows))
+  }
+
+  // Project skills
+  const repoKey = `${owner}/${name}`
+  const skills = listAllSkills().filter(s => s.repo === repoKey)
+  if (skills.length > 0) {
+    lines.push('')
+    lines.push(`### Skills (${skills.length})`)
+    const headers = ['Name', 'Description']
+    const rows = skills.map(s => [s.name, s.description])
+    lines.push(markdownTable(headers, rows))
+    lines.push(`> Read details: \`skill://${repoKey}/{name}\``)
   }
 
   return lines.join('\n')
