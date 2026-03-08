@@ -493,14 +493,14 @@ export function createServer(): McpServer {
 
   server.tool(
     'upstream_daily',
-    'Fetch upstream master commits, deduplicate, auto-detect existing issues/PRs',
+    'Fetch upstream commits since last tracked version. First run: shows releases to pick baseline.',
     {
       upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
-      days: z.number().optional().describe('Number of days to look back (default: 7)'),
+      since_tag: z.string().optional().describe('Baseline version tag for first-time init, e.g. "5.20.0"'),
       repo: repoParam,
     },
-    wrapHandler(async ({ upstream_repo, days, repo }) =>
-      upstreamDaily(upstream_repo as string, days as number | undefined, repo as string | undefined),
+    wrapHandler(async ({ upstream_repo, since_tag, repo }) =>
+      upstreamDaily(upstream_repo as string, repo as string | undefined, since_tag as string | undefined),
     ),
   )
 
