@@ -150,7 +150,7 @@ interface GitHubCommit {
   }
 }
 
-interface GitHubRelease {
+export interface GitHubRelease {
   tag_name: string
   html_url: string
   body: string | null
@@ -219,6 +219,30 @@ export async function getReleaseByTag(owner: string, repo: string, tag: string):
   catch {
     return null
   }
+}
+
+export interface CompareResult {
+  commits: Array<{
+    sha: string
+    commit: { message: string, author: { name: string, date: string } | null }
+    author: { login: string } | null
+  }>
+  total_commits: number
+}
+
+export async function getCompareCommits(
+  owner: string, repo: string, base: string, head: string = 'HEAD',
+): Promise<CompareResult> {
+  const data = await ghApi<CompareResult | null>(
+    `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+  )
+  return data ?? { commits: [], total_commits: 0 }
+}
+
+export async function listReleases(
+  owner: string, repo: string, perPage = 20,
+): Promise<GitHubRelease[]> {
+  return (await ghApi<GitHubRelease[] | null>(`/repos/${owner}/${repo}/releases`, { per_page: perPage })) ?? []
 }
 
 export async function getIssue(owner: string, repo: string, issueNumber: number): Promise<GitHubIssue> {
