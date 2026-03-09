@@ -26,3 +26,10 @@ export type RepoRole = typeof RepoRole[keyof typeof RepoRole]
 
 export const PRType = { Feat: 'feat', Fix: 'fix', Other: 'other' } as const
 export type PRType = typeof PRType[keyof typeof PRType]
+
+export function validateEnum<T extends string>(values: readonly T[], value: string, label: string): T {
+  if (!(values as readonly string[]).includes(value)) {
+    throw new Error(`Invalid ${label}: "${value}". Expected one of: ${values.join(', ')}`)
+  }
+  return value as T
+}

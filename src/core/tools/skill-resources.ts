@@ -1,20 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { validatePathSegment } from '../utils/config.js'
+import { parseFrontmatter } from '../utils/frontmatter.js'
 
 interface SkillEntry {
   repo: string
   name: string
   description: string
-}
-
-function parseFrontmatter(content: string): { name: string; description: string } {
-  const match = content.match(/^---\n([\s\S]*?)\n---/)
-  if (!match) return { name: '', description: '' }
-  const fm = match[1] ?? ''
-  const name = fm.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? ''
-  const description = fm.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? ''
-  return { name, description }
 }
 
 export function listAllSkills(): SkillEntry[] {
@@ -57,6 +50,10 @@ export function readSkill(repo: string, skillName: string): string | null {
   const owner = parts[0] ?? ''
   const name = parts[1] ?? ''
   if (!owner || !name) return null
+
+  validatePathSegment(owner)
+  validatePathSegment(name)
+  validatePathSegment(skillName)
 
   const skillPath = join(homedir(), '.contribbot', owner, name, 'skills', skillName, 'SKILL.md')
   if (!existsSync(skillPath)) return null

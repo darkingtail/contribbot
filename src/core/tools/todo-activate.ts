@@ -4,6 +4,7 @@ import { TodoStore } from '../storage/todo-store.js'
 import { RepoConfig } from '../storage/repo-config.js'
 import type { TodoDifficulty } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { difficultyLabel } from '../utils/format.js'
 
 function generateBranchName(todo: { ref: string | null; title: string; type: string }): string {
   const prefix = todo.type === 'bug' ? 'fix' : todo.type === 'docs' ? 'docs' : 'feat'
@@ -44,7 +45,7 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
 
   const resolved = store.resolveItem(item)
   if (!resolved) {
-    return `Error: Todo not found: "${item}". Use todo_list to see available items.`
+    throw new Error(`Todo not found: "${item}". Use todo_list to see available items.`)
   }
 
   const { storeIndex, item: todo } = resolved
@@ -108,7 +109,7 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
       const message = err instanceof Error ? err.message : String(err)
       const updated = store.update(storeIndex, { status: 'active', difficulty })
       if (!updated) {
-        return `Error: Failed to update todo at index ${storeIndex}.`
+        throw new Error(`Failed to update todo at index ${storeIndex}.`)
       }
       return `Activated: **${updated.title}** (difficulty: ${difficulty}) — ⚠️ GitHub fetch failed: ${message}`
     }
@@ -144,9 +145,8 @@ export async function todoActivate(item: string, repo?: string): Promise<string>
   // Update todo status to active with assessed difficulty and branch
   const updated = store.update(storeIndex, { status: 'active', difficulty, branch: branchName })
   if (!updated) {
-    return `Error: Failed to update todo at index ${storeIndex}.`
+    throw new Error(`Failed to update todo at index ${storeIndex}.`)
   }
 
-  const difficultyLabel = difficulty === 'easy' ? '🟢 easy' : difficulty === 'hard' ? '🔴 hard' : '🟡 medium'
-  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel}${branchMsg}`
+  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel(difficulty)}${branchMsg}`
 }

@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
 import { todayDate } from '../utils/format.js'
+import { safeWriteFileSync } from '../utils/fs.js'
 import type { UpstreamItemStatus, UpstreamVersionStatus, DailyCommitAction, TodoDifficulty } from '../enums.js'
 
 export interface UpstreamItem {
@@ -58,6 +59,18 @@ export class UpstreamStore {
     return data[repo]?.versions ?? []
   }
 
+  /**
+   * Get the latest tracked version tag for a given upstream repo.
+   * Returns null if no versions are tracked.
+   */
+  getLatestVersionTag(repo: string): string | null {
+    const versions = this.listVersions(repo)
+    if (versions.length === 0) return null
+    // Return the last version in the array (most recently added)
+    const last = versions[versions.length - 1]
+    return last ? last.version : null
+  }
+
   addVersion(
     repo: string,
     version: string,
@@ -98,7 +111,9 @@ export class UpstreamStore {
     const item = ver.items[itemIndex]
     if (itemIndex < 0 || itemIndex >= ver.items.length || !item) return
 
-    Object.assign(item, fields)
+    if (fields.status !== undefined) item.status = fields.status
+    if (fields.pr !== undefined) item.pr = fields.pr
+    if (fields.difficulty !== undefined) item.difficulty = fields.difficulty
 
     // Auto-mark version done when all items done
     if (ver.items.every(item => item.status === 'done')) {
@@ -154,7 +169,8 @@ export class UpstreamStore {
     const commit = repoData.daily.commits.find(c => c.sha === sha)
     if (!commit) return
 
-    Object.assign(commit, fields)
+    if (fields.action !== undefined) commit.action = fields.action
+    if (fields.ref !== undefined) commit.ref = fields.ref
 
     this.save(data)
   }
@@ -174,7 +190,8 @@ export class UpstreamStore {
     for (const { sha, fields } of updates) {
       const commit = repoData.daily.commits.find(c => c.sha === sha)
       if (commit) {
-        Object.assign(commit, fields)
+        if (fields.action !== undefined) commit.action = fields.action
+        if (fields.ref !== undefined) commit.ref = fields.ref
         count++
       }
     }
@@ -215,7 +232,7 @@ export class UpstreamStore {
 
   private save(data: UpstreamFile): void {
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
-    writeFileSync(this.yamlPath, stringify(data), 'utf-8')
+    safeWriteFileSync(this.yamlPath, stringify(data))
   }
 
   private ensureRepo(data: UpstreamFile, repo: string): RepoData {

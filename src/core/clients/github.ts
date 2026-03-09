@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
-import { DEFAULT_REPO_NAME, DEFAULT_REPO_OWNER } from '../utils/config.js'
+import { DEFAULT_REPO_NAME, DEFAULT_REPO_OWNER, validatePathSegment } from '../utils/config.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -24,11 +24,16 @@ async function ghApiCli<T>(path: string, params: Record<string, string | number>
   if (body) {
     return new Promise<T>((resolve, reject) => {
       const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+      const timer = setTimeout(() => {
+        child.kill()
+        reject(new Error('gh command timed out after 30s'))
+      }, 30_000)
       let stdout = ''
       let stderr = ''
       child.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
       child.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
       child.on('close', (code) => {
+        clearTimeout(timer)
         if (code !== 0) {
           reject(new Error(`gh exited with code ${code}: ${stderr}`))
           return
@@ -49,7 +54,7 @@ async function ghApiCli<T>(path: string, params: Record<string, string | number>
     })
   }
 
-  const { stdout } = await execFileAsync('gh', args)
+  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000 })
   if (!stdout.trim()) return null as T
   return JSON.parse(stdout) as T
 }
@@ -74,7 +79,7 @@ async function ghApiToken<T>(path: string, params: Record<string, string | numbe
     headers['Content-Type'] = 'application/json'
     fetchOpts.body = JSON.stringify(body)
   }
-  const res = await fetch(url, fetchOpts)
+  const res = await fetch(url, { ...fetchOpts, signal: AbortSignal.timeout(30_000) })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`GitHub API error ${res.status}: ${text}`)
@@ -97,8 +102,10 @@ export async function ghApi<T>(path: string, params: Record<string, string | num
 export function parseRepo(repo?: string): { owner: string, name: string } {
   if (!repo) return { owner: DEFAULT_REPO_OWNER, name: DEFAULT_REPO_NAME }
   const parts = repo.split('/')
-  if (parts.length === 2 && parts[0] && parts[1]) return { owner: parts[0], name: parts[1] }
-  return { owner: DEFAULT_REPO_OWNER, name: repo }
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    return { owner: validatePathSegment(parts[0]), name: validatePathSegment(parts[1]) }
+  }
+  return { owner: DEFAULT_REPO_OWNER, name: validatePathSegment(repo) }
 }
 
 // GitHub REST API response types (minimal)
@@ -143,7 +150,7 @@ interface GitHubCommit {
   }
 }
 
-interface GitHubRelease {
+export interface GitHubRelease {
   tag_name: string
   html_url: string
   body: string | null
@@ -184,16 +191,16 @@ interface GitHubSearchCommits {
 }
 
 export async function getRepoIssues(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'open', perPage = 30): Promise<GitHubIssue[]> {
-  const data = await ghApi<GitHubIssue[]>(`/repos/${owner}/${repo}/issues`, { state, per_page: perPage })
-  return data.filter(issue => !issue.pull_request)
+  const data = await ghApi<GitHubIssue[] | null>(`/repos/${owner}/${repo}/issues`, { state, per_page: perPage })
+  return (data ?? []).filter(issue => !issue.pull_request)
 }
 
 export async function getRepoPulls(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'open', perPage = 30): Promise<GitHubPull[]> {
-  return ghApi<GitHubPull[]>(`/repos/${owner}/${repo}/pulls`, { state, per_page: perPage })
+  return (await ghApi<GitHubPull[] | null>(`/repos/${owner}/${repo}/pulls`, { state, per_page: perPage })) ?? []
 }
 
 export async function getRepoCommits(owner: string, repo: string, perPage = 10): Promise<GitHubCommit[]> {
-  return ghApi<GitHubCommit[]>(`/repos/${owner}/${repo}/commits`, { per_page: perPage })
+  return (await ghApi<GitHubCommit[] | null>(`/repos/${owner}/${repo}/commits`, { per_page: perPage })) ?? []
 }
 
 export async function getLatestRelease(owner: string, repo: string): Promise<GitHubRelease | null> {
@@ -214,16 +221,40 @@ export async function getReleaseByTag(owner: string, repo: string, tag: string):
   }
 }
 
+export interface CompareResult {
+  commits: Array<{
+    sha: string
+    commit: { message: string, author: { name: string, date: string } | null }
+    author: { login: string } | null
+  }>
+  total_commits: number
+}
+
+export async function getCompareCommits(
+  owner: string, repo: string, base: string, head: string = 'HEAD',
+): Promise<CompareResult> {
+  const data = await ghApi<CompareResult | null>(
+    `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+  )
+  return data ?? { commits: [], total_commits: 0 }
+}
+
+export async function listReleases(
+  owner: string, repo: string, perPage = 20,
+): Promise<GitHubRelease[]> {
+  return (await ghApi<GitHubRelease[] | null>(`/repos/${owner}/${repo}/releases`, { per_page: perPage })) ?? []
+}
+
 export async function getIssue(owner: string, repo: string, issueNumber: number): Promise<GitHubIssue> {
   return ghApi<GitHubIssue>(`/repos/${owner}/${repo}/issues/${issueNumber}`)
 }
 
 export async function getIssueComments(owner: string, repo: string, issueNumber: number): Promise<GitHubComment[]> {
-  return ghApi<GitHubComment[]>(`/repos/${owner}/${repo}/issues/${issueNumber}/comments`)
+  return (await ghApi<GitHubComment[] | null>(`/repos/${owner}/${repo}/issues/${issueNumber}/comments`)) ?? []
 }
 
 export async function getIssueTimeline(owner: string, repo: string, issueNumber: number): Promise<unknown[]> {
-  return ghApi<unknown[]>(`/repos/${owner}/${repo}/issues/${issueNumber}/timeline`)
+  return (await ghApi<unknown[] | null>(`/repos/${owner}/${repo}/issues/${issueNumber}/timeline`)) ?? []
 }
 
 export async function getPull(owner: string, repo: string, pullNumber: number): Promise<GitHubPull> {
@@ -231,11 +262,11 @@ export async function getPull(owner: string, repo: string, pullNumber: number): 
 }
 
 export async function getPullFiles(owner: string, repo: string, pullNumber: number): Promise<GitHubPullFile[]> {
-  return ghApi<GitHubPullFile[]>(`/repos/${owner}/${repo}/pulls/${pullNumber}/files`)
+  return (await ghApi<GitHubPullFile[] | null>(`/repos/${owner}/${repo}/pulls/${pullNumber}/files`)) ?? []
 }
 
 export async function getPullReviews(owner: string, repo: string, pullNumber: number): Promise<GitHubReview[]> {
-  return ghApi<GitHubReview[]>(`/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`)
+  return (await ghApi<GitHubReview[] | null>(`/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`)) ?? []
 }
 
 export async function getPullChecks(owner: string, repo: string, ref: string): Promise<GitHubCheckRuns> {
@@ -310,7 +341,12 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
         'User-Agent': 'contribbot',
       },
       body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(30_000),
     })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`GitHub GraphQL error ${res.status}: ${text}`)
+    }
     const json = await res.json() as { data: T, errors?: unknown[] }
     if (json.errors) throw new Error(JSON.stringify(json.errors))
     return json.data
@@ -321,7 +357,7 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
   for (const [key, val] of Object.entries(variables)) {
     args.push('-F', `${key}=${val}`)
   }
-  const { stdout } = await execFileAsync('gh', args)
+  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000 })
   return (JSON.parse(stdout) as { data: T }).data
 }
 
@@ -369,7 +405,7 @@ export async function updatePull(owner: string, repo: string, prNumber: number, 
 }
 
 export async function getPullReviewComments(owner: string, repo: string, prNumber: number): Promise<GitHubReviewComment[]> {
-  return ghApi<GitHubReviewComment[]>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { per_page: 100 })
+  return (await ghApi<GitHubReviewComment[] | null>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { per_page: 100 })) ?? []
 }
 
 export async function getRepoDefaultBranch(owner: string, repo: string): Promise<{ branch: string; sha: string }> {

@@ -1,16 +1,10 @@
 import { parseRepo } from '../clients/github.js'
 import { getIssue } from '../clients/github.js'
-import { TodoStore } from '../storage/todo-store.js'
-import type { TodoDifficulty, TodoType } from '../enums.js'
+import { TodoStore, refSortKey } from '../storage/todo-store.js'
+import type { TodoType } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { difficultyEmoji } from '../utils/format.js'
 import { detectTypeFromLabels } from '../utils/github-helpers.js'
-
-function difficultyEmoji(d: TodoDifficulty | null): string {
-  if (d === 'easy') return '🟢'
-  if (d === 'medium') return '🟡'
-  if (d === 'hard') return '🔴'
-  return '—'
-}
 
 function refLink(ref: string | null, owner: string, name: string): string {
   if (!ref) return '—'
@@ -24,15 +18,6 @@ function refLink(ref: string | null, owner: string, name: string): string {
 function prLink(pr: number | null, owner: string, name: string): string {
   if (!pr) return '—'
   return `[#${pr}](https://github.com/${owner}/${name}/pull/${pr})`
-}
-
-function refSortKey(ref: string | null): number {
-  if (!ref) return Infinity
-  if (ref.startsWith('#')) {
-    const num = Number.parseInt(ref.slice(1), 10)
-    return Number.isNaN(num) ? Number.MAX_SAFE_INTEGER : num
-  }
-  return Number.MAX_SAFE_INTEGER
 }
 
 export function todoList(repo?: string, status?: string): string {
@@ -186,12 +171,12 @@ export function todoDelete(indexOrText: string, repo?: string): string {
 
   const resolved = store.resolveItem(indexOrText)
   if (!resolved) {
-    return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
+    throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
   }
 
   const deleted = store.delete(resolved.storeIndex)
   if (!deleted) {
-    return `Error: Failed to delete todo at index ${resolved.storeIndex}.`
+    throw new Error(`Failed to delete todo at index ${resolved.storeIndex}.`)
   }
 
   return `Deleted: ~~${deleted.title}~~${deleted.ref ? ` (${deleted.ref})` : ''}`
@@ -203,12 +188,12 @@ export function todoDone(indexOrText: string, repo?: string): string {
 
   const resolved = store.resolveItem(indexOrText)
   if (!resolved) {
-    return `Error: Todo not found: "${indexOrText}". Use todo_list to see available items.`
+    throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
   }
 
   const archived = store.archiveAndDelete(resolved.storeIndex)
   if (!archived) {
-    return `Error: Failed to archive todo at index ${resolved.storeIndex}.`
+    throw new Error(`Failed to archive todo at index ${resolved.storeIndex}.`)
   }
 
   return `Done & archived: ~~${archived.title}~~${archived.ref ? ` (${archived.ref})` : ''}`
