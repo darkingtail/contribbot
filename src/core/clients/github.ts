@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
-import { DEFAULT_REPO_NAME, DEFAULT_REPO_OWNER, validatePathSegment } from '../utils/config.js'
+import { validatePathSegment } from '../utils/config.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -100,12 +100,12 @@ export async function ghApi<T>(path: string, params: Record<string, string | num
 // --- Exported helpers ---
 
 export function parseRepo(repo?: string): { owner: string, name: string } {
-  if (!repo) return { owner: DEFAULT_REPO_OWNER, name: DEFAULT_REPO_NAME }
+  if (!repo) throw new Error('repo is required. Pass owner/name.')
   const parts = repo.split('/')
   if (parts.length === 2 && parts[0] && parts[1]) {
     return { owner: validatePathSegment(parts[0]), name: validatePathSegment(parts[1]) }
   }
-  return { owner: DEFAULT_REPO_OWNER, name: validatePathSegment(repo) }
+  throw new Error('repo is required. Pass owner/name.')
 }
 
 // GitHub REST API response types (minimal)

@@ -24,8 +24,8 @@ export async function issueDetail(issueNumber: number, repo?: string): Promise<s
       state: e.source.issue.state,
     }))
 
-  // Find antd issue references in the body
-  const antdRefs = (issue.body ?? '').match(/ant-design\/ant-design#\d+|antd#\d+/g) ?? []
+  // Find upstream issue references in the body (e.g. org/repo#123)
+  const upstreamRefs = (issue.body ?? '').match(/[\w-]+\/[\w-]+#\d+/g) ?? []
 
   const lines: string[] = [
     `## Issue #${issue.number}: ${issue.title}`,
@@ -56,10 +56,10 @@ export async function issueDetail(issueNumber: number, repo?: string): Promise<s
     }
   }
 
-  if (antdRefs.length > 0) {
+  if (upstreamRefs.length > 0) {
     lines.push('')
-    lines.push(`### Ant Design References`)
-    for (const ref of antdRefs) {
+    lines.push(`### Upstream References`)
+    for (const ref of upstreamRefs) {
       lines.push(`- ${ref}`)
     }
   }

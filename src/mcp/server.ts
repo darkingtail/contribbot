@@ -1,8 +1,6 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { TODO_STATUSES, UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, DAILY_COMMIT_ACTIONS } from '../core/enums.js'
-import { componentTestCoverage } from '../core/tools/component-test-coverage.js'
-import { vcDependencyStatus } from '../core/tools/vc-dependency-status.js'
 import { issueDetail } from '../core/tools/issue-detail.js'
 import { prSummary } from '../core/tools/pr-summary.js'
 import { projectDashboard } from '../core/tools/project-dashboard.js'
@@ -32,7 +30,7 @@ import { issueList, prList } from '../core/tools/issue-list.js'
 import { skillWrite } from '../core/tools/skills.js'
 import { listAllSkills, readSkill } from '../core/tools/skill-resources.js'
 
-const repoParam = z.string().optional().describe('GitHub repo "owner/name". Default: antdv-next/antdv-next')
+const repoParam = z.string().optional().describe('GitHub repo "owner/name"')
 
 function wrapHandler(fn: (args: Record<string, unknown>) => Promise<string> | string) {
   return async (args: Record<string, unknown>) => {
@@ -62,7 +60,6 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 7. **上游版本管理**：upstream_list → 版本同步总览；upstream_detail → 版本详情；upstream_update → 更新同步条目
 8. **上游每日追踪**：upstream_daily → 抓取上游最新提交并去重；upstream_daily_act → 标记提交动作（skip/todo/issue/pr）；upstream_daily_skip_noise → 批量跳过噪音
 9. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
-10. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
 11. **记录沉淀**：skill_write → 沉淀可复用经验；skills 以 MCP Resource 暴露（skill://{repo}/{name}），连接时自动可见
 12. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply → 完整读写闭环
 13. **全局视图**：project_list → 跨项目概况；repo_config → 仓库配置
@@ -78,8 +75,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 
 ## 注意事项
 
-- 大多数工具的 repo 参数默认 antdv-next/antdv-next，跨项目时需显式传 "owner/repo"
-- vc_dependency_status 和 component_test_coverage 作为全局 MCP 运行时，需要传 project_root 参数
+- 所有工具的 repo 参数必须显式传 "owner/repo"，无默认值
 - 所有输出为 markdown 格式，表格类输出带备注列提供上下文
 `.trim()
 
@@ -426,8 +422,8 @@ export function createServer(): McpServer {
     'Compare upstream release changelog with fork sync status. Groups by feat/fix. Can save record per version.',
     {
       version: z.string().optional().describe('Release version, e.g. "5.24.0". Omit to check the latest release.'),
-      upstream_repo: z.string().optional().describe('Upstream repo, e.g. "makeplane/plane". Default: ant-design/ant-design'),
-      target_repo: z.string().optional().describe('Your fork, e.g. "darkingtail/plane". Default: antdv-next/antdv-next'),
+      upstream_repo: z.string().describe('Upstream repo, e.g. "makeplane/plane"'),
+      target_repo: z.string().describe('Your fork, e.g. "darkingtail/plane"'),
       target_branch: z.string().optional().describe('Branch in target repo to check sync status against, e.g. "feature/dev". Omit to search all branches.'),
       save: z.boolean().optional().describe('Save the result to ~/.contribbot/{target}/sync/{version}.md for historical tracking'),
     },
@@ -527,35 +523,6 @@ export function createServer(): McpServer {
       repo: repoParam,
     },
     wrapHandler(({ upstream_repo, repo }) => upstreamDailySkipNoise(upstream_repo as string, repo as string | undefined)),
-  )
-
-  server.tool(
-    'vc_dependency_status',
-    'Check @v-c/* dependency updates vs npm latest',
-    {
-      component: z.string().optional().describe('Filter by name, e.g. "select"'),
-      project_root: z.string().optional().describe('Absolute path to project root. Required when running as global MCP server.'),
-    },
-    wrapHandler(async ({ component, project_root }) =>
-      vcDependencyStatus(component as string | undefined, project_root as string | undefined),
-    ),
-  )
-
-  server.tool(
-    'component_test_coverage',
-    'Scan component test coverage: unit / semantic / demo tests per component',
-    {
-      component: z.string().optional().describe('Component name, e.g. "button". Omit for all.'),
-      project_root: z.string().optional().describe('Absolute path to project root. Omit to auto-detect.'),
-      components_dir: z.string().optional().describe('Absolute or relative-to-root path to components directory. Default: packages/antdv-next/src. For ant-design use: components'),
-      tests_subdir: z.string().optional().describe('Name of tests subdirectory inside each component. Default: tests. For ant-design use: __tests__'),
-    },
-    wrapHandler(async ({ component, project_root, components_dir, tests_subdir }) =>
-      componentTestCoverage(
-        component as string | undefined, project_root as string | undefined,
-        components_dir as string | undefined, tests_subdir as string | undefined,
-      ),
-    ),
   )
 
   server.tool(

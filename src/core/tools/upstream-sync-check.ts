@@ -1,10 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  DEFAULT_REPO_NAME,
-  DEFAULT_REPO_OWNER,
-  UPSTREAM_NAME,
-  UPSTREAM_OWNER,
   getContribDir,
 } from '../utils/config.js'
 import { markdownTable } from '../utils/format.js'
@@ -144,10 +140,10 @@ export async function upstreamSyncCheck(
   save = false,
   targetBranch?: string,
 ): Promise<string> {
-  const upOwner = upstreamRepo ? parseRepo(upstreamRepo).owner : UPSTREAM_OWNER
-  const upName = upstreamRepo ? parseRepo(upstreamRepo).name : UPSTREAM_NAME
-  const tgtOwner = targetRepo ? parseRepo(targetRepo).owner : DEFAULT_REPO_OWNER
-  const tgtName = targetRepo ? parseRepo(targetRepo).name : DEFAULT_REPO_NAME
+  if (!upstreamRepo) return 'Error: upstream_repo is required. Pass "owner/name".'
+  if (!targetRepo) return 'Error: target_repo is required. Pass "owner/name".'
+  const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
+  const { owner: tgtOwner, name: tgtName } = parseRepo(targetRepo)
 
   let release = null
 
@@ -228,8 +224,8 @@ export async function upstreamSyncCheck(
 }
 
 export function syncHistory(targetRepo?: string): string {
-  const tgtOwner = targetRepo ? parseRepo(targetRepo).owner : DEFAULT_REPO_OWNER
-  const tgtName = targetRepo ? parseRepo(targetRepo).name : DEFAULT_REPO_NAME
+  if (!targetRepo) return 'Error: repo is required. Pass "owner/name".'
+  const { owner: tgtOwner, name: tgtName } = parseRepo(targetRepo)
   const dir = getSyncDir(tgtOwner, tgtName)
 
   if (!existsSync(dir)) {
