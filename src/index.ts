@@ -32,6 +32,10 @@ export { repoConfig } from './core/tools/repo-config-tool.js'
 export { skillList, skillRead, skillWrite } from './core/tools/skills.js'
 export { listAllSkills, readSkill } from './core/tools/skill-resources.js'
 
+// Storage utilities
+export { inferMode } from './core/storage/repo-config.js'
+export type { ProjectMode } from './core/storage/repo-config.js'
+
 // Utilities
 export { safeWriteFileSync } from './core/utils/fs.js'
 
