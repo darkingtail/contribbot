@@ -33,56 +33,40 @@ function extractSearchKeywords(message: string): string | null {
 
 // ── Noise Detection ──────────────────────────────────────
 
+// Universal noise — applies to any upstream repo
 const NOISE_TYPES = new Set(['ci', 'build', 'style'])
 
 const NOISE_SCOPE_PATTERNS = [
-  /^deps$/i,
-  /^dep$/i,
+  /^deps?$/i,
 ]
 
 const NOISE_MESSAGE_PATTERNS = [
   /\bbump\b/i,
   /\bupgrade\s+dep/i,
   /\bdeps?\b.*\bupdate/i,
-  /\bworkflow[_-]?run\b/i,
-  /\bactions?\//i,
-  /\b@types\/react\b/i,
-  /\breact[- ]compiler\b/i,
-  /\breact[- ]naming[- ]convention\b/i,
-  /\bsponsor\b/i,
-  /\bfunding\b/i,
-  /\bchangelog\b/i,
-  /\bpermissions\b.*\byaml\b/i,
+  /\bupdate\s+dependency\b/i,
 ]
 
 /**
  * Suggest whether a commit should be skipped (noise) or is relevant.
+ * Only flags universally irrelevant commits (CI, deps, build).
+ * Project-specific filtering (React, site, dumi, etc.) should be handled
+ * by the LLM using project skills as context.
  * Returns 'skip' for noise, null for relevant commits.
  */
 export function suggestAction(type: string, message: string): 'skip' | null {
   // Type-based noise
   if (NOISE_TYPES.has(type)) return 'skip'
 
-  // chore(deps) pattern
-  if (type === 'chore') {
-    const firstLine = message.split('\n')[0] ?? ''
-    const scopeMatch = firstLine.match(/^chore\(([^)]+)\)/i)
-    if (scopeMatch) {
-      const scope = scopeMatch[1] ?? ''
-      if (NOISE_SCOPE_PATTERNS.some(p => p.test(scope))) return 'skip'
-    }
-  }
-
-  // docs that are clearly noise (sponsor, changelog)
-  if (type === 'docs') {
-    const lower = message.toLowerCase()
-    if (lower.includes('sponsor') || lower.includes('changelog') || lower.includes('funding')) {
-      return 'skip'
-    }
+  // Scope-based noise (works for any type: chore(deps), fix(deps), etc.)
+  const firstLine = message.split('\n')[0] ?? ''
+  const scopeMatch = firstLine.match(/^\w+\(([^)]+)\)/i)
+  if (scopeMatch) {
+    const scope = scopeMatch[1] ?? ''
+    if (NOISE_SCOPE_PATTERNS.some(p => p.test(scope))) return 'skip'
   }
 
   // Message pattern matching
-  const firstLine = message.split('\n')[0] ?? ''
   if (NOISE_MESSAGE_PATTERNS.some(p => p.test(firstLine))) return 'skip'
 
   return null
@@ -307,8 +291,8 @@ export async function upstreamDaily(
     lines.push('_All commits processed. No pending items._')
   }
   else {
-    lines.push('| # | Date | Type | Commit | Suggest | Action | Ref |')
-    lines.push('|---|------|------|--------|---------|--------|-----|')
+    lines.push('| # | SHA | Date | Type | Commit | Suggest | Action | Ref |')
+    lines.push('|---|-----|------|------|--------|---------|--------|-----|')
 
     sorted.forEach((commit, i) => {
       const refText = commit.ref
@@ -316,7 +300,7 @@ export async function upstreamDaily(
         : '—'
       const suggest = suggestAction(commit.type, commit.message) ?? '—'
       lines.push(
-        `| ${i + 1} | ${formatDate(commit.date)} | ${commit.type} | ${commit.message} | ${suggest} | ${actionLabel(commit.action)} | ${refText} |`,
+        `| ${i + 1} | ${commit.sha.slice(0, 7)} | ${formatDate(commit.date)} | ${commit.type} | ${commit.message} | ${suggest} | ${actionLabel(commit.action)} | ${refText} |`,
       )
     })
   }
@@ -337,10 +321,14 @@ export function upstreamDailyAct(
   const store = new UpstreamStore(contribDir)
 
   const daily = store.getDaily(`${upOwner}/${upName}`)
-  const commit = daily.commits.find(c => c.sha === sha || c.sha.startsWith(sha))
+  // Support matching by SHA prefix or PR number (e.g. "#57223" or "57223")
+  const prMatch = sha.match(/^#?(\d{4,})$/)
+  const commit = prMatch
+    ? daily.commits.find(c => c.message.includes(`(#${prMatch[1]})`))
+    : daily.commits.find(c => c.sha === sha || c.sha.startsWith(sha))
 
   if (!commit) {
-    throw new Error(`Commit "${sha}" not found in daily data for ${upOwner}/${upName}.`)
+    throw new Error(`Commit "${sha}" not found in daily data for ${upOwner}/${upName}. Use SHA prefix or PR number (e.g. "#57223").`)
   }
 
   store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {

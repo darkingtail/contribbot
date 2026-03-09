@@ -54,7 +54,7 @@ async function ghApiCli<T>(path: string, params: Record<string, string | number>
     })
   }
 
-  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000 })
+  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000, maxBuffer: 10 * 1024 * 1024 })
   if (!stdout.trim()) return null as T
   return JSON.parse(stdout) as T
 }
@@ -357,7 +357,7 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
   for (const [key, val] of Object.entries(variables)) {
     args.push('-F', `${key}=${val}`)
   }
-  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000 })
+  const { stdout } = await execFileAsync('gh', args, { timeout: 30_000, maxBuffer: 10 * 1024 * 1024 })
   return (JSON.parse(stdout) as { data: T }).data
 }
 
