@@ -1,6 +1,6 @@
 # contribbot
 
-个人开源贡献工具集，作为全局 MCP Server 运行。
+个人开源贡献助手，作为全局 MCP Server 运行。支持三种项目模式：own（自有项目）、fork（同源对齐）、fork+upstream（fork + 跨栈复刻）。
 
 ## 项目结构
 
@@ -8,16 +8,16 @@
 src/
 ├── core/
 │   ├── clients/
-│   │   ├── github.ts          # GitHub API 封装（支持 gh CLI / GITHUB_TOKEN）
-│   │   └── npm-registry.ts    # npm registry 查询
+│   │   └── github.ts          # GitHub API 封装（支持 gh CLI / GITHUB_TOKEN）
 │   ├── storage/               # 数据存储层（YAML 持久化）
 │   │   ├── todo-store.ts      # TodoStore — todos.yaml 读写
 │   │   ├── upstream-store.ts  # UpstreamStore — upstream.yaml 读写
+│   │   ├── repo-config.ts     # RepoConfig — config.yaml + inferMode
 │   │   └── record-files.ts    # RecordFiles — 实现记录文件管理
 │   ├── enums.ts               # 统一枚举定义（as const 模式）
 │   ├── tools/                 # 所有工具实现（纯函数）
 │   └── utils/
-│       ├── config.ts          # 默认 repo 配置、项目路径工具
+│       ├── config.ts          # 项目路径工具
 │       ├── format.ts          # markdown table 等输出格式化
 │       └── github-helpers.ts  # GitHub 相关工具函数
 ├── mcp/
@@ -33,22 +33,20 @@ pnpm dev          # tsx 直接运行 MCP Server（用于调试）
 pnpm build        # tsdown 构建
 ```
 
-## 全局 MCP 配置
+## 项目模式
 
-已配置在 `~/.claude/mcp.json`，通过 `tsx` 直接运行源码：
+通过 `config.yaml` 的 fork + upstream 字段自动推断（`inferMode`）：
 
-```json
-{
-  "mcpServers": {
-    "contribbot": {
-      "command": "node",
-      "args": ["--import", "tsx/esm", "/Users/wisedu/Documents/GitHub/contrib/src/mcp/index.ts"]
-    }
-  }
-}
-```
+| fork | upstream | 模式 | 对齐方式 |
+|------|----------|------|---------|
+| 有 | 有 | fork+upstream | fork 同步 + 跨栈复刻追踪 |
+| 有 | 无 | fork | 同源对齐，选择性 cherry-pick |
+| 无 | 有 | upstream | 非 fork 跨栈追踪 |
+| 无 | 无 | own | 不需要对齐 |
 
-## 工具清单
+upstream_daily 和 upstream_sync_check 同时支持 fork source 和外部 upstream 追踪，共用 upstream.yaml。
+
+## 工具清单（35 Tools + 1 Resource + 4 Prompts）
 
 ### 项目概览
 
@@ -88,34 +86,32 @@ pnpm build        # tsdown 构建
 | `discussion_list` | Discussion 列表 |
 | `discussion_detail` | Discussion 详情 |
 
-### 上游同步
+### 上游追踪（fork source + 外部 upstream 通用）
 
 | 工具 | 说明 |
 |------|------|
-| `upstream_sync_check` | 对比上游 release 变更同步状态（支持任意上下游仓库） |
+| `upstream_sync_check` | 对比上游 release 变更同步状态 |
 | `sync_history` | 查看历史同步记录 |
 | `upstream_list` | 版本同步总览 + 每日 commits 摘要 |
 | `upstream_detail` | 查看某版本同步详情或实现记录 |
 | `upstream_update` | 更新同步条目状态 / 关联 PR / 难度 |
-| `upstream_daily` | 拉取上游 master 近期 commits，去重追加，自动检测已有 issue/PR |
+| `upstream_daily` | 拉取上游 commits，版本锚定去重，自动检测已有 issue/PR |
 | `upstream_daily_act` | 对某条 commit 标记动作（skip/todo/issue/pr） |
 | `upstream_daily_skip_noise` | 批量跳过噪音 commits（ci/build/style/deps） |
 
-### 质量 & 依赖
+### 质量 & 统计
 
 | 工具 | 说明 |
 |------|------|
 | `actions_status` | CI 状态 |
 | `security_overview` | 安全告警 |
-| `vc_dependency_status` | @v-c/* 依赖更新检查 |
-| `component_test_coverage` | 组件测试覆盖率扫描 |
 | `contribution_stats` | 个人贡献统计（PR/issue/review） |
 
 ### 仓库管理
 
 | 工具 | 说明 |
 |------|------|
-| `repo_config` | 查看/更新仓库配置（上游、角色、分支等） |
+| `repo_config` | 查看/更新仓库配置（上游、角色、fork 等） |
 | `sync_fork` | 同步 fork 到上游最新 |
 
 ### 全局
@@ -125,8 +121,6 @@ pnpm build        # tsdown 构建
 | `project_list` | 所有已跟踪项目概况（todos/upstream 统计） |
 
 ### Skills（Resource + Tool）
-
-Skills 以 MCP Resource 暴露，Agent 连接时自动可见，无需调用 tool 发现。
 
 | 类型 | 标识 | 说明 |
 |------|------|------|
@@ -139,21 +133,21 @@ Skills 以 MCP Resource 暴露，Agent 连接时自动可见，无需调用 tool
 
 ```
 ~/.contribbot/{owner}/{repo}/
+├── config.yaml                         # 仓库配置（role/org/fork/upstream）
 ├── todos.yaml                          # todo 索引（YAML 结构化）
 ├── todos/                              # todo 实现记录
 │   ├── 281.md                          # 本仓库 issue
 │   └── idea-1.md                       # 纯想法
-├── upstream.yaml                       # 上游同步索引（版本 + 每日 commits）
-├── upstream/                           # 上游同步实现记录
-│   └── ant-design/ant-design/
-│       ├── 6.3.0.md
-│       └── 6.3.1.md
+├── upstream.yaml                       # 上游追踪索引（版本 + 每日 commits）
+├── upstream/                           # 上游实现记录
+│   └── {upstream-owner}/{upstream-repo}/
+│       └── {version}.md
 ├── skills/                             # 可复用经验
-└── sync/                               # 旧版同步记录（已迁移到 upstream/）
+└── sync/                               # 同步记录
 ```
 
 ## 设计规范
 
 - 所有列表/表格输出必须带**备注列**（提供上下文信息）
 - 工具间数据不共享状态，每次调用独立
-- 本地文件类工具需支持 `project_root` 参数，兼容多项目场景
+- repo 参数必须显式传 "owner/repo"，无默认值
