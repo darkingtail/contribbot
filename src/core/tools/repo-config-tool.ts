@@ -53,15 +53,40 @@ async function detectConfig(owner: string, name: string): Promise<RepoConfigData
 }
 
 /**
+ * If the given repo is a fork, resolve to its parent repo.
+ * This ensures data is always stored under the upstream/parent owner.
+ */
+async function resolveToParent(owner: string, name: string): Promise<{ owner: string, name: string, fork: string | null }> {
+  try {
+    const repo = await ghApi<{ fork: boolean, parent?: { full_name: string } }>(`/repos/${owner}/${name}`)
+    if (repo.fork && repo.parent?.full_name) {
+      const [parentOwner, parentName] = repo.parent.full_name.split('/')
+      if (parentOwner && parentName) {
+        return { owner: parentOwner, name: parentName, fork: `${owner}/${name}` }
+      }
+    }
+  }
+  catch { /* not a fork or API error */ }
+  return { owner, name, fork: null }
+}
+
+/**
  * Get or initialize repo config. Auto-detects on first access.
+ * If the repo is a fork, automatically resolves to parent repo.
  */
 export async function getOrInitConfig(repo?: string): Promise<{ config: RepoConfigData, owner: string, name: string }> {
-  const { owner, name } = parseRepo(repo)
+  const parsed = parseRepo(repo)
+  const resolved = await resolveToParent(parsed.owner, parsed.name)
+  const { owner, name } = resolved
   const configStore = new RepoConfig(getContribDir(owner, name))
 
   let config = configStore.load()
   if (!config) {
     config = await detectConfig(owner, name)
+    // If we resolved from a fork, record the fork field
+    if (resolved.fork) {
+      config.fork = resolved.fork
+    }
     configStore.save(config)
   }
 
@@ -72,7 +97,9 @@ export async function getOrInitConfig(repo?: string): Promise<{ config: RepoConf
  * View or update repo config.
  */
 export async function repoConfig(repo?: string, upstream?: string): Promise<string> {
-  const { owner, name } = parseRepo(repo)
+  const parsed = parseRepo(repo)
+  const resolved = await resolveToParent(parsed.owner, parsed.name)
+  const { owner, name } = resolved
   const configStore = new RepoConfig(getContribDir(owner, name))
 
   // If setting upstream, update and return
@@ -80,6 +107,7 @@ export async function repoConfig(repo?: string, upstream?: string): Promise<stri
     let config = configStore.load()
     if (!config) {
       config = await detectConfig(owner, name)
+      if (resolved.fork) config.fork = resolved.fork
     }
     config.upstream = upstream || null
     configStore.save(config)
@@ -92,6 +120,13 @@ export async function repoConfig(repo?: string, upstream?: string): Promise<stri
   const lines = [
     `## Config — ${owner}/${name}`,
     '',
+  ]
+
+  if (resolved.fork) {
+    lines.push(`> Resolved from fork \`${resolved.fork}\` → parent \`${owner}/${name}\``, '')
+  }
+
+  lines.push(
     '| Field | Value |',
     '|-------|-------|',
     `| role | \`${config.role}\` |`,
@@ -100,7 +135,7 @@ export async function repoConfig(repo?: string, upstream?: string): Promise<stri
     `| upstream | ${config.upstream ? `[${config.upstream}](https://github.com/${config.upstream})` : '—'} |`,
     '',
     `> Config path: \`~/.contribbot/${owner}/${name}/config.yaml\``,
-  ]
+  )
 
   return lines.join('\n')
 }
