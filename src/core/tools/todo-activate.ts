@@ -4,6 +4,7 @@ import { TodoStore } from '../storage/todo-store.js'
 import { RepoConfig } from '../storage/repo-config.js'
 import type { TodoDifficulty } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { difficultyLabel } from '../utils/format.js'
 
 function generateBranchName(todo: { ref: string | null; title: string; type: string }): string {
@@ -38,7 +39,7 @@ function generateBranchName(todo: { ref: string | null; title: string; type: str
 }
 
 export async function todoActivate(item: string, repo?: string): Promise<string> {
-  const { owner, name } = parseRepo(repo)
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)

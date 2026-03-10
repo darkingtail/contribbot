@@ -3,6 +3,7 @@ import { UpstreamStore } from '../storage/upstream-store.js'
 import { DAILY_COMMIT_ACTIONS, validateEnum } from '../enums.js'
 import type { DailyCommitAction } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 
 function parseCommitType(message: string): string {
   const firstLine = message.split('\n')[0] ?? ''
@@ -95,7 +96,7 @@ export async function upstreamDaily(
   sinceTag?: string,
 ): Promise<string> {
   const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = parseRepo(repo)
+  const { owner: tgtOwner, name: tgtName } = await resolveRepo(repo)
   const contribDir = getContribDir(tgtOwner, tgtName)
   const store = new UpstreamStore(contribDir)
 
@@ -308,15 +309,15 @@ export async function upstreamDaily(
   return lines.join('\n')
 }
 
-export function upstreamDailyAct(
+export async function upstreamDailyAct(
   upstreamRepo: string,
   sha: string,
   action: string,
   ref?: string,
   repo?: string,
-): string {
+): Promise<string> {
   const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = parseRepo(repo)
+  const { owner: tgtOwner, name: tgtName } = await resolveRepo(repo)
   const contribDir = getContribDir(tgtOwner, tgtName)
   const store = new UpstreamStore(contribDir)
 
@@ -342,12 +343,12 @@ export function upstreamDailyAct(
 /**
  * Batch skip all commits that are suggested as noise.
  */
-export function upstreamDailySkipNoise(
+export async function upstreamDailySkipNoise(
   upstreamRepo: string,
   repo?: string,
-): string {
+): Promise<string> {
   const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = parseRepo(repo)
+  const { owner: tgtOwner, name: tgtName } = await resolveRepo(repo)
   const contribDir = getContribDir(tgtOwner, tgtName)
   const store = new UpstreamStore(contribDir)
 

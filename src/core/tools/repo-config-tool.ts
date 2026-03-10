@@ -2,6 +2,7 @@ import { ghApi, getCurrentUser, parseRepo } from '../clients/github.js'
 import { RepoConfig } from '../storage/repo-config.js'
 import type { RepoConfigData, RepoRole } from '../storage/repo-config.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveToParent } from '../utils/resolve-repo.js'
 
 /**
  * Auto-detect repo config by querying GitHub API.
@@ -50,24 +51,6 @@ async function detectConfig(owner: string, name: string): Promise<RepoConfigData
   catch { /* no fork */ }
 
   return { role, org, fork, upstream: null }
-}
-
-/**
- * If the given repo is a fork, resolve to its parent repo.
- * This ensures data is always stored under the upstream/parent owner.
- */
-async function resolveToParent(owner: string, name: string): Promise<{ owner: string, name: string, fork: string | null }> {
-  try {
-    const repo = await ghApi<{ fork: boolean, parent?: { full_name: string } }>(`/repos/${owner}/${name}`)
-    if (repo.fork && repo.parent?.full_name) {
-      const [parentOwner, parentName] = repo.parent.full_name.split('/')
-      if (parentOwner && parentName) {
-        return { owner: parentOwner, name: parentName, fork: `${owner}/${name}` }
-      }
-    }
-  }
-  catch { /* not a fork or API error */ }
-  return { owner, name, fork: null }
 }
 
 /**

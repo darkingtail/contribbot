@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseRepo } from '../clients/github.js'
 import { getContribDir, validatePathSegment } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { parseFrontmatter } from '../utils/frontmatter.js'
 
 function getSkillsDir(owner: string, name: string): string {
@@ -12,8 +12,8 @@ function getSkillPath(owner: string, repo: string, skillName: string): string {
   return join(getSkillsDir(owner, repo), validatePathSegment(skillName), 'SKILL.md')
 }
 
-export function skillList(repo?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function skillList(repo?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const dir = getSkillsDir(owner, name)
 
   if (!existsSync(dir)) {
@@ -46,8 +46,8 @@ export function skillList(repo?: string): string {
   return lines.join('\n')
 }
 
-export function skillRead(skillName: string, repo?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function skillRead(skillName: string, repo?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const path = getSkillPath(owner, name, skillName)
 
   if (!existsSync(path)) {
@@ -57,8 +57,8 @@ export function skillRead(skillName: string, repo?: string): string {
   return readFileSync(path, 'utf-8')
 }
 
-export function skillWrite(skillName: string, content: string, repo?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function skillWrite(skillName: string, content: string, repo?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const path = getSkillPath(owner, name, skillName)
   const dir = join(getSkillsDir(owner, name), skillName)
 

@@ -1,9 +1,10 @@
 import { statSync } from 'node:fs'
-import { parseRepo, getPullReviews } from '../clients/github.js'
+import { getPullReviews } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
 import { RecordFiles } from '../storage/record-files.js'
 import type { TodoItem } from '../storage/todo-store.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { todayDate } from '../utils/format.js'
 
 function formatTodoBasicInfo(todo: TodoItem, owner: string, name: string): string {
@@ -38,7 +39,7 @@ function isCacheStale(filePath: string): boolean {
 }
 
 export async function todoDetail(item: string, repo?: string): Promise<string> {
-  const { owner, name } = parseRepo(repo)
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)

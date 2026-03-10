@@ -1,6 +1,7 @@
 import { parseRepo, createPull } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 
 export async function prCreate(
   title: string,
@@ -11,7 +12,7 @@ export async function prCreate(
   todoItem?: string,
   repo?: string,
 ): Promise<string> {
-  const { owner, name } = parseRepo(repo)
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
   const store = new TodoStore(contribDir)
 

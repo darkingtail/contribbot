@@ -1,8 +1,8 @@
-import { parseRepo } from '../clients/github.js'
 import { getIssue } from '../clients/github.js'
 import { TodoStore, refSortKey } from '../storage/todo-store.js'
 import type { TodoType } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { difficultyEmoji } from '../utils/format.js'
 import { detectTypeFromLabels } from '../utils/github-helpers.js'
 
@@ -20,8 +20,8 @@ function prLink(pr: number | null, owner: string, name: string): string {
   return `[#${pr}](https://github.com/${owner}/${name}/pull/${pr})`
 }
 
-export function todoList(repo?: string, status?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function todoList(repo?: string, status?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
   const allTodos = store.listSorted()
 
@@ -95,7 +95,7 @@ export function todoList(repo?: string, status?: string): string {
 }
 
 export async function todoAdd(text: string, ref?: string, repo?: string): Promise<string> {
-  const { owner, name } = parseRepo(repo)
+  const { owner, name } = await resolveRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
 
   let finalRef: string | null = null
@@ -165,8 +165,8 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
   return `Added todo: **${item.title}** (${item.type}${item.ref ? `, ref: ${item.ref}` : ''})`
 }
 
-export function todoDelete(indexOrText: string, repo?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function todoDelete(indexOrText: string, repo?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
 
   const resolved = store.resolveItem(indexOrText)
@@ -182,8 +182,8 @@ export function todoDelete(indexOrText: string, repo?: string): string {
   return `Deleted: ~~${deleted.title}~~${deleted.ref ? ` (${deleted.ref})` : ''}`
 }
 
-export function todoDone(indexOrText: string, repo?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function todoDone(indexOrText: string, repo?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
 
   const resolved = store.resolveItem(indexOrText)
@@ -199,8 +199,8 @@ export function todoDone(indexOrText: string, repo?: string): string {
   return `Done & archived: ~~${archived.title}~~${archived.ref ? ` (${archived.ref})` : ''}`
 }
 
-export function todoArchive(repo?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function todoArchive(repo?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
   const allTodos = store.list()
 

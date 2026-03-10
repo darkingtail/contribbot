@@ -38,6 +38,7 @@ export type { ProjectMode } from './core/storage/repo-config.js'
 
 // Utilities
 export { safeWriteFileSync } from './core/utils/fs.js'
+export { resolveRepo, resolveToParent } from './core/utils/resolve-repo.js'
 
 // MCP server factory
 export { createServer } from './mcp/server.js'

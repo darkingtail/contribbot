@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import {
   getContribDir,
 } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { markdownTable } from '../utils/format.js'
 import { getReleaseByTag, getLatestRelease, searchCommits, parseRepo } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
@@ -143,7 +144,7 @@ export async function upstreamSyncCheck(
   if (!upstreamRepo) return 'Error: upstream_repo is required. Pass "owner/name".'
   if (!targetRepo) return 'Error: target_repo is required. Pass "owner/name".'
   const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = parseRepo(targetRepo)
+  const { owner: tgtOwner, name: tgtName } = await resolveRepo(targetRepo)
 
   let release = null
 
@@ -223,9 +224,9 @@ export async function upstreamSyncCheck(
   return output
 }
 
-export function syncHistory(targetRepo?: string): string {
+export async function syncHistory(targetRepo?: string): Promise<string> {
   if (!targetRepo) return 'Error: repo is required. Pass "owner/name".'
-  const { owner: tgtOwner, name: tgtName } = parseRepo(targetRepo)
+  const { owner: tgtOwner, name: tgtName } = await resolveRepo(targetRepo)
   const dir = getSyncDir(tgtOwner, tgtName)
 
   if (!existsSync(dir)) {

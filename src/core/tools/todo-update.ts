@@ -1,18 +1,18 @@
 import { appendFileSync, existsSync } from 'node:fs'
-import { parseRepo } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
 import { RecordFiles } from '../storage/record-files.js'
 import { TODO_STATUSES, validateEnum } from '../enums.js'
 import type { TodoStatus } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { todayDate } from '../utils/format.js'
 
-export function todoUpdate(
+export async function todoUpdate(
   item: string,
   fields: { status?: string; pr?: number; branch?: string; note?: string },
   repo?: string,
-): string {
-  const { owner, name } = parseRepo(repo)
+): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)

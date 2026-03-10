@@ -4,6 +4,7 @@ import { RecordFiles } from '../storage/record-files.js'
 import { UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, validateEnum } from '../enums.js'
 import type { UpstreamItemStatus, TodoDifficulty } from '../enums.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { difficultyLabel } from '../utils/format.js'
 
 function statusIcon(s: string): string {
@@ -12,8 +13,8 @@ function statusIcon(s: string): string {
   return '⬜'
 }
 
-export function upstreamList(repo?: string, upstreamRepo?: string): string {
-  const { owner, name } = parseRepo(repo)
+export async function upstreamList(repo?: string, upstreamRepo?: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
   const store = new UpstreamStore(contribDir)
 
@@ -89,7 +90,7 @@ export async function upstreamDetail(
   version: string,
   repo?: string,
 ): Promise<string> {
-  const { owner, name } = parseRepo(repo)
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
 
   // Try reading record file first
@@ -129,14 +130,14 @@ export async function upstreamDetail(
   return lines.join('\n')
 }
 
-export function upstreamUpdate(
+export async function upstreamUpdate(
   upstreamRepo: string,
   version: string,
   itemIndex: number,
   fields: { status?: string; pr?: number; difficulty?: string },
   repo?: string,
-): string {
-  const { owner, name } = parseRepo(repo)
+): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
   const store = new UpstreamStore(contribDir)
 

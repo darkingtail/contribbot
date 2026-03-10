@@ -2,6 +2,7 @@ import { parseRepo, createIssue } from '../clients/github.js'
 import { TodoStore } from '../storage/todo-store.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
 import { getContribDir } from '../utils/config.js'
+import { resolveRepo } from '../utils/resolve-repo.js'
 import { detectTypeFromLabels } from '../utils/github-helpers.js'
 
 export async function issueCreate(
@@ -13,7 +14,7 @@ export async function issueCreate(
   autoTodo?: boolean,
   repo?: string,
 ): Promise<string> {
-  const { owner, name } = parseRepo(repo)
+  const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
 
   const labelList = labels ? labels.split(',').map(l => l.trim()).filter(Boolean) : undefined
