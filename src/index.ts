@@ -8,8 +8,6 @@ export {
 } from './core/enums.js'
 
 // Core tools - can be used programmatically without MCP
-export { componentTestCoverage } from './core/tools/component-test-coverage.js'
-export { vcDependencyStatus } from './core/tools/vc-dependency-status.js'
 export { issueDetail } from './core/tools/issue-detail.js'
 export { prSummary } from './core/tools/pr-summary.js'
 export { projectDashboard } from './core/tools/project-dashboard.js'
@@ -33,6 +31,10 @@ export { issueList, prList } from './core/tools/issue-list.js'
 export { repoConfig } from './core/tools/repo-config-tool.js'
 export { skillList, skillRead, skillWrite } from './core/tools/skills.js'
 export { listAllSkills, readSkill } from './core/tools/skill-resources.js'
+
+// Storage utilities
+export { inferMode } from './core/storage/repo-config.js'
+export type { ProjectMode } from './core/storage/repo-config.js'
 
 // Utilities
 export { safeWriteFileSync } from './core/utils/fs.js'

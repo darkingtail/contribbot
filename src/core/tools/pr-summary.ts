@@ -4,8 +4,8 @@ import { markdownTable, relativeTime } from '../utils/format.js'
 function groupFilesByComponent(files: { filename: string, status: string, additions: number, deletions: number }[]): Map<string, typeof files> {
   const groups = new Map<string, typeof files>()
   for (const file of files) {
-    // Extract component name from path like packages/antdv-next/src/{component}/...
-    const match = file.filename.match(/packages\/antdv-next\/src\/([^/]+)\//)
+    // Extract component name from path like packages/*/src/{component}/... or src/{component}/...
+    const match = file.filename.match(/(?:packages\/[^/]+\/)?src\/([^/]+)\//)
     const group = match?.[1] ?? '_other'
     if (!groups.has(group)) groups.set(group, [])
     groups.get(group)!.push(file)

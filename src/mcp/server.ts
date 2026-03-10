@@ -1,8 +1,6 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { TODO_STATUSES, UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, DAILY_COMMIT_ACTIONS } from '../core/enums.js'
-import { componentTestCoverage } from '../core/tools/component-test-coverage.js'
-import { vcDependencyStatus } from '../core/tools/vc-dependency-status.js'
 import { issueDetail } from '../core/tools/issue-detail.js'
 import { prSummary } from '../core/tools/pr-summary.js'
 import { projectDashboard } from '../core/tools/project-dashboard.js'
@@ -32,7 +30,7 @@ import { issueList, prList } from '../core/tools/issue-list.js'
 import { skillWrite } from '../core/tools/skills.js'
 import { listAllSkills, readSkill } from '../core/tools/skill-resources.js'
 
-const repoParam = z.string().optional().describe('GitHub repo "owner/name". Default: antdv-next/antdv-next')
+const repoParam = z.string().optional().describe('GitHub repo "owner/name"')
 
 function wrapHandler(fn: (args: Record<string, unknown>) => Promise<string> | string) {
   return async (args: Record<string, unknown>) => {
@@ -49,37 +47,43 @@ function wrapHandler(fn: (args: Record<string, unknown>) => Promise<string> | st
 const INSTRUCTIONS = `
 contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护。
 
+## 项目模式
+
+通过 repo_config 自动推断，决定可用工作流：
+
+- **own**（fork=无, upstream=无）：自己的项目，无需对齐上游
+- **fork**（fork=有, upstream=无）：有 fork 源仓库，同源对齐（cherry-pick）
+- **fork+upstream**（fork=有, upstream=有）：fork 同步 + 跨栈复刻追踪
+- **upstream**（fork=无, upstream=有）：非 fork 跨栈追踪
+
+首次进入项目时用 repo_config 查看模式。upstream_daily 和 upstream_sync_check 同时支持 fork source 和外部 upstream 追踪。
+
 ## 工具组合逻辑
 
-工具围绕贡献工作流设计，不是孤立使用的：
-
-1. **同步 fork**：sync_fork → 开始工作前先同步上游
-2. **建立上下文**：project_dashboard → 了解项目全貌（issues/PRs/commits/release）
-3. **确认任务**：todo_list → 本地待办
-4. **任务管理**：todo_add → 添加待办；todo_activate → 激活并创建实施记录；todo_detail → 查看实施详情；todo_update → 更新状态/关联PR/添加笔记；todo_done → 完成待办；todo_delete → 永久删除；todo_archive → 归档所有已完成
-5. **深入调查**：issue_detail / pr_summary / discussion_detail → 具体问题的完整上下文
-6. **同步上游**：upstream_sync_check → 对比上游 release 变更同步状态；sync_history → 历史记录
-7. **上游版本管理**：upstream_list → 版本同步总览；upstream_detail → 版本详情；upstream_update → 更新同步条目
-8. **上游每日追踪**：upstream_daily → 抓取上游最新提交并去重；upstream_daily_act → 标记提交动作（skip/todo/issue/pr）；upstream_daily_skip_noise → 批量跳过噪音
-9. **质量保障**：actions_status → CI 状态；security_overview → 安全告警；component_test_coverage → 测试覆盖
-10. **依赖管理**：vc_dependency_status → @v-c/* 包版本对比
-11. **记录沉淀**：skill_write → 沉淀可复用经验；skills 以 MCP Resource 暴露（skill://{repo}/{name}），连接时自动可见
-12. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply → 完整读写闭环
-13. **全局视图**：project_list → 跨项目概况；repo_config → 仓库配置
-14. **贡献统计**：contribution_stats → 个人贡献节奏
-15. **搜索**：issue_list / pr_list → 按状态/标签/关键词搜索
+1. **同步 fork**：sync_fork → 开始工作前同步上游（fork/fork+upstream 模式）
+2. **建立上下文**：project_dashboard → 项目全貌
+3. **任务管理**：todo_add → todo_activate → todo_detail → todo_update → todo_done → todo_archive
+4. **深入调查**：issue_detail / pr_summary / discussion_detail
+5. **上游追踪**：upstream_daily → 抓取上游提交；upstream_daily_act → 标记动作；upstream_daily_skip_noise → 跳过噪音
+6. **版本同步**：upstream_sync_check → 对比 release 同步状态；upstream_list → 总览；upstream_detail → 详情
+7. **质量保障**：actions_status → CI；security_overview → 安全告警
+8. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply
+9. **记录沉淀**：skill_write → 可复用经验（Resource: skill://{repo}/{name}）
+10. **全局视图**：project_list → 跨项目概况；repo_config → 仓库配置
+11. **贡献统计**：contribution_stats → 个人贡献节奏
+12. **搜索**：issue_list / pr_list → 按状态/标签/关键词搜索
 
 ## Agent 行为规则
 
-- 创建 PR 后，如果有对应的 active todo，自动调 todo_update 关联
-- 创建 issue 后，如果来自 upstream daily，自动调 upstream_daily_act 关联
-- 关闭 issue 时，如果有对应的 todo，自动标记 done
-- 回复 review 前，先用 pr_review_comments 获取评论列表
+- 首次进入项目：repo_config 查看模式，决定可用工作流
+- 创建 PR 后：如有 active todo，自动 todo_update 关联
+- 创建 issue 后：如来自 upstream daily，自动 upstream_daily_act 关联
+- 关闭 issue 时：如有对应 todo，自动标记 done
+- 回复 review 前：先用 pr_review_comments 获取评论列表
 
 ## 注意事项
 
-- 大多数工具的 repo 参数默认 antdv-next/antdv-next，跨项目时需显式传 "owner/repo"
-- vc_dependency_status 和 component_test_coverage 作为全局 MCP 运行时，需要传 project_root 参数
+- 所有工具的 repo 参数必须显式传 "owner/repo"，无默认值
 - 所有输出为 markdown 格式，表格类输出带备注列提供上下文
 `.trim()
 
@@ -110,7 +114,7 @@ export function createServer(): McpServer {
     'View or update repo config (role, org, fork, upstream). Auto-detects on first access.',
     {
       repo: repoParam,
-      upstream: z.string().optional().describe('Set upstream repo, e.g. "ant-design/ant-design"'),
+      upstream: z.string().optional().describe('Set upstream repo, e.g. "upstream-org/upstream-repo"'),
     },
     wrapHandler(async ({ repo, upstream }) => repoConfig(repo as string | undefined, upstream as string | undefined)),
   )
@@ -302,7 +306,7 @@ export function createServer(): McpServer {
       body: z.string().optional().describe('Issue body (markdown)'),
       labels: z.string().optional().describe('Comma-separated labels, e.g. "bug,sync"'),
       upstream_sha: z.string().optional().describe('Upstream daily commit SHA to link'),
-      upstream_repo: z.string().optional().describe('Upstream repo for the commit, e.g. "ant-design/ant-design"'),
+      upstream_repo: z.string().optional().describe('Upstream repo for the commit, e.g. "upstream-org/upstream-repo"'),
       auto_todo: z.boolean().optional().describe('Auto-create a todo for this issue (default: true)'),
       repo: repoParam,
     },
@@ -423,11 +427,11 @@ export function createServer(): McpServer {
 
   server.tool(
     'upstream_sync_check',
-    'Compare upstream release changelog with fork sync status. Groups by feat/fix. Can save record per version.',
+    'Compare upstream release changelog (fork source or external upstream) with target repo sync status. Groups by feat/fix.',
     {
       version: z.string().optional().describe('Release version, e.g. "5.24.0". Omit to check the latest release.'),
-      upstream_repo: z.string().optional().describe('Upstream repo, e.g. "makeplane/plane". Default: ant-design/ant-design'),
-      target_repo: z.string().optional().describe('Your fork, e.g. "darkingtail/plane". Default: antdv-next/antdv-next'),
+      upstream_repo: z.string().describe('Upstream repo, e.g. "makeplane/plane"'),
+      target_repo: z.string().describe('Your fork, e.g. "darkingtail/plane"'),
       target_branch: z.string().optional().describe('Branch in target repo to check sync status against, e.g. "feature/dev". Omit to search all branches.'),
       save: z.boolean().optional().describe('Save the result to ~/.contribbot/{target}/sync/{version}.md for historical tracking'),
     },
@@ -452,7 +456,7 @@ export function createServer(): McpServer {
     'List upstream sync status: versions + daily commits summary',
     {
       repo: repoParam,
-      upstream_repo: z.string().optional().describe('Filter by upstream repo, e.g. "ant-design/ant-design"'),
+      upstream_repo: z.string().optional().describe('Filter by upstream repo, e.g. "upstream-org/upstream-repo"'),
     },
     wrapHandler(({ repo, upstream_repo }) => upstreamList(repo as string | undefined, upstream_repo as string | undefined)),
   )
@@ -461,7 +465,7 @@ export function createServer(): McpServer {
     'upstream_detail',
     'View upstream version sync details or implementation record',
     {
-      upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
+      upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
       version: z.string().describe('Release version, e.g. "6.3.1"'),
       repo: repoParam,
     },
@@ -493,9 +497,9 @@ export function createServer(): McpServer {
 
   server.tool(
     'upstream_daily',
-    'Fetch upstream commits since last tracked version. First run: shows releases to pick baseline.',
+    'Fetch commits from upstream repo (fork source or external upstream) since last tracked version. First run: shows releases to pick baseline.',
     {
-      upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
+      upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
       since_tag: z.string().optional().describe('Baseline version tag for first-time init, e.g. "5.20.0"'),
       repo: repoParam,
     },
@@ -521,41 +525,12 @@ export function createServer(): McpServer {
 
   server.tool(
     'upstream_daily_skip_noise',
-    'Batch skip all noise commits (CI, deps, build, React-only, sponsor, etc.)',
+    'Batch skip all noise commits (CI, deps, build, etc.)',
     {
-      upstream_repo: z.string().describe('Upstream repo, e.g. "ant-design/ant-design"'),
+      upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
       repo: repoParam,
     },
     wrapHandler(({ upstream_repo, repo }) => upstreamDailySkipNoise(upstream_repo as string, repo as string | undefined)),
-  )
-
-  server.tool(
-    'vc_dependency_status',
-    'Check @v-c/* dependency updates vs npm latest',
-    {
-      component: z.string().optional().describe('Filter by name, e.g. "select"'),
-      project_root: z.string().optional().describe('Absolute path to project root. Required when running as global MCP server.'),
-    },
-    wrapHandler(async ({ component, project_root }) =>
-      vcDependencyStatus(component as string | undefined, project_root as string | undefined),
-    ),
-  )
-
-  server.tool(
-    'component_test_coverage',
-    'Scan component test coverage: unit / semantic / demo tests per component',
-    {
-      component: z.string().optional().describe('Component name, e.g. "button". Omit for all.'),
-      project_root: z.string().optional().describe('Absolute path to project root. Omit to auto-detect.'),
-      components_dir: z.string().optional().describe('Absolute or relative-to-root path to components directory. Default: packages/antdv-next/src. For ant-design use: components'),
-      tests_subdir: z.string().optional().describe('Name of tests subdirectory inside each component. Default: tests. For ant-design use: __tests__'),
-    },
-    wrapHandler(async ({ component, project_root, components_dir, tests_subdir }) =>
-      componentTestCoverage(
-        component as string | undefined, project_root as string | undefined,
-        components_dir as string | undefined, tests_subdir as string | undefined,
-      ),
-    ),
   )
 
   server.tool(
@@ -628,7 +603,7 @@ export function createServer(): McpServer {
 
   server.registerPrompt('daily-sync', {
     title: 'Daily Upstream Sync',
-    description: 'Workflow: sync fork, fetch upstream commits, skip noise, triage remaining',
+    description: 'Workflow: check project mode, sync fork, fetch upstream commits, skip noise, triage remaining',
     argsSchema: { repo: repoParam },
   }, ({ repo }) => ({
     messages: [{
@@ -636,15 +611,18 @@ export function createServer(): McpServer {
       content: {
         type: 'text',
         text: [
-          `Execute the daily upstream sync workflow for ${repo ?? 'default repo'}:`,
+          `Execute the daily upstream sync workflow for ${repo ?? 'the project'}:`,
           '',
-          '1. `sync_fork` — sync fork to upstream latest',
-          '2. `upstream_daily` — fetch new commits since last tracked version',
-          '3. `upstream_daily_skip_noise` — batch skip CI/deps/build noise',
-          '4. Review remaining pending commits and suggest actions',
-          '5. For relevant commits: create issues or link to existing ones via `upstream_daily_act`',
+          '1. `repo_config` — check project mode (own/fork/fork+upstream/upstream)',
+          '2. If fork exists: `sync_fork` — sync fork to upstream latest',
+          '3. For each tracking source (fork source and/or external upstream):',
+          '   - `upstream_daily` — fetch new commits since last tracked version',
+          '   - `upstream_daily_skip_noise` — batch skip CI/deps/build noise',
+          '   - Review remaining pending commits and suggest actions',
+          '   - For relevant commits: create issues or link to existing ones via `upstream_daily_act`',
+          '4. If mode is "own": skip upstream tracking, just show project_dashboard',
           '',
-          'Show a summary when done: how many new, skipped, linked, and still pending.',
+          'Show a summary when done: mode, how many new, skipped, linked, and still pending per tracking source.',
         ].join('\n'),
       },
     }],

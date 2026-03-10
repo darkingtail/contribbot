@@ -13,6 +13,17 @@ export interface RepoConfigData {
   upstream: string | null
 }
 
+export type ProjectMode = 'own' | 'fork' | 'upstream' | 'fork+upstream'
+
+export function inferMode(config: RepoConfigData): ProjectMode {
+  const hasFork = config.fork !== null
+  const hasUpstream = config.upstream !== null
+  if (hasFork && hasUpstream) return 'fork+upstream'
+  if (hasFork) return 'fork'
+  if (hasUpstream) return 'upstream'
+  return 'own'
+}
+
 export class RepoConfig {
   private configPath: string
 
