@@ -8,13 +8,13 @@ contribbot 支持三种项目模式（由 config.yaml 的 fork + upstream 字段
 |------|----------|------|---------|
 | 有 | 有 | fork+upstream | fork 同步 + 跨栈复刻 |
 | 有 | 无 | fork | 同源对齐，选择性 cherry-pick |
-| 无 | 无 | own | 不需要对齐 |
+| 无 | 无 | none | 无上游对齐关系 |
 
 完整 6 种场景（fork × upstream × 二开分支）：
 
 | # | fork | upstream | 二开 | 场景 | 例子 |
 |---|------|----------|------|------|------|
-| 1 | 无 | 无 | 无 | own | contribbot |
+| 1 | 无 | 无 | 无 | none | contribbot |
 | 2 | 有 | 无 | 无 | 纯 fork 贡献 | fork React 修 bug |
 | 3 | 有 | 无 | 有 | fork + 二开 | plane / feature/dev |
 | 4 | 有 | 有 | 无 | fork + 跨栈复刻 | antdv-next 对齐 ant-design |

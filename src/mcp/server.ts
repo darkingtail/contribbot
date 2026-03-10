@@ -51,7 +51,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 
 通过 repo_config 自动推断，决定可用工作流：
 
-- **own**（fork=无, upstream=无）：自己的项目，无需对齐上游
+- **none**（fork=无, upstream=无）：无上游对齐关系
 - **fork**（fork=有, upstream=无）：有 fork 源仓库，同源对齐（cherry-pick）
 - **fork+upstream**（fork=有, upstream=有）：fork 同步 + 跨栈复刻追踪
 - **upstream**（fork=无, upstream=有）：非 fork 跨栈追踪
@@ -253,7 +253,7 @@ export function createServer(): McpServer {
 
   server.tool(
     'issue_detail',
-    'Issue details: title, labels, linked PRs, antd references, comments summary',
+    'Issue details: title, labels, linked PRs, upstream references, comments summary',
     {
       issue_number: z.number().describe('GitHub issue number'),
       repo: repoParam,
@@ -431,14 +431,14 @@ export function createServer(): McpServer {
     {
       version: z.string().optional().describe('Release version, e.g. "5.24.0". Omit to check the latest release.'),
       upstream_repo: z.string().describe('Upstream repo, e.g. "makeplane/plane"'),
-      target_repo: z.string().describe('Your fork, e.g. "darkingtail/plane"'),
+      repo: z.string().describe('Your repo (fork or target), e.g. "darkingtail/plane"'),
       target_branch: z.string().optional().describe('Branch in target repo to check sync status against, e.g. "feature/dev". Omit to search all branches.'),
       save: z.boolean().optional().describe('Save the result to ~/.contribbot/{target}/sync/{version}.md for historical tracking'),
     },
-    wrapHandler(async ({ version, upstream_repo, target_repo, target_branch, save }) =>
+    wrapHandler(async ({ version, upstream_repo, repo, target_branch, save }) =>
       upstreamSyncCheck(
         version as string | undefined, upstream_repo as string | undefined,
-        target_repo as string | undefined, (save as boolean | undefined) ?? false,
+        repo as string | undefined, (save as boolean | undefined) ?? false,
         target_branch as string | undefined,
       ),
     ),
@@ -613,14 +613,14 @@ export function createServer(): McpServer {
         text: [
           `Execute the daily upstream sync workflow for ${repo ?? 'the project'}:`,
           '',
-          '1. `repo_config` — check project mode (own/fork/fork+upstream/upstream)',
+          '1. `repo_config` — check project mode (none/fork/fork+upstream/upstream)',
           '2. If fork exists: `sync_fork` — sync fork to upstream latest',
           '3. For each tracking source (fork source and/or external upstream):',
           '   - `upstream_daily` — fetch new commits since last tracked version',
           '   - `upstream_daily_skip_noise` — batch skip CI/deps/build noise',
           '   - Review remaining pending commits and suggest actions',
           '   - For relevant commits: create issues or link to existing ones via `upstream_daily_act`',
-          '4. If mode is "own": skip upstream tracking, just show project_dashboard',
+          '4. If mode is "none": skip upstream tracking, just show project_dashboard',
           '',
           'Show a summary when done: mode, how many new, skipped, linked, and still pending per tracking source.',
         ].join('\n'),

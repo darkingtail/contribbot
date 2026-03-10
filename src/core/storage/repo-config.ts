@@ -13,7 +13,11 @@ export interface RepoConfigData {
   upstream: string | null
 }
 
-export type ProjectMode = 'own' | 'fork' | 'upstream' | 'fork+upstream'
+/**
+ * ProjectMode — 项目的上下游对齐关系，和 role（权限）正交。
+ * 由 config.yaml 的 fork + upstream 字段自动推断。
+ */
+export type ProjectMode = 'none' | 'fork' | 'upstream' | 'fork+upstream'
 
 export function inferMode(config: RepoConfigData): ProjectMode {
   const hasFork = config.fork !== null
@@ -21,7 +25,7 @@ export function inferMode(config: RepoConfigData): ProjectMode {
   if (hasFork && hasUpstream) return 'fork+upstream'
   if (hasFork) return 'fork'
   if (hasUpstream) return 'upstream'
-  return 'own'
+  return 'none'
 }
 
 export class RepoConfig {

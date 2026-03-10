@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { inferMode } from './repo-config.js'
 
 describe('inferMode', () => {
-  it('returns "own" when no fork and no upstream', () => {
-    expect(inferMode({ role: 'admin', org: null, fork: null, upstream: null })).toBe('own')
+  it('returns "none" when no fork and no upstream', () => {
+    expect(inferMode({ role: 'admin', org: null, fork: null, upstream: null })).toBe('none')
   })
 
   it('returns "fork" when fork exists but no upstream', () => {

@@ -4,7 +4,7 @@
 
 | # | fork | upstream | 二开 | 场景 | 例子 |
 |---|------|----------|------|------|------|
-| 1 | 无 | 无 | 无 | **own** — 自己的项目 | contribbot |
+| 1 | 无 | 无 | 无 | **none** — 自己的项目 | contribbot |
 | 2 | 有 | 无 | 无 | **纯 fork 贡献** — 修 bug 提 PR，不消费 | fork React 修个 issue |
 | 3 | 有 | 无 | 有 | **fork + 二开** — 下游消费者 | plane / feature/dev |
 | 4 | 有 | 有 | 无 | **fork + 跨栈复刻** — 贡献 + 对齐另一个上游 | antdv-next 对齐 ant-design |
@@ -24,7 +24,7 @@
 | 有 | 有 | fork+upstream |
 | 有 | 无 | fork |
 | 无 | 有 | upstream |
-| 无 | 无 | own |
+| 无 | 无 | none |
 
 二开分支不存在 config 中，是用户的 git 分支策略，contribbot 不管。
 

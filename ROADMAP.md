@@ -1,32 +1,30 @@
 # Roadmap
 
-contribbot — 通用开源贡献助手。核心逻辑写一次，多种接口包装。
+contribbot — 开源协作助手。三层演进：Tools → Skills → Agents。
 
 ```
-contribbot
-├── core/          ← 纯函数，无 IO 框架依赖
-├── mcp/           ← Phase 1: MCP Server (stdio)   ✅
-├── api/           ← Phase 2: REST API (HTTP)       🔲
-└── agent/         ← Phase 3: Agent SDK             🔲
+Phase 1: Tools（原子操作）        ✅ 已完成
+Phase 2: Skills（工具编排模板）    🔲
+Phase 3: Agents（自主决策）        🔲
 ```
 
 ---
 
-## Phase 1: MCP Server ✅
+## Phase 1: Tools ✅
 
-作为全局 MCP Server 寄宿于 Claude Code / Gemini CLI / OpenCode 等宿主。
+作为全局 MCP Server 寄宿于 Claude Code / Gemini CLI / OpenCode 等宿主。38 个原子工具。
 
 ### 已完成
 
 | 能力 | 数量 | 说明 |
 |------|------|------|
-| Tools | 35 | 项目概览、todo 管理、issues/PRs 读写、上游追踪、质量检查、贡献统计 |
+| Tools | 38 | 项目概览、todo 管理、issues/PRs 读写、上游追踪、质量检查、贡献统计 |
 | Resources | 1 | `skill://{repo}/{name}` — skills 知识库自动枚举 |
 | Prompts | 4 | daily-sync、start-task、pre-submit、weekly-review |
 
 ### 关键特性
 
-- **多模式支持**: own / fork / upstream / fork+upstream，自动推断
+- **多模式支持**: none / fork / upstream / fork+upstream，自动推断
 - **统一追踪**: fork source 和外部 upstream 共用 upstream.yaml，无硬编码默认值
 - **读写闭环**: issue/PR 创建、关闭、评论、review 回复
 - **Todo 生命周期**: idea → backlog → active(自动建分支) → pr_submitted → done(自动归档)
@@ -36,15 +34,27 @@ contribbot
 
 ---
 
-## Phase 2: REST API ⏸️
+## Phase 2: Skills 🔲
 
-暂缓。Agent 直接调 core 函数，不需要 HTTP 中间层。需要时再补。
+工具往上抽象为可执行的工作流模板。Skills 是 Tools 和 Agent 之间的桥梁。
+
+### 目标
+
+- 把当前 4 个 Prompts 升级为可执行 workflow（带条件分支、循环、状态）
+- Skills 可组合、可复用、可共享
+- 用户可自定义 workflow（不止预设的 4 个）
+
+### 前置条件
+
+- Phase 1 完备 ✅
+- Skill 执行引擎设计
+- Workflow DSL 或等价方案
 
 ---
 
-## Phase 3: Agent SDK 🔲
+## Phase 3: Agents 🔲
 
-用 Claude Agent SDK 包装，内置 LLM 推理，可自主执行多步任务。Agent 直接调用 core 层函数。
+独立运行的开源协作 Agent，内置 LLM 推理，自主调用 Skills 执行多步任务。
 
 ### 目标能力
 
@@ -53,11 +63,19 @@ contribbot
 - 智能分类: 自动评估 issue 难度、分配优先级
 - PR 辅助: 根据 review comments 自动建议修改方案
 - 项目接入: 新项目一键 onboard（自动检测 fork/upstream、初始化配置、引导锚点选择）
+- Git 管理: cherry-pick、merge、branch 操作（Phase 1 不做的部分）
+
+### 部署形态
+
+- 独立部署运行（Docker）
+- 聊天入口（飞书/Telegram/Discord）
+- 定时巡检（cron）
+- 记忆系统（跨 session 项目上下文）
 
 ### 前置条件
 
-- core 层已完备 ✅
-- Claude Agent SDK 成熟度
+- Phase 2 Skills 完备
+- Agent SDK 成熟度
 - 安全边界设计（哪些操作需要人类确认）
 
 ---

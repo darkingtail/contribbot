@@ -1,6 +1,6 @@
 # contribbot
 
-个人开源贡献助手，作为全局 MCP Server 运行。支持三种项目模式：own（自有项目）、fork（同源对齐）、fork+upstream（fork + 跨栈复刻）。
+开源协作助手，作为全局 MCP Server 运行。支持四种项目模式（ProjectMode，描述上下游对齐关系）：none（无上游对齐）、fork（同源对齐）、upstream（跨栈追踪）、fork+upstream（fork + 跨栈复刻）。
 
 ## 项目结构
 
@@ -19,6 +19,9 @@ src/
 │   └── utils/
 │       ├── config.ts          # 项目路径工具
 │       ├── format.ts          # markdown table 等输出格式化
+│       ├── frontmatter.ts     # YAML frontmatter 解析
+│       ├── fs.ts              # 安全文件写入（safeWriteFileSync）
+│       ├── resolve-repo.ts    # fork → parent 解析（resolveRepo / resolveToParent）
 │       └── github-helpers.ts  # GitHub 相关工具函数
 ├── mcp/
 │   ├── index.ts               # MCP Server 入口（stdio）
@@ -42,11 +45,11 @@ pnpm build        # tsdown 构建
 | 有 | 有 | fork+upstream | fork 同步 + 跨栈复刻追踪 |
 | 有 | 无 | fork | 同源对齐，选择性 cherry-pick |
 | 无 | 有 | upstream | 非 fork 跨栈追踪 |
-| 无 | 无 | own | 不需要对齐 |
+| 无 | 无 | none | 无上游对齐关系 |
 
 upstream_daily 和 upstream_sync_check 同时支持 fork source 和外部 upstream 追踪，共用 upstream.yaml。
 
-## 工具清单（35 Tools + 1 Resource + 4 Prompts）
+## 工具清单（38 Tools + 1 Resource + 4 Prompts）
 
 ### 项目概览
 
@@ -142,6 +145,7 @@ upstream_daily 和 upstream_sync_check 同时支持 fork source 和外部 upstre
 ├── upstream/                           # 上游实现记录
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
+├── archive.yaml                        # 已完成 todos 归档
 ├── skills/                             # 可复用经验
 └── sync/                               # 同步记录
 ```

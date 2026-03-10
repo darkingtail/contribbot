@@ -77,8 +77,8 @@ import { describe, it, expect } from 'vitest'
 import { inferMode } from './repo-config.js'
 
 describe('inferMode', () => {
-  it('returns "own" when no fork and no upstream', () => {
-    expect(inferMode({ role: 'admin', org: null, fork: null, upstream: null })).toBe('own')
+  it('returns "none" when no fork and no upstream', () => {
+    expect(inferMode({ role: 'admin', org: null, fork: null, upstream: null })).toBe('none')
   })
 
   it('returns "fork" when fork exists but no upstream', () => {
@@ -108,7 +108,7 @@ Expected: FAIL — inferMode 不存在
 在 `src/core/storage/repo-config.ts` 中添加：
 
 ```typescript
-export type ProjectMode = 'own' | 'fork' | 'upstream' | 'fork+upstream'
+export type ProjectMode = 'none' | 'fork' | 'upstream' | 'fork+upstream'
 
 export function inferMode(config: RepoConfigData): ProjectMode {
   const hasFork = config.fork !== null
@@ -116,7 +116,7 @@ export function inferMode(config: RepoConfigData): ProjectMode {
   if (hasFork && hasUpstream) return 'fork+upstream'
   if (hasFork) return 'fork'
   if (hasUpstream) return 'upstream'
-  return 'own'
+  return 'none'
 }
 ```
 
@@ -238,7 +238,7 @@ git commit -m "docs: update upstream tool descriptions for fork+upstream clarity
 **Step 1: 更新工具组合逻辑**
 
 在 INSTRUCTIONS 中补充：
-- 说明三种项目模式（own / fork / fork+upstream）
+- 说明四种项目模式（none / fork / upstream / fork+upstream）
 - 说明 `upstream_daily` 既可用于跨栈追踪也可用于 fork source 追踪
 - 添加 Agent 行为规则：首次进入项目时用 `repo_config` 查看模式，决定可用工作流
 
@@ -293,7 +293,7 @@ git commit -m "docs: sync CLAUDE.md and ROADMAP.md with unified tracking"
 
 当前 daily-sync 假设 fork + upstream 都存在。需要根据模式调整工作流：
 
-- **own**: 无 daily-sync 需要
+- **none**: 无 daily-sync 需要
 - **fork**: sync_fork → upstream_daily(fork source) → skip noise → triage
 - **fork+upstream**: sync_fork → upstream_daily(fork source) + upstream_daily(upstream) → skip noise → triage
 

@@ -245,6 +245,12 @@ export async function listReleases(
   return (await ghApi<GitHubRelease[] | null>(`/repos/${owner}/${repo}/releases`, { per_page: perPage })) ?? []
 }
 
+export async function listTags(
+  owner: string, repo: string, perPage = 20,
+): Promise<Array<{ name: string }>> {
+  return (await ghApi<Array<{ name: string }> | null>(`/repos/${owner}/${repo}/tags`, { per_page: perPage })) ?? []
+}
+
 export async function getIssue(owner: string, repo: string, issueNumber: number): Promise<GitHubIssue> {
   return ghApi<GitHubIssue>(`/repos/${owner}/${repo}/issues/${issueNumber}`)
 }

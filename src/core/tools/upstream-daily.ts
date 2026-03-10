@@ -1,4 +1,4 @@
-import { parseRepo, getCompareCommits, listReleases, searchIssues } from '../clients/github.js'
+import { parseRepo, getCompareCommits, listReleases, listTags, searchIssues } from '../clients/github.js'
 import { UpstreamStore } from '../storage/upstream-store.js'
 import { DAILY_COMMIT_ACTIONS, validateEnum } from '../enums.js'
 import type { DailyCommitAction } from '../enums.js'
@@ -103,11 +103,35 @@ export async function upstreamDaily(
   const upstreamRepoKey = `${upOwner}/${upName}`
   let anchorTag = store.getLatestVersionTag(upstreamRepoKey)
 
-  // ── State 1: No anchor, no sinceTag — show releases for selection ──
+  // ── State 1: No anchor, no sinceTag — show releases/tags for selection ──
   if (!anchorTag && !sinceTag) {
     const releases = await listReleases(upOwner, upName)
+
+    // Fallback to tags if no releases found
     if (releases.length === 0) {
-      throw new Error(`No releases found for ${upOwner}/${upName}`)
+      const tags = await listTags(upOwner, upName)
+      if (tags.length === 0) {
+        throw new Error(`No releases or tags found for ${upOwner}/${upName}`)
+      }
+
+      const lines: string[] = [
+        `## Initialize Sync Anchor`,
+        '',
+        `No releases for ${upOwner}/${upName}. Showing tags instead:`,
+        '',
+        '| # | Tag |',
+        '|---|-----|',
+      ]
+
+      tags.forEach((tag, i) => {
+        lines.push(`| ${i + 1} | ${tag.name} |`)
+      })
+
+      lines.push('')
+      lines.push('Select your current aligned version:')
+      lines.push(`\`upstream_daily(upstream_repo="${upOwner}/${upName}", since_tag="${tags[0]?.name ?? ''}")\``)
+
+      return lines.join('\n')
     }
 
     const lines: string[] = [
@@ -131,32 +155,29 @@ export async function upstreamDaily(
     return lines.join('\n')
   }
 
-  // ── State 2: No anchor, with sinceTag — initialize from releases ──
+  // ── State 2: No anchor, with sinceTag — initialize from releases or raw tag ──
   if (!anchorTag && sinceTag) {
     const releases = await listReleases(upOwner, upName, 100)
-
-    // Find sinceTag in releases (flexible v-prefix matching)
     const sinceTagNormalized = sinceTag.replace(/^v/, '')
+
     const sinceIndex = releases.findIndex((r) => {
       const tagNormalized = r.tag_name.replace(/^v/, '')
       return tagNormalized === sinceTagNormalized
     })
 
-    if (sinceIndex === -1) {
-      throw new Error(`Tag ${sinceTag} not found in releases for ${upOwner}/${upName}`)
+    if (sinceIndex !== -1) {
+      // Found in releases — record newer releases as versions
+      const newerReleases = releases.slice(0, sinceIndex)
+      for (const release of [...newerReleases].reverse()) {
+        const version = release.tag_name.replace(/^v/, '')
+        store.addVersion(upstreamRepoKey, version, [])
+      }
+      if (newerReleases.length === 0) {
+        store.addVersion(upstreamRepoKey, sinceTagNormalized, [])
+      }
     }
-
-    // Releases are returned newest-first; those AFTER sinceTag are indices 0..sinceIndex-1
-    const newerReleases = releases.slice(0, sinceIndex)
-
-    // Record newer releases (oldest first so the last added becomes the anchor)
-    for (const release of [...newerReleases].reverse()) {
-      const version = release.tag_name.replace(/^v/, '')
-      store.addVersion(upstreamRepoKey, version, [])
-    }
-
-    // If no newer releases, record the sinceTag itself as the anchor
-    if (newerReleases.length === 0) {
+    else {
+      // Not found in releases — treat sinceTag as a raw tag/commit anchor
       store.addVersion(upstreamRepoKey, sinceTagNormalized, [])
     }
 
