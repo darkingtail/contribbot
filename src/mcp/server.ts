@@ -599,5 +599,127 @@ export function createServer(): McpServer {
     wrapHandler(({ name, content, repo }) => skillWrite(name as string, content as string, repo as string | undefined)),
   )
 
+  // ── MCP Prompts (enhanced versions of Skills, using MCP tools) ──
+
+  server.registerPrompt('daily-sync', {
+    title: 'Daily Upstream Sync',
+    description: 'Enhanced workflow: check project mode, sync fork, fetch upstream commits, skip noise, triage remaining',
+    argsSchema: { repo: repoParam },
+  }, ({ repo }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          `Execute the daily upstream sync workflow for ${repo ?? 'the project'}:`,
+          '',
+          '1. `repo_config` — check project mode (none/fork/fork+upstream/upstream)',
+          '2. If fork exists: `sync_fork` — sync fork to upstream latest',
+          '3. For each tracking source (fork source and/or external upstream):',
+          '   - `upstream_daily` — fetch new commits since last tracked version',
+          '   - `upstream_daily_skip_noise` — batch skip CI/deps/build noise',
+          '   - Review remaining pending commits and suggest actions',
+          '   - For relevant commits: create issues or link to existing ones via `upstream_daily_act`',
+          '4. If mode is "none": skip upstream tracking, show project_dashboard + issue_list + actions_status + security_overview',
+          '',
+          'Show a summary when done: mode, how many new, skipped, linked, and still pending per tracking source.',
+        ].join('\n'),
+      },
+    }],
+  }))
+
+  server.registerPrompt('start-task', {
+    title: 'Start Task',
+    description: 'Enhanced workflow: enter project context, pick a todo, activate it, review details',
+    argsSchema: {
+      repo: repoParam,
+      item: z.string().optional().describe('Todo item to activate (index or text match)'),
+    },
+  }, ({ repo, item }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          `Start a task in ${repo ?? 'default repo'}:`,
+          '',
+          '1. `repo_config` — check project mode, if fork suggest sync_fork first',
+          '2. `project_dashboard` — understand project state (issues, PRs, recent activity)',
+          '3. `todo_list` — review current todos',
+          item
+            ? `4. \`todo_activate(item="${item}")\` — activate the specified todo`
+            : '4. Help me pick a todo to work on based on priority and difficulty',
+          '5. `todo_detail` — review implementation record and context',
+          '6. Summarize: what the task is, related issues/discussions, suggested approach',
+        ].join('\n'),
+      },
+    }],
+  }))
+
+  server.registerPrompt('pre-submit', {
+    title: 'Pre-Submit Check',
+    description: 'Enhanced workflow: review PR changes, check CI, review comments, security alerts, prepare for merge',
+    argsSchema: {
+      repo: repoParam,
+      pr: z.string().describe('PR number to review'),
+    },
+  }, ({ repo, pr }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          `Pre-submit check for PR #${pr} in ${repo ?? 'default repo'}:`,
+          '',
+          '1. `pr_summary` — review PR changes and description',
+          '2. `pr_review_comments` — check all review comments, ensure none unresolved',
+          '3. `actions_status` — verify CI is passing',
+          '4. `security_overview` — check for security alerts',
+          '5. If review comments need replies, use `pr_review_reply`',
+          '6. If PR has linked todo, `todo_update` to set status=pr_submitted',
+          '7. Report: CI status, unresolved comments, security alerts, merge readiness',
+        ].join('\n'),
+      },
+    }],
+  }))
+
+  server.registerPrompt('weekly-review', {
+    title: 'Weekly Review',
+    description: 'Enhanced workflow: review contribution stats, todo progress, upstream sync status, archive done todos',
+    argsSchema: {
+      repo: z.string().optional().describe('Specific repo to review, or omit for cross-project overview'),
+    },
+  }, ({ repo }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: [
+          repo
+            ? `Weekly review for ${repo}:`
+            : 'Cross-project weekly review:',
+          '',
+          repo
+            ? [
+                '1. `contribution_stats` — PR/issue/review counts this week',
+                '2. `todo_list` — which todos progressed, which are stuck',
+                '3. `upstream_list` — upstream sync coverage (skip for none mode)',
+                '4. `todo_archive` — clean up completed todos',
+                '5. Summary: wins, blockers, focus for next week',
+              ].join('\n')
+            : [
+                '1. `project_list` — overview all tracked projects',
+                '2. For each active project:',
+                '   - `contribution_stats` — this week\'s activity',
+                '   - `todo_list` — stuck items',
+                '   - `upstream_list` — sync gaps',
+                '3. `todo_archive` — clean up completed todos across projects',
+                '4. Cross-project summary: total output, blockers, priorities for next week',
+              ].join('\n'),
+        ].join('\n'),
+      },
+    }],
+  }))
+
   return server
 }
