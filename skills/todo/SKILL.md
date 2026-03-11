@@ -1,15 +1,15 @@
 ---
 name: contribbot:todo
-description: "Todo 日常管理：查看、添加、更新、完成、删除 todo。触发词：'todo'、'任务列表'、'添加任务'、'完成任务'。"
+description: "Todo 全生命周期管理：查看、添加、详情、更新、完成、删除、归档。触发词：'todo'、'任务列表'、'添加任务'、'完成任务'、'归档'。"
 metadata:
   author: darkingtail
-  version: "1.0.0"
+  version: "1.1.0"
   argument-hint: <owner/repo> [action] [args...]
 ---
 
 # Todo — 任务日常管理
 
-查看、添加、更新、完成、删除 todo。覆盖 todo 全生命周期的日常操作。
+查看、添加、详情、更新、完成、删除、归档 todo。覆盖 todo 全生命周期。
 
 数据格式参考：`references/data-format.md`
 
@@ -26,9 +26,11 @@ metadata:
 |------|------|------|
 | 查看任务 | list | "看看任务"、"todo" |
 | 添加任务 | add | "加个任务"、"新建 todo" |
+| 查看详情 | detail | "看看 281 的详情"、"实现记录" |
 | 更新任务 | update | "更新任务"、"关联 PR" |
 | 完成任务 | done | "完成了"、"搞定了" |
 | 删除任务 | delete | "删掉这个"、"不做了" |
+| 归档 | archive | "归档"、"清理已完成" |
 
 ---
 
@@ -118,6 +120,41 @@ todos:
 
 ---
 
+## detail — 查看实现记录
+
+### 参数
+
+- `ref`（必须）：todo 的 ref。
+
+### 步骤
+
+1. 读取 todos.yaml，找到匹配 ref 的条目。
+2. 读取实现记录文件 `~/.contribbot/{owner}/{repo}/todos/{ref}.md`。如不存在，提示无记录。
+3. 如果 todo 有关联 PR，自动刷新 review 状态：
+```bash
+gh pr view {pr} -R {owner}/{repo} --json reviews,comments,state,mergeable
+```
+
+### 输出
+
+```
+## Detail — {owner}/{repo} #{ref}
+
+**{title}** ({type}, {status})
+难度: {difficulty} | PR: #{pr} | 分支: {branch}
+
+### 实现记录
+{记录文件内容}
+
+### PR Review 状态（如有 PR）
+- Reviews: {approved/changes_requested/pending}
+- 未解决评论: {count}
+- CI: {status}
+- Mergeable: {yes/no}
+```
+
+---
+
 ## update — 更新任务
 
 ### 参数
@@ -197,4 +234,44 @@ gh issue close {ref} -R {owner}/{repo}
 ## Deleted — {owner}/{repo}
 
 ✗ #{ref} {title} 已删除
+```
+
+---
+
+## archive — 归档已完成
+
+将所有 status=done 的 todo 从 todos.yaml 移动到 archive.yaml。
+
+### 步骤
+
+1. 读取 `~/.contribbot/{owner}/{repo}/todos.yaml`，筛选 status=done 的条目。
+2. 如无已完成条目，提示 `没有可归档的 todo。`
+3. 读取 `~/.contribbot/{owner}/{repo}/archive.yaml`（不存在则创建）。
+4. 将 done 条目追加到 archive.yaml 的 `archived` 数组，添加 `archived_at: "{today}"`。
+5. 从 todos.yaml 中移除这些条目，写回。
+
+### archive.yaml 格式
+
+```yaml
+archived:
+  - ref: "250"
+    title: "旧 bug"
+    type: bug
+    status: done
+    pr: 260
+    created: "2026-02-01"
+    updated: "2026-02-15"
+    archived_at: "2026-03-11"
+```
+
+### 输出
+
+```
+## Archived — {owner}/{repo}
+
+归档 {n} 条已完成 todo：
+- #{ref1} {title1}
+- #{ref2} {title2}
+
+当前剩余 {m} 条 todo。
 ```
