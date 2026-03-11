@@ -1,0 +1,17 @@
+{
+  "name": "contribbot-local",
+  "description": "Open source collaboration assistant — skills + MCP tools",
+  "owner": {
+    "name": "darkingtail"
+  },
+  "plugins": [
+    {
+      "name": "contribbot",
+      "description": "Open source collaboration skills: daily sync, task management, upstream triage, project onboarding",
+      "author": {
+        "name": "darkingtail"
+      },
+      "source": "./"
+    }
+  ]
+}

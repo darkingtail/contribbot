@@ -1,0 +1,6 @@
+{
+  "contribbot": {
+    "command": "npx",
+    "args": ["-y", "contribbot"]
+  }
+}
