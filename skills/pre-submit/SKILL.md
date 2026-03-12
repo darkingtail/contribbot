@@ -3,65 +3,53 @@ name: contribbot:pre-submit
 description: "提交前检查：审查 PR 变更、CI 状态、review 评论、安全告警，确认合并就绪。触发词：'pre-submit'、'提交检查'、'合并前检查'。"
 metadata:
   author: darkingtail
-  version: "2.0.0"
+  version: "3.0.0"
   argument-hint: <owner/repo> <pr_number>
 ---
 
 # Pre-Submit — 提交前检查
 
-PR 合并前的全面检查清单。
-
-数据格式参考：`references/data-format.md`
+通过 MCP 工具对 PR 做合并前全面检查。
 
 ## 前置
 
 - 用户提供 `repo`（owner/repo 格式）和 `pr`（PR 编号）。如未提供，询问。
-- 需要 `gh` CLI 已认证。
 
 ## 步骤
 
 ### 1. PR 概览
 
-```bash
-gh pr view {pr} -R {owner}/{repo} --json number,title,body,files,additions,deletions,state,isDraft
-```
+调用 `pr_summary`，参数：`repo`、`pr_number`。
 
 确认 PR 描述清晰、变更范围合理。
 
 ### 2. Review 评论检查
 
-```bash
-gh api repos/{owner}/{repo}/pulls/{pr}/reviews --jq '.[] | {user: .user.login, state: .state, body: .body}'
-gh api repos/{owner}/{repo}/pulls/{pr}/comments --jq '.[] | {id: .id, user: .user.login, body: .body, path: .path, line: .line}'
-```
+调用 `pr_review_comments`，参数：`repo`、`pr_number`。
 
 逐条检查：
 - 是否有未回复的评论
 - 是否有 CHANGES_REQUESTED 未解决
-- 如需回复：
-  ```bash
-  gh api repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies -f body="..."
-  ```
+- 如需回复：调用 `pr_review_reply`（repo、pr_number、comment_id、body）
 
 ### 3. CI 状态
 
-```bash
-gh pr checks {pr} -R {owner}/{repo}
-```
+调用 `actions_status`，参数：`repo`。
 
 确认所有 required checks 通过。
 
 ### 4. 安全检查
 
-```bash
-gh api repos/{owner}/{repo}/dependabot/alerts --jq '[.[] | select(.state=="open")] | length'
-```
+调用 `security_overview`，参数：`repo`。
 
 确认无 critical/high 级别未处理告警。
 
-### 5. Todo 关联（如有）
+### 5. Todo 关联
 
-读取 `~/.contribbot/{owner}/{repo}/todos.yaml`，查找关联该 PR 的 todo。如有，更新 status 为 `pr_submitted`、设置 pr 字段、更新日期，写回文件。
+调用 `todo_list`，参数：`repo`。
+
+查找关联该 PR 的 todo，如有且 status 未更新：
+→ 调用 `todo_update`（repo、item、status=pr_submitted、pr={pr_number}）
 
 ### 6. 输出报告
 

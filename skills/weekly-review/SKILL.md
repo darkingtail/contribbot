@@ -3,25 +3,25 @@ name: contribbot:weekly-review
 description: "周回顾：贡献统计、todo 进展、上游同步覆盖率、归档已完成项。支持单项目和跨项目模式。触发词：'weekly review'、'周回顾'、'本周总结'。"
 metadata:
   author: darkingtail
-  version: "2.0.0"
+  version: "3.0.0"
   argument-hint: "[owner/repo]"
 ---
 
 # Weekly Review — 周回顾
 
-回顾本周工作进展，按项目模式差异化总结。
-
-数据格式参考：`references/data-format.md`
+通过 MCP 工具回顾本周工作进展。
 
 ## 前置
 
 - 用户提供 `repo` 则为单项目回顾
-- 未提供则为跨项目回顾（扫描 `~/.contribbot/` 下所有项目）
-- 需要 `gh` CLI 已认证。
+- 未提供则为跨项目回顾
 
 ## 跨项目模式
 
-扫描 `~/.contribbot/` 下所有 `{owner}/{repo}/config.yaml`，对每个项目执行精简版单项目回顾，汇总输出。
+1. 调用 `project_list` — 所有已跟踪项目概况
+2. 调用 `contribution_stats`（repo="all"）— 跨项目贡献统计
+3. 对每个活跃项目执行精简版单项目检查
+4. 汇总输出
 
 ---
 
@@ -29,47 +29,31 @@ metadata:
 
 ### 1. 贡献统计
 
-```bash
-# 本周 PRs
-gh pr list -R {owner}/{repo} --state all --json number,title,state,createdAt,mergedAt --limit 50
-# 筛选本周创建或合并的
-
-# 本周 Issues
-gh issue list -R {owner}/{repo} --state all --json number,title,state,createdAt,closedAt --limit 50
-# 筛选本周创建或关闭的
-```
+调用 `contribution_stats`，参数：`repo`、`days=7`。
 
 ### 2. Todo 进展
 
-读取 `~/.contribbot/{owner}/{repo}/todos.yaml`：
+调用 `todo_list`，参数：`repo`。
 
-- **完成**：status = done，且 updated 在本周
-- **推进中**：status = active 或 pr_submitted，且 updated 在本周
-- **卡住**：status = active 但 updated 不在本周
+分析：
+- **完成**：status = done
+- **推进中**：status = active 或 pr_submitted
+- **卡住**：status = active 但长时间未更新
 
-### 3. 上游同步状态（fork/upstream/fork+upstream 模式）
+### 3. 上游同步状态
 
-读取 `~/.contribbot/{owner}/{repo}/upstream.yaml`：
+调用 `upstream_list`，参数：`repo`。
 
-- 统计 daily commits 中各 action 的数量
-- 计算 versions 中的同步覆盖率（synced / total items）
+统计：
+- daily commits 各 action 数量
+- versions 同步覆盖率
 - pending 数量
 
-对 none 模式跳过此步。
+（none 模式跳过此步）
 
 ### 4. 归档
 
-在 todos.yaml 中找 status = done 的 todos，移到 `archive.yaml`，从 todos.yaml 删除。
-
-archive.yaml 格式：
-```yaml
-todos:
-  - ref: "281"
-    title: "修复 XXX"
-    # ... 所有原字段
-    status: done
-    archived: "2026-03-11"
-```
+调用 `todo_archive`，参数：`repo`。
 
 ### 5. 输出报告
 

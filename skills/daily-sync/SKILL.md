@@ -3,116 +3,71 @@ name: contribbot:daily-sync
 description: "每日上游同步工作流。按项目模式自动分流：none 走维护日常，fork/upstream 走上游追踪。触发词：'daily sync'、'每日同步'、'日常巡检'。"
 metadata:
   author: darkingtail
-  version: "2.0.0"
+  version: "3.0.0"
   argument-hint: <owner/repo>
 ---
 
 # Daily Sync — 每日上游同步
 
-按项目模式（ProjectMode）自动分流的每日工作流。
-
-数据格式参考：`references/data-format.md`
+通过 MCP 工具按项目模式自动分流的每日工作流。
 
 ## 前置
 
 - 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
-- 需要 `gh` CLI 已认证。
 
 ## 步骤
 
 ### 1. 检查项目模式
 
-读取 `~/.contribbot/{owner}/{repo}/config.yaml`，根据 fork 和 upstream 字段判断模式：
+调用 `repo_config`（repo）获取 config。
 
-| fork | upstream | 模式 |
-|------|----------|------|
-| 有值 | 有值 | fork+upstream |
-| 有值 | null | fork |
-| null | 有值 | upstream |
-| null | null | none |
+根据 fork 和 upstream 字段判断模式：
+- fork + upstream → fork+upstream
+- fork only → fork
+- upstream only → upstream
+- neither → none
 
-如果 config.yaml 不存在，提示用户先用 `contribbot:project-onboard` 初始化项目。
+如果未初始化，提示用户先用 `contribbot:project-onboard`。
 
 ---
 
-### 分支 A: none 模式（无上游对齐）
+### 分支 A: none 模式
 
-无上游可追踪，执行维护日常：
-
-1. **查看 open issues**：
-   ```bash
-   gh issue list -R {owner}/{repo} --state open --json number,title,labels,createdAt --limit 20
-   ```
-
-2. **查看 open PRs**：
-   ```bash
-   gh pr list -R {owner}/{repo} --state open --json number,title,state,createdAt --limit 10
-   ```
-
-3. **CI 状态**：
-   ```bash
-   gh run list -R {owner}/{repo} --limit 5 --json status,conclusion,name,headBranch
-   ```
-
-4. **安全告警**：
-   ```bash
-   gh api repos/{owner}/{repo}/dependabot/alerts --jq '[.[] | select(.state=="open")] | length'
-   ```
+并行调用：
+- `project_dashboard`（repo）— issues/PRs/commits 概况
+- `actions_status`（repo）— CI 状态
+- `security_overview`（repo）— 安全告警
 
 输出摘要：Open issues / Open PRs / CI 状态 / 安全告警数。
 
 ---
 
-### 分支 B: fork 模式（同源对齐）
+### 分支 B: fork 模式
 
-1. **同步 fork**：
-   ```bash
-   gh repo sync {owner}/{repo}
-   ```
+1. **同步 fork**：调用 `sync_fork`（repo）
 
-2. **读取追踪状态**：读取 `~/.contribbot/{owner}/{repo}/upstream.yaml`，找到 fork source 的 daily 数据。
+2. **拉取新 commits**：调用 `upstream_daily`（repo、upstream_repo={fork_source}）
+   - 首次会引导选择锚点版本
+   - 后续增量拉取
 
-3. **拉取新 commits**：
-   - 从 config.yaml 获取 fork source repo
-   - 如果 upstream.yaml 中该 source 无 sinceTag（首次），列出 releases/tags 供用户选择锚点：
-     ```bash
-     gh release list -R {fork_source} --limit 10 --json tagName,publishedAt
-     ```
-     如无 releases，用 tags：
-     ```bash
-     gh api repos/{fork_source}/tags --jq '.[].name' | head -10
-     ```
-   - 有锚点后，拉取增量 commits：
-     ```bash
-     gh api "repos/{fork_source}/compare/{sinceTag}...HEAD" --jq '.commits[] | {sha: .sha[0:7], message: .commit.message, author: .commit.author.name, date: .commit.author.date}'
-     ```
-   - 将新 commits 写入 upstream.yaml 的 daily 区域（action: pending）
+3. **跳噪音**：调用 `upstream_daily_skip_noise`（repo、upstream_repo={fork_source}）
 
-4. **跳噪音**：扫描 pending commits，匹配噪音模式（ci:/build:/chore(deps):/style:/Merge/bump version），将 action 设为 skip。更新 upstream.yaml。
-
-5. **审阅剩余 pending commits**：展示给用户，建议动作：
-   - `skip` — 无关
-   - `todo` — 记到本地 todo
-   - `issue` — 创建 tracking issue
-   - 根据用户决策更新 upstream.yaml 中对应 commit 的 action 和 ref 字段
-
-输出摘要：新增 / 跳过 / 已关联 / 待处理 数量。
+4. **审阅 pending commits**：展示剩余 pending，逐条让用户决策：
+   - `skip` — 调用 `upstream_daily_act`（action=skip）
+   - `todo` — 调用 `upstream_daily_act`（action=todo）
+   - `issue` — 调用 `upstream_daily_act`（action=issue）
 
 ---
 
-### 分支 C: upstream 模式（跨栈追踪）
+### 分支 C: upstream 模式
 
-与分支 B 类似，但追踪源是 config.yaml 中的 upstream 字段（外部仓库）。
+与分支 B 类似，追踪源改为 config 中的 upstream 字段。
 
 额外评估维度：
-- 这个变更在目标技术栈有意义吗？
-- 实现难度？（需要从零重写 vs 简单适配）
+- 变更在目标技术栈是否有意义
+- 实现难度（从零重写 vs 简单适配）
 
-可选：对比 release 级同步状态：
-```bash
-gh release list -R {upstream_repo} --limit 5 --json tagName,publishedAt
-```
-与 upstream.yaml 中的 versions 对比，计算覆盖率。
+可选：调用 `upstream_sync_check`（repo、upstream_repo）— 版本级同步状态对比。
 
 ---
 
