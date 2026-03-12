@@ -33,8 +33,7 @@ contribbot/
 │       ├── package.json              # contribbot-mcp
 │       ├── tsconfig.json
 │       └── tsdown.config.ts
-├── skills/                           # 10 standalone skills（Claude Code Plugin）
-│   ├── references/data-format.md     # 共享数据格式
+├── skills/                           # 10 skills — MCP 工具编排层
 │   ├── daily-sync/SKILL.md
 │   ├── start-task/SKILL.md
 │   ├── pre-submit/SKILL.md

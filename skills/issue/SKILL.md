@@ -3,7 +3,7 @@ name: contribbot:issue
 description: "Issue 管理：浏览、查看详情、创建、关闭、评论。触发词：'issue'、'问题列表'、'创建 issue'、'关闭 issue'。"
 metadata:
   author: darkingtail
-  version: "2.0.0"
+  version: "3.0.0"
   argument-hint: <owner/repo> [action] [args...]
 ---
 
@@ -56,8 +56,8 @@ metadata:
 - `upstream_sha`（可选）：关联的 upstream commit SHA
 - `upstream_repo`（可选）：upstream commit 来源
 
-创建后如有 `auto_todo`，工具会自动在 todos.yaml 中添加条目。
-如有 `upstream_sha`，工具会自动更新 upstream.yaml 中对应 commit 的 action。
+创建后如有 `auto_todo`，工具会自动创建对应 todo。
+如有 `upstream_sha`，工具会自动更新对应 upstream commit 状态。
 
 ---
 

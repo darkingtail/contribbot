@@ -3,7 +3,7 @@ name: contribbot:todo
 description: "Todo 全生命周期管理：查看、添加、详情、更新、完成、删除、归档。触发词：'todo'、'任务列表'、'添加任务'、'完成任务'、'归档'。"
 metadata:
   author: darkingtail
-  version: "2.0.0"
+  version: "3.0.0"
   argument-hint: <owner/repo> [action] [args...]
 ---
 

@@ -3,7 +3,7 @@ name: contribbot:pr
 description: "PR 管理：浏览、摘要、创建、更新、查看 review 评论、回复 review。触发词：'pr'、'pull request'、'创建 PR'、'回复 review'。"
 metadata:
   author: darkingtail
-  version: "2.0.0"
+  version: "3.0.0"
   argument-hint: <owner/repo> [action] [args...]
 ---
 

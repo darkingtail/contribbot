@@ -3,7 +3,7 @@ name: contribbot:dashboard
 description: "项目仪表盘：查看单项目全貌或跨项目概况。触发词：'dashboard'、'项目概况'、'全局视图'。"
 metadata:
   author: darkingtail
-  version: "2.0.0"
+  version: "3.0.0"
   argument-hint: "[owner/repo]"
 ---
 

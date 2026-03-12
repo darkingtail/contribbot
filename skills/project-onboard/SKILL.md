@@ -29,7 +29,7 @@ contribbot 以**上游仓库（parent）为主 repo** 存储数据。`repo_confi
 - 检测 fork 关系（解析到 parent）
 - 检测权限（role）
 - 检测组织（org）
-- 创建 config.yaml
+- 初始化项目配置
 
 ### 2. 确定上游追踪
 
