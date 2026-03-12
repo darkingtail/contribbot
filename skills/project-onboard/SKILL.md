@@ -18,50 +18,79 @@ metadata:
 - 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
 - 需要 `gh` CLI 已认证。
 
+## 核心概念：主 repo 解析
+
+contribbot 以**上游仓库（parent）为主 repo** 存储数据。如果用户提供的是 fork 仓库，需要先解析到 parent：
+
+- 用户输入 `darkingtail/plane` → 检测到是 fork → parent 是 `makeplane/plane`
+- 数据存储路径：`~/.contribbot/makeplane/plane/`
+- config.yaml 中 `fork: darkingtail/plane`
+
 ## 步骤
 
-### 1. 检测项目信息
+### 1. 检测项目信息 + Fork 解析
 
 ```bash
-gh api repos/{owner}/{repo} --jq '{name: .name, full_name: .full_name, fork: .fork, parent: .parent.full_name, description: .description, language: .language}'
+gh api repos/{owner}/{repo} --jq '{name: .name, full_name: .full_name, fork: .fork, parent: .parent.full_name, description: .description, language: .language, permissions: .permissions}'
 ```
 
-自动检测：
-- 是否是 fork（`fork: true`，`parent` 有值）
-- 组织信息（owner 部分）
+**如果是 fork**（`fork: true`）：
+- 自动解析到 parent 仓库作为主 repo
+- 记录用户的 fork 仓库名（`{original_owner}/{repo}`）
+- 后续所有操作和存储以 parent 为准
 
-### 2. 确定上游关系
-
-根据检测结果引导：
-
-**如果是 fork**：
-- fork source 自动识别（parent 字段）
-- 询问：是否还有跨栈追踪的外部 upstream？
-  - 有 → fork+upstream 模式，让用户提供 upstream repo
-  - 无 → fork 模式
+```
+用户输入: darkingtail/plane (fork)
+  → 主 repo: makeplane/plane (parent)
+  → fork 字段: darkingtail/plane
+```
 
 **如果不是 fork**：
-- 询问：是否需要追踪某个外部仓库的变更？
-  - 有 → upstream 模式，让用户提供 upstream repo
-  - 无 → none 模式
+- 直接使用输入的 repo 作为主 repo
+- 检查当前用户是否有该仓库的同名 fork：
+```bash
+gh api repos/{current_user}/{repo_name} --jq '{fork: .fork, parent: .parent.full_name}' 2>/dev/null
+```
+如果有 fork 且 parent 指向主 repo，记录 fork 字段。
 
-### 3. 确认角色
+### 2. 检测角色和组织
 
-询问用户在该项目的 GitHub 权限等级：admin / maintain / write / triage / read
+从步骤 1 的 API 返回中直接提取，**不要询问用户**：
+
+**角色**（从 permissions 对象）：
+- `permissions.admin` → admin
+- `permissions.maintain` → maintain
+- `permissions.push` → write
+- `permissions.triage` → triage
+- 否则 → read
+
+**组织**：
+```bash
+gh api users/{main_repo_owner} --jq '.type'
+```
+如果 type 是 `Organization`，记录 org 字段。
+
+### 3. 确定上游追踪
+
+询问：是否需要追踪某个**外部仓库**的变更？（跨栈复刻，非 fork source）
+- 有 → 让用户提供 upstream repo
+- 无 → upstream 为 null
+
+注意：fork source 不算 upstream。upstream 专指跨栈追踪的外部仓库（如 ant-design/ant-design 之于 antdv-next/antdv-style）。
 
 ### 4. 初始化配置
 
-创建目录和 config.yaml：
+创建目录和 config.yaml（使用**主 repo**路径）：
 
 ```bash
-mkdir -p ~/.contribbot/{owner}/{repo}
+mkdir -p ~/.contribbot/{main_owner}/{main_repo}
 ```
 
-写入 `~/.contribbot/{owner}/{repo}/config.yaml`：
+写入 `~/.contribbot/{main_owner}/{main_repo}/config.yaml`：
 ```yaml
 role: {role}
 org: {org 或 null}
-fork: {fork_source 或 null}
+fork: {user_fork 或 null}
 upstream: {upstream_repo 或 null}
 ```
 
@@ -69,9 +98,9 @@ upstream: {upstream_repo 或 null}
 
 ### 5. 首次上游拉取（fork/upstream/fork+upstream 模式）
 
-**如果是 fork 模式**：
+**如果有 fork**（同步 fork 到上游最新）：
 ```bash
-gh repo sync {owner}/{repo}
+gh repo sync {fork_repo}
 ```
 
 **如果有上游追踪**（fork source 或 external upstream）：
