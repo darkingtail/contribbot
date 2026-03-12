@@ -1,39 +1,62 @@
 # contribbot
 
-开源协作助手，作为全局 MCP Server 运行。支持四种项目模式（ProjectMode，描述上下游对齐关系）：none（无上游对齐）、fork（同源对齐）、upstream（跨栈追踪）、fork+upstream（fork + 跨栈复刻）。
+开源协作助手。Monorepo 结构：Skills（Claude Code Plugin）+ MCP Server。支持四种项目模式（ProjectMode）：none / fork / upstream / fork+upstream。
 
 ## 项目结构
 
 ```
-src/
-├── core/
-│   ├── clients/
-│   │   └── github.ts          # GitHub API 封装（支持 gh CLI / GITHUB_TOKEN）
-│   ├── storage/               # 数据存储层（YAML 持久化）
-│   │   ├── todo-store.ts      # TodoStore — todos.yaml 读写
-│   │   ├── upstream-store.ts  # UpstreamStore — upstream.yaml 读写
-│   │   ├── repo-config.ts     # RepoConfig — config.yaml + inferMode
-│   │   └── record-files.ts    # RecordFiles — 实现记录文件管理
-│   ├── enums.ts               # 统一枚举定义（as const 模式）
-│   ├── tools/                 # 所有工具实现（纯函数）
-│   └── utils/
-│       ├── config.ts          # 项目路径工具
-│       ├── format.ts          # markdown table 等输出格式化
-│       ├── frontmatter.ts     # YAML frontmatter 解析
-│       ├── fs.ts              # 安全文件写入（safeWriteFileSync）
-│       ├── resolve-repo.ts    # fork → parent 解析（resolveRepo / resolveToParent）
-│       └── github-helpers.ts  # GitHub 相关工具函数
-├── mcp/
-│   ├── index.ts               # MCP Server 入口（stdio）
-│   └── server.ts              # 注册所有工具
-└── index.ts                   # 统一导出
+contribbot/
+├── packages/
+│   └── mcp/                          # contribbot-mcp（npm 包）
+│       ├── src/
+│       │   ├── core/
+│       │   │   ├── clients/
+│       │   │   │   └── github.ts     # GitHub API 封装（gh CLI / GITHUB_TOKEN）
+│       │   │   ├── storage/          # YAML 持久化
+│       │   │   │   ├── todo-store.ts
+│       │   │   │   ├── upstream-store.ts
+│       │   │   │   ├── repo-config.ts
+│       │   │   │   └── record-files.ts
+│       │   │   ├── enums.ts          # 统一枚举（as const）
+│       │   │   ├── tools/            # 所有工具实现（纯函数）
+│       │   │   └── utils/
+│       │   │       ├── config.ts     # 项目路径
+│       │   │       ├── format.ts     # markdown 格式化
+│       │   │       ├── frontmatter.ts
+│       │   │       ├── fs.ts         # 安全文件写入
+│       │   │       ├── resolve-repo.ts
+│       │   │       └── github-helpers.ts
+│       │   ├── mcp/
+│       │   │   ├── index.ts          # MCP Server 入口（stdio）
+│       │   │   └── server.ts         # 注册 38 tools + 1 resource + 4 prompts
+│       │   └── index.ts              # 统一导出
+│       ├── package.json              # contribbot-mcp
+│       ├── tsconfig.json
+│       └── tsdown.config.ts
+├── skills/                           # 10 standalone skills（Claude Code Plugin）
+│   ├── references/data-format.md     # 共享数据格式
+│   ├── daily-sync/SKILL.md
+│   ├── start-task/SKILL.md
+│   ├── pre-submit/SKILL.md
+│   ├── weekly-review/SKILL.md
+│   ├── project-onboard/SKILL.md
+│   ├── fork-triage/SKILL.md
+│   ├── todo/SKILL.md
+│   ├── issue/SKILL.md
+│   ├── pr/SKILL.md
+│   └── dashboard/SKILL.md
+├── .claude-plugin/                   # Plugin 元数据
+├── .mcp.json                         # MCP Server 注册（npx contribbot-mcp）
+├── pnpm-workspace.yaml
+└── package.json                      # monorepo root
 ```
 
 ## 开发
 
 ```bash
-pnpm dev          # tsx 直接运行 MCP Server（用于调试）
-pnpm build        # tsdown 构建
+pnpm build        # 构建所有子包
+pnpm dev          # tsx 直接运行 MCP Server（调试）
+pnpm test         # 运行所有测试
 ```
 
 ## 项目模式
@@ -47,9 +70,7 @@ pnpm build        # tsdown 构建
 | 无 | 有 | upstream | 非 fork 跨栈追踪 |
 | 无 | 无 | none | 无上游对齐关系 |
 
-upstream_daily 和 upstream_sync_check 同时支持 fork source 和外部 upstream 追踪，共用 upstream.yaml。
-
-## 工具清单（38 Tools + 1 Resource + 4 Prompts）
+## MCP 工具清单（38 Tools + 1 Resource + 4 Prompts）
 
 ### 项目概览
 

@@ -1,0 +1,39 @@
+{
+  "name": "contribbot-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "contribbot MCP Server — 38 tools for open source collaboration",
+  "license": "MIT",
+  "bin": {
+    "contribbot-mcp": "./dist/mcp/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsx src/mcp/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ofetch": "^1.4.1",
+    "yaml": "^2.8.2",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "tsdown": "0.20.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

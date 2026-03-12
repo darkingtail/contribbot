@@ -1,6 +1,6 @@
 {
   "contribbot": {
     "command": "npx",
-    "args": ["-y", "contribbot"]
+    "args": ["-y", "contribbot-mcp"]
   }
 }

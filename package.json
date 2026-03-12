@@ -1,39 +1,12 @@
 {
   "name": "contribbot",
   "version": "0.1.0",
-  "type": "module",
-  "description": "Contributor agent - MCP Server for open source project maintenance",
+  "private": true,
+  "description": "Open source collaboration assistant — skills + MCP tools",
   "license": "MIT",
-  "bin": {
-    "contribbot": "./dist/mcp/index.js"
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
-    "build": "tsdown",
-    "dev": "tsx src/mcp/index.ts",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "ofetch": "^1.4.1",
-    "yaml": "^2.8.2",
-    "zod": "^3.25.67"
-  },
-  "devDependencies": {
-    "@types/node": "^25.3.0",
-    "tsdown": "0.20.1",
-    "tsx": "^4.21.0",
-    "typescript": "~5.9.3",
-    "vitest": "^4.0.18"
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter contribbot-mcp dev",
+    "test": "pnpm -r test"
   }
 }
