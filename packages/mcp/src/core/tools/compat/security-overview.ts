@@ -1,5 +1,5 @@
-import { ghApi, parseRepo } from '../clients/github.js'
-import { markdownTable } from '../utils/format.js'
+import { ghApi, parseRepo } from '../../clients/github.js'
+import { markdownTable } from '../../utils/format.js'
 
 interface DependabotAlert {
   number: number

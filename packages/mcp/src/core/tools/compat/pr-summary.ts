@@ -1,5 +1,5 @@
-import { getPull, getPullChecks, getPullFiles, getPullReviews, parseRepo } from '../clients/github.js'
-import { markdownTable, relativeTime } from '../utils/format.js'
+import { getPull, getPullChecks, getPullFiles, getPullReviews, parseRepo } from '../../clients/github.js'
+import { markdownTable, relativeTime } from '../../utils/format.js'
 
 function groupFilesByComponent(files: { filename: string, status: string, additions: number, deletions: number }[]): Map<string, typeof files> {
   const groups = new Map<string, typeof files>()

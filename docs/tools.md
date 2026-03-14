@@ -1,6 +1,6 @@
 # contribbot 工具集合
 
-> 38 Tools + 1 Resource + 4 Prompts
+> 39 Tools + 1 Resource + 4 Prompts
 
 ---
 
@@ -24,7 +24,7 @@
 
 ---
 
-## Todo 管理（8 Tools）
+## Todo 管理（9 Tools）
 
 本地 YAML 结构化任务管理，生命周期：idea → backlog → active → pr_submitted → done → archive
 
@@ -32,7 +32,8 @@
 |------|------|------|
 | `todo_list` | 查看 todos，按 ref# 排序，分 Active/Backlog&Ideas/Done 三组 | `repo`, `status?` |
 | `todo_add` | 添加 todo，`ref` 参数可自动从 issue labels 识别类型 | `text`, `ref?`, `repo` |
-| `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、创建实现记录文件 | `item`, `repo` |
+| `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、记录分支名 | `item`, `branch?`, `repo` |
+| `todo_claim` | 领取 issue 工作项：评论到 GitHub + 本地记录，自动升 active | `item`, `items[]`, `repo` |
 | `todo_detail` | 查看实现记录，自动刷新 PR reviews（5 分钟缓存） | `item`, `repo` |
 | `todo_update` | 更新状态 / 关联 PR / 关联分支 / 追加笔记 | `item`, `status?`, `pr?`, `branch?`, `note?`, `repo` |
 | `todo_done` | 标记完成 | `item`, `repo` |

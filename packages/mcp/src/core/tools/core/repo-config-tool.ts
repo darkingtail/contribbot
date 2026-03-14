@@ -1,8 +1,8 @@
-import { ghApi, getCurrentUser, parseRepo } from '../clients/github.js'
-import { RepoConfig } from '../storage/repo-config.js'
-import type { RepoConfigData, RepoRole } from '../storage/repo-config.js'
-import { getContribDir } from '../utils/config.js'
-import { resolveToParent } from '../utils/resolve-repo.js'
+import { ghApi, getCurrentUser, parseRepo } from '../../clients/github.js'
+import { RepoConfig } from '../../storage/repo-config.js'
+import type { RepoConfigData, RepoRole } from '../../storage/repo-config.js'
+import { getContribDir } from '../../utils/config.js'
+import { resolveToParent } from '../../utils/resolve-repo.js'
 
 /**
  * Auto-detect repo config by querying GitHub API.

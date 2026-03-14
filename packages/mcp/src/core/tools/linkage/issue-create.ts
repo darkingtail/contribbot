@@ -1,9 +1,11 @@
-import { parseRepo, createIssue } from '../clients/github.js'
-import { TodoStore } from '../storage/todo-store.js'
-import { UpstreamStore } from '../storage/upstream-store.js'
-import { getContribDir } from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
-import { detectTypeFromLabels } from '../utils/github-helpers.js'
+import { parseRepo, createIssue } from '../../clients/github.js'
+import { RecordFiles } from '../../storage/record-files.js'
+import { TodoStore } from '../../storage/todo-store.js'
+import { UpstreamStore } from '../../storage/upstream-store.js'
+import { getContribDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
+import { todayDate } from '../../utils/format.js'
+import { detectTypeFromLabels } from '../../utils/github-helpers.js'
 
 export async function issueCreate(
   title: string,
@@ -44,6 +46,8 @@ export async function issueCreate(
     const todoStore = new TodoStore(contribDir)
     const type = labelList ? detectTypeFromLabels(labelList) : 'chore'
     todoStore.add({ ref: `#${issue.number}`, title, type })
+    const records = new RecordFiles(contribDir)
+    records.createTodoRecord(`#${issue.number}`, title, type, todayDate())
     results.push(`Created todo: #${issue.number}`)
   }
 

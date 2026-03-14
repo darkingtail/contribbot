@@ -1,10 +1,11 @@
-import { getIssue } from '../clients/github.js'
-import { TodoStore, refSortKey } from '../storage/todo-store.js'
-import type { TodoType } from '../enums.js'
-import { getContribDir } from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
-import { difficultyEmoji } from '../utils/format.js'
-import { detectTypeFromLabels } from '../utils/github-helpers.js'
+import { getIssue } from '../../clients/github.js'
+import { RecordFiles } from '../../storage/record-files.js'
+import { TodoStore, refSortKey } from '../../storage/todo-store.js'
+import type { TodoType } from '../../enums.js'
+import { getContribDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
+import { difficultyEmoji, todayDate } from '../../utils/format.js'
+import { detectTypeFromLabels } from '../../utils/github-helpers.js'
 
 function refLink(ref: string | null, owner: string, name: string): string {
   if (!ref) return '—'
@@ -162,6 +163,11 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
   }
 
   const item = store.add({ ref: finalRef, title, type })
+
+  // Create record file immediately
+  const records = new RecordFiles(getContribDir(owner, name))
+  records.createTodoRecord(finalRef ?? `idea-${Date.now().toString(36).slice(-4)}`, title, type, todayDate())
+
   return `Added todo: **${item.title}** (${item.type}${item.ref ? `, ref: ${item.ref}` : ''})`
 }
 

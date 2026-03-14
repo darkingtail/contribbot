@@ -1,5 +1,5 @@
-import { parseRepo, getPullReviewComments } from '../clients/github.js'
-import { truncate } from '../utils/format.js'
+import { parseRepo, getPullReviewComments } from '../../clients/github.js'
+import { truncate } from '../../utils/format.js'
 
 export async function prReviewComments(
   prNumber: number,

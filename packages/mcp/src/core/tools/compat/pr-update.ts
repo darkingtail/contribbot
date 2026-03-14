@@ -1,4 +1,4 @@
-import { parseRepo, updatePull } from '../clients/github.js'
+import { parseRepo, updatePull } from '../../clients/github.js'
 
 export async function prUpdate(
   prNumber: number,

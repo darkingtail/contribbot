@@ -1,8 +1,8 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { parseRepo, getCurrentUser, searchIssues } from '../clients/github.js'
-import { markdownTable } from '../utils/format.js'
+import { parseRepo, getCurrentUser, searchIssues } from '../../clients/github.js'
+import { markdownTable } from '../../utils/format.js'
 
 function listAllProjects(): string[] {
   const contribRoot = join(homedir(), '.contribbot')

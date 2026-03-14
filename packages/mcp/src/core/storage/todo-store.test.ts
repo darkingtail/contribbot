@@ -132,6 +132,38 @@ describe('TodoStore', () => {
     expect(store.archiveAndDelete(5)).toBeUndefined()
   })
 
+  // --- claimed_items ---
+
+  it('initializes claimed_items as null', () => {
+    store.add({ ref: '#1', title: 'Task', type: 'bug' })
+    expect(store.list()[0]!.claimed_items).toBeNull()
+  })
+
+  it('updates claimed_items', () => {
+    store.add({ ref: '#1', title: 'Task', type: 'bug' })
+    store.update(0, { claimed_items: ['Fix CSS', 'Update tests'] })
+    const todo = store.list()[0]!
+    expect(todo.claimed_items).toEqual(['Fix CSS', 'Update tests'])
+  })
+
+  it('normalizes missing claimed_items to null for backward compat', () => {
+    // Simulate an old YAML file without claimed_items
+    const { writeFileSync } = require('node:fs')
+    writeFileSync(join(dir, 'todos.yaml'), `todos:
+  - ref: "#1"
+    title: Old todo
+    type: bug
+    status: idea
+    difficulty: null
+    pr: null
+    branch: null
+    created: "2026-01-01"
+    updated: "2026-01-01"
+`)
+    const todos = store.list()
+    expect(todos[0]!.claimed_items).toBeNull()
+  })
+
   // --- resolveItemFromAll ---
 
   it('resolves from all todos including done', () => {

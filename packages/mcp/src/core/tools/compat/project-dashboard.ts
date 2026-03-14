@@ -1,6 +1,6 @@
-import { getLatestRelease, getRepoCommits, getRepoIssues, getRepoPulls, parseRepo } from '../clients/github.js'
-import { markdownTable, relativeTime, truncate } from '../utils/format.js'
-import { listAllSkills } from './skill-resources.js'
+import { getLatestRelease, getRepoCommits, getRepoIssues, getRepoPulls, parseRepo } from '../../clients/github.js'
+import { markdownTable, relativeTime, truncate } from '../../utils/format.js'
+import { listAllSkills } from '../core/skill-resources.js'
 
 export async function projectDashboard(repo?: string): Promise<string> {
   const { owner, name } = parseRepo(repo)

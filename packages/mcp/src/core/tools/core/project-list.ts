@@ -1,9 +1,9 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { TodoStore } from '../storage/todo-store.js'
-import { UpstreamStore } from '../storage/upstream-store.js'
-import { markdownTable } from '../utils/format.js'
+import { TodoStore } from '../../storage/todo-store.js'
+import { UpstreamStore } from '../../storage/upstream-store.js'
+import { markdownTable } from '../../utils/format.js'
 
 export function projectList(): string {
   const contribRoot = join(homedir(), '.contribbot')

@@ -1,4 +1,4 @@
-import { parseRepo, replyToReviewComment } from '../clients/github.js'
+import { parseRepo, replyToReviewComment } from '../../clients/github.js'
 
 export async function prReviewReply(
   prNumber: number,

@@ -15,6 +15,7 @@ export interface TodoItem {
   difficulty: TodoDifficulty | null
   pr: number | null
   branch: string | null
+  claimed_items: string[] | null
   created: string
   updated: string
 }
@@ -48,7 +49,10 @@ export class TodoStore {
     if (!existsSync(this.yamlPath)) return []
     const content = readFileSync(this.yamlPath, 'utf-8')
     const data = parse(content) as TodosFile | null
-    return data?.todos ?? []
+    return (data?.todos ?? []).map(t => ({
+      ...t,
+      claimed_items: t.claimed_items ?? null,
+    }))
   }
 
   listSorted(): TodoItem[] {
@@ -120,6 +124,7 @@ export class TodoStore {
       difficulty: null,
       pr: null,
       branch: null,
+      claimed_items: null,
       created: today,
       updated: today,
     }
@@ -131,7 +136,7 @@ export class TodoStore {
 
   update(
     index: number,
-    fields: Partial<Pick<TodoItem, 'status' | 'difficulty' | 'pr' | 'branch' | 'title' | 'type'>>,
+    fields: Partial<Pick<TodoItem, 'status' | 'difficulty' | 'pr' | 'branch' | 'title' | 'type' | 'claimed_items'>>,
   ): TodoItem | undefined {
     const todos = this.list()
     const todo = todos[index]
@@ -143,6 +148,7 @@ export class TodoStore {
     if (fields.branch !== undefined) todo.branch = fields.branch
     if (fields.title !== undefined) todo.title = fields.title
     if (fields.type !== undefined) todo.type = fields.type
+    if (fields.claimed_items !== undefined) todo.claimed_items = fields.claimed_items
     todo.updated = today
     this.save(todos)
     return todo

@@ -1,5 +1,5 @@
-import { graphql, parseRepo } from '../clients/github.js'
-import { relativeTime, truncate } from '../utils/format.js'
+import { graphql, parseRepo } from '../../clients/github.js'
+import { relativeTime, truncate } from '../../utils/format.js'
 
 interface DiscussionsData {
   repository: {

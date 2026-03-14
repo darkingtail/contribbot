@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { getContribDir, validatePathSegment } from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
-import { parseFrontmatter } from '../utils/frontmatter.js'
+import { getContribDir, validatePathSegment } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
+import { parseFrontmatter } from '../../utils/frontmatter.js'
 
 function getSkillsDir(owner: string, name: string): string {
   return join(getContribDir(owner, name), 'skills')

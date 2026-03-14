@@ -2,12 +2,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import {
   getContribDir,
-} from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
-import { markdownTable } from '../utils/format.js'
-import { getReleaseByTag, getLatestRelease, searchCommits, parseRepo } from '../clients/github.js'
-import { UpstreamStore } from '../storage/upstream-store.js'
-import type { PRType } from '../enums.js'
+} from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
+import { markdownTable } from '../../utils/format.js'
+import { getReleaseByTag, getLatestRelease, searchCommits, parseRepo } from '../../clients/github.js'
+import { UpstreamStore } from '../../storage/upstream-store.js'
+import type { PRType } from '../../enums.js'
 
 interface SyncItem {
   prNumber: number

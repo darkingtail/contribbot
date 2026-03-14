@@ -24,9 +24,95 @@ interface PRReview {
 
 const PR_FEEDBACK_MARKER = '<!-- 自动追加 -->'
 
+const DEFAULT_TODO_TEMPLATE = `<!--
+  Todo 实现文档模板
+  可用变量：
+    {{title}}  — todo 标题
+    {{ref}}    — 引用标识（#123 或自定义 slug）
+    {{type}}   — 类型（bug / feature / docs / chore）
+    {{date}}   — 创建日期
+-->
+# {{title}}
+
+> ref: {{ref}} · type: {{type}} · created: {{date}}
+
+## Notes
+
+## Implementation Plan
+
+## PR Feedback
+
+${PR_FEEDBACK_MARKER}
+`
+
+function renderTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`)
+}
+
 export class RecordFiles {
   constructor(private baseDir: string) {}
 
+  /**
+   * Create a todo record file from template. Called at todo_add time.
+   * Uses templates/todo_record.md if exists, otherwise default template.
+   */
+  createTodoRecord(ref: string, title: string, type: string, date: string): string {
+    const dir = join(this.baseDir, 'todos')
+    this.ensureDir(dir)
+
+    const templateDir = join(this.baseDir, 'templates')
+    const templatePath = join(templateDir, 'todo_record.md')
+    if (!existsSync(templatePath)) {
+      this.ensureDir(templateDir)
+      writeFileSync(templatePath, DEFAULT_TODO_TEMPLATE, 'utf-8')
+    }
+    const template = readFileSync(templatePath, 'utf-8')
+
+    const content = renderTemplate(template, { title, ref, type, date })
+
+    const fileName = ref.startsWith('#') ? `${ref.slice(1)}.md` : `${ref}.md`
+    const filePath = join(dir, fileName)
+    writeFileSync(filePath, content, 'utf-8')
+    return filePath
+  }
+
+  /**
+   * Enrich an existing todo record with issue details. Called at todo_activate time.
+   */
+  enrichWithIssueDetails(issueNumber: number, info: IssueRecordInfo): void {
+    const filePath = join(this.baseDir, 'todos', `${issueNumber}.md`)
+    if (!existsSync(filePath)) return
+
+    const issueSection = [
+      '',
+      '## Issue Details',
+      '',
+      `| Field | Value |`,
+      `|-------|-------|`,
+      `| Link | ${info.link} |`,
+      `| Labels | ${info.labels} |`,
+      `| Author | ${info.author} |`,
+      `| Created | ${info.createdAt} |`,
+      '',
+      info.body ? `> ${info.body}` : '',
+      '',
+      '## Comments Summary',
+      '',
+      info.commentsSummary || '_No comments_',
+    ].join('\n')
+
+    let content = readFileSync(filePath, 'utf-8')
+    // Insert issue details after the frontmatter line (> ref: ...)
+    const insertPoint = content.indexOf('\n## ')
+    if (insertPoint !== -1) {
+      content = content.slice(0, insertPoint) + '\n' + issueSection + content.slice(insertPoint)
+    } else {
+      content += '\n' + issueSection
+    }
+    writeFileSync(filePath, content, 'utf-8')
+  }
+
+  /** @deprecated Use createTodoRecord + enrichWithIssueDetails instead */
   createIssueRecord(issueNumber: number, info: IssueRecordInfo): string {
     const dir = join(this.baseDir, 'todos')
     this.ensureDir(dir)

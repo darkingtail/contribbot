@@ -1,4 +1,4 @@
-import { parseRepo, createComment } from '../clients/github.js'
+import { parseRepo, createComment } from '../../clients/github.js'
 
 export async function commentCreate(
   number: number,

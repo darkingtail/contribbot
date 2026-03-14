@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { validatePathSegment } from '../utils/config.js'
-import { parseFrontmatter } from '../utils/frontmatter.js'
+import { validatePathSegment } from '../../utils/config.js'
+import { parseFrontmatter } from '../../utils/frontmatter.js'
 
 interface SkillEntry {
   repo: string

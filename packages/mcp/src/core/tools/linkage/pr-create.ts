@@ -1,7 +1,7 @@
-import { parseRepo, createPull } from '../clients/github.js'
-import { TodoStore } from '../storage/todo-store.js'
-import { getContribDir } from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
+import { parseRepo, createPull } from '../../clients/github.js'
+import { TodoStore } from '../../storage/todo-store.js'
+import { getContribDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
 
 export async function prCreate(
   title: string,
@@ -26,7 +26,7 @@ export async function prCreate(
   let effectiveHead = head
   if (!effectiveHead && resolved?.item.branch) {
     // For cross-repo PRs, prefix with fork owner
-    const { RepoConfig } = await import('../storage/repo-config.js')
+    const { RepoConfig } = await import('../../storage/repo-config.js')
     const config = new RepoConfig(contribDir)
     const repoConfig = config.load()
     if (repoConfig?.fork) {

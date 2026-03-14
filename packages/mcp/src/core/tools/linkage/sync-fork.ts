@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { getOrInitConfig } from './repo-config-tool.js'
+import { getOrInitConfig } from '../core/repo-config-tool.js'
 
 const execFileAsync = promisify(execFile)
 

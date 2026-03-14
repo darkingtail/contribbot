@@ -1,5 +1,5 @@
-import { getIssue, getIssueComments, getIssueTimeline, parseRepo } from '../clients/github.js'
-import { relativeTime, truncate } from '../utils/format.js'
+import { getIssue, getIssueComments, getIssueTimeline, parseRepo } from '../../clients/github.js'
+import { relativeTime, truncate } from '../../utils/format.js'
 
 export async function issueDetail(issueNumber: number, repo?: string): Promise<string> {
   const { owner, name } = parseRepo(repo)

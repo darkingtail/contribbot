@@ -1,5 +1,5 @@
-import { parseRepo, searchIssues } from '../clients/github.js'
-import { markdownTable } from '../utils/format.js'
+import { parseRepo, searchIssues } from '../../clients/github.js'
+import { markdownTable } from '../../utils/format.js'
 
 export async function issueList(
   repo?: string,

@@ -18,7 +18,10 @@ contribbot/
 │       │   │   │   ├── repo-config.ts
 │       │   │   │   └── record-files.ts
 │       │   │   ├── enums.ts          # 统一枚举（as const）
-│       │   │   ├── tools/            # 所有工具实现（纯函数）
+│       │   │   ├── tools/            # 三层工具分类
+│       │   │   │   ├── core/         # 21 tools — contribbot 独有（todo_*, upstream_*, repo_config...）
+│       │   │   │   ├── linkage/      # 4 tools — GitHub + 本地联动（issue_create, pr_create...）
+│       │   │   │   └── compat/       # 14 tools — 纯 GitHub 封装（issue_list, pr_summary...）
 │       │   │   └── utils/
 │       │   │       ├── config.ts     # 项目路径
 │       │   │       ├── format.ts     # markdown 格式化
@@ -28,7 +31,7 @@ contribbot/
 │       │   │       └── github-helpers.ts
 │       │   ├── mcp/
 │       │   │   ├── index.ts          # MCP Server 入口（stdio）
-│       │   │   └── server.ts         # 注册 38 tools + 1 resource + 4 prompts
+│       │   │   └── server.ts         # 注册 39 tools + 1 resource + 4 prompts
 │       │   └── index.ts              # 统一导出
 │       ├── package.json              # contribbot-mcp
 │       ├── tsconfig.json
@@ -69,7 +72,7 @@ pnpm test         # 运行所有测试
 | 无 | 有 | upstream | 非 fork 跨栈追踪 |
 | 无 | 无 | none | 无上游对齐关系 |
 
-## MCP 工具清单（38 Tools + 1 Resource + 4 Prompts）
+## MCP 工具清单（39 Tools + 1 Resource + 4 Prompts）
 
 ### 项目概览
 
@@ -88,6 +91,7 @@ pnpm test         # 运行所有测试
 | `todo_detail` | 查看实现记录，自动刷新 PR reviews（5 分钟缓存） |
 | `todo_update` | 更新状态 / 关联 PR / 追加笔记 |
 | `todo_done` | 标记完成 |
+| `todo_claim` | 领取 issue 工作项：评论到 GitHub + 本地记录，自动升 active，模板可配置 |
 | `todo_delete` | 删除 todo |
 | `todo_archive` | 归档已完成的 todos |
 

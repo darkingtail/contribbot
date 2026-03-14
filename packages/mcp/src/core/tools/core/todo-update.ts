@@ -1,11 +1,11 @@
 import { appendFileSync, existsSync } from 'node:fs'
-import { TodoStore } from '../storage/todo-store.js'
-import { RecordFiles } from '../storage/record-files.js'
-import { TODO_STATUSES, validateEnum } from '../enums.js'
-import type { TodoStatus } from '../enums.js'
-import { getContribDir } from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
-import { todayDate } from '../utils/format.js'
+import { TodoStore } from '../../storage/todo-store.js'
+import { RecordFiles } from '../../storage/record-files.js'
+import { TODO_STATUSES, validateEnum } from '../../enums.js'
+import type { TodoStatus } from '../../enums.js'
+import { getContribDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
+import { todayDate } from '../../utils/format.js'
 
 export async function todoUpdate(
   item: string,
@@ -56,15 +56,16 @@ export async function todoUpdate(
     throw new Error(`Failed to update todo at index ${storeIndex}.`)
   }
 
-  // If note is provided, append to record file
+  // If note is provided, append to record file (auto-create if missing)
   if (fields.note && updated.ref) {
     const recordPath = records.resolveRefPath(updated.ref)
+    if (recordPath && !existsSync(recordPath)) {
+      records.createTodoRecord(updated.ref, updated.title, updated.type, todayDate())
+    }
     if (recordPath && existsSync(recordPath)) {
       const today = todayDate()
       appendFileSync(recordPath, `\n\n> Note (${today}): ${fields.note}\n`, 'utf-8')
       changes.push(`note appended`)
-    } else {
-      changes.push(`note skipped (no record file — use todo_activate first)`)
     }
   }
 

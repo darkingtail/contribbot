@@ -1,5 +1,5 @@
-import { ghApi, parseRepo } from '../clients/github.js'
-import { markdownTable, relativeTime, truncate } from '../utils/format.js'
+import { ghApi, parseRepo } from '../../clients/github.js'
+import { markdownTable, relativeTime, truncate } from '../../utils/format.js'
 
 interface WorkflowRun {
   id: number

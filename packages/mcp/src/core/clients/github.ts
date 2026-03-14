@@ -414,17 +414,6 @@ export async function getPullReviewComments(owner: string, repo: string, prNumbe
   return (await ghApi<GitHubReviewComment[] | null>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { per_page: 100 })) ?? []
 }
 
-export async function getRepoDefaultBranch(owner: string, repo: string): Promise<{ branch: string; sha: string }> {
-  const data = await ghApi<{ default_branch: string }>(`/repos/${owner}/${repo}`)
-  const branch = data.default_branch
-  const ref = await ghApi<{ object: { sha: string } }>(`/repos/${owner}/${repo}/git/ref/heads/${branch}`)
-  return { branch, sha: ref.object.sha }
-}
-
-export async function createBranch(owner: string, repo: string, branchName: string, sha: string): Promise<void> {
-  await ghApi(`/repos/${owner}/${repo}/git/refs`, {}, { method: 'POST', body: { ref: `refs/heads/${branchName}`, sha } })
-}
-
 export async function replyToReviewComment(owner: string, repo: string, prNumber: number, commentId: number, body: string): Promise<GitHubComment> {
   return ghApi<GitHubComment>(`/repos/${owner}/${repo}/pulls/${prNumber}/comments/${commentId}/replies`, {}, { method: 'POST', body: { body } })
 }

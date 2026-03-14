@@ -1,11 +1,11 @@
 import { statSync } from 'node:fs'
-import { getPullReviews } from '../clients/github.js'
-import { TodoStore } from '../storage/todo-store.js'
-import { RecordFiles } from '../storage/record-files.js'
-import type { TodoItem } from '../storage/todo-store.js'
-import { getContribDir } from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
-import { todayDate } from '../utils/format.js'
+import { getPullReviews } from '../../clients/github.js'
+import { TodoStore } from '../../storage/todo-store.js'
+import { RecordFiles } from '../../storage/record-files.js'
+import type { TodoItem } from '../../storage/todo-store.js'
+import { getContribDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
+import { todayDate } from '../../utils/format.js'
 
 function formatTodoBasicInfo(todo: TodoItem, owner: string, name: string): string {
   const lines: string[] = [
@@ -18,11 +18,18 @@ function formatTodoBasicInfo(todo: TodoItem, owner: string, name: string): strin
     `| Status | ${todo.status} |`,
     `| Difficulty | ${todo.difficulty ?? '—'} |`,
     `| PR | ${todo.pr ? `[#${todo.pr}](https://github.com/${owner}/${name}/pull/${todo.pr})` : '—'} |`,
+    `| Claimed | ${todo.claimed_items?.length ? `${todo.claimed_items.length} item(s)` : '—'} |`,
     `| Created | ${todo.created} |`,
     `| Updated | ${todo.updated} |`,
+  ]
+  if (todo.claimed_items && todo.claimed_items.length > 0) {
+    lines.push('', '### Claimed Items', '')
+    todo.claimed_items.forEach(s => lines.push(`- ${s}`))
+  }
+  lines.push(
     '',
     '_No record file found. Use issue_detail or upstream_sync_check with save option to create one._',
-  ]
+  )
   return lines.join('\n')
 }
 

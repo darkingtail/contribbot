@@ -1,5 +1,5 @@
-import { ghApi, parseRepo } from '../clients/github.js'
-import { relativeTime } from '../utils/format.js'
+import { ghApi, parseRepo } from '../../clients/github.js'
+import { relativeTime } from '../../utils/format.js'
 
 interface RepoData {
   full_name: string

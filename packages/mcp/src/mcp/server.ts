@@ -1,34 +1,40 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { TODO_STATUSES, UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, DAILY_COMMIT_ACTIONS } from '../core/enums.js'
-import { issueDetail } from '../core/tools/issue-detail.js'
-import { prSummary } from '../core/tools/pr-summary.js'
-import { projectDashboard } from '../core/tools/project-dashboard.js'
-import { upstreamSyncCheck, syncHistory } from '../core/tools/upstream-sync-check.js'
-import { todoList, todoAdd, todoDone, todoDelete, todoArchive } from '../core/tools/todos.js'
-import { todoActivate } from '../core/tools/todo-activate.js'
-import { todoDetail } from '../core/tools/todo-detail.js'
-import { todoUpdate } from '../core/tools/todo-update.js'
-import { upstreamList, upstreamDetail, upstreamUpdate } from '../core/tools/upstream-manage.js'
-import { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from '../core/tools/upstream-daily.js'
-import { discussionList, discussionDetail } from '../core/tools/discussion-list.js'
-import { actionsStatus } from '../core/tools/actions-status.js'
-import { securityOverview } from '../core/tools/security-overview.js'
-import { repoInfo } from '../core/tools/repo-info.js'
-import { syncFork } from '../core/tools/sync-fork.js'
-import { projectList } from '../core/tools/project-list.js'
-import { repoConfig } from '../core/tools/repo-config-tool.js'
-import { commentCreate } from '../core/tools/comment-create.js'
-import { issueClose } from '../core/tools/issue-close.js'
-import { issueCreate } from '../core/tools/issue-create.js'
-import { prUpdate } from '../core/tools/pr-update.js'
-import { prCreate } from '../core/tools/pr-create.js'
-import { prReviewComments } from '../core/tools/pr-review-comments.js'
-import { prReviewReply } from '../core/tools/pr-review-reply.js'
-import { contributionStats } from '../core/tools/contribution-stats.js'
-import { issueList, prList } from '../core/tools/issue-list.js'
-import { skillWrite } from '../core/tools/skills.js'
-import { listAllSkills, readSkill } from '../core/tools/skill-resources.js'
+// ── Core: contribbot 独有能力 ────────────────────────────
+import { todoList, todoAdd, todoDone, todoDelete, todoArchive } from '../core/tools/core/todos.js'
+import { todoActivate } from '../core/tools/core/todo-activate.js'
+import { todoDetail } from '../core/tools/core/todo-detail.js'
+import { todoUpdate } from '../core/tools/core/todo-update.js'
+import { upstreamSyncCheck, syncHistory } from '../core/tools/core/upstream-sync-check.js'
+import { upstreamList, upstreamDetail, upstreamUpdate } from '../core/tools/core/upstream-manage.js'
+import { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from '../core/tools/core/upstream-daily.js'
+import { repoConfig } from '../core/tools/core/repo-config-tool.js'
+import { projectList } from '../core/tools/core/project-list.js'
+import { contributionStats } from '../core/tools/core/contribution-stats.js'
+import { todoClaim } from '../core/tools/core/todo-claim.js'
+import { skillWrite } from '../core/tools/core/skills.js'
+import { listAllSkills, readSkill } from '../core/tools/core/skill-resources.js'
+
+// ── Linkage: GitHub 操作 + 本地数据联动 ──────────────────
+import { issueCreate } from '../core/tools/linkage/issue-create.js'
+import { issueClose } from '../core/tools/linkage/issue-close.js'
+import { prCreate } from '../core/tools/linkage/pr-create.js'
+import { syncFork } from '../core/tools/linkage/sync-fork.js'
+
+// ── Compat: 纯 GitHub 封装，保证开箱即用 ─────────────────
+import { issueList, prList } from '../core/tools/compat/issue-list.js'
+import { issueDetail } from '../core/tools/compat/issue-detail.js'
+import { prSummary } from '../core/tools/compat/pr-summary.js'
+import { prUpdate } from '../core/tools/compat/pr-update.js'
+import { prReviewComments } from '../core/tools/compat/pr-review-comments.js'
+import { prReviewReply } from '../core/tools/compat/pr-review-reply.js'
+import { commentCreate } from '../core/tools/compat/comment-create.js'
+import { discussionList, discussionDetail } from '../core/tools/compat/discussion-list.js'
+import { actionsStatus } from '../core/tools/compat/actions-status.js'
+import { securityOverview } from '../core/tools/compat/security-overview.js'
+import { repoInfo } from '../core/tools/compat/repo-info.js'
+import { projectDashboard } from '../core/tools/compat/project-dashboard.js'
 
 const repoParam = z.string().optional().describe('GitHub repo "owner/name"')
 
@@ -62,7 +68,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 
 1. **同步 fork**：sync_fork → 开始工作前同步上游（fork/fork+upstream 模式）
 2. **建立上下文**：project_dashboard → 项目全貌
-3. **任务管理**：todo_add → todo_activate → todo_detail → todo_update → todo_done → todo_archive
+3. **任务管理**：todo_add → todo_activate → todo_claim（如有子任务）→ todo_detail → todo_update → todo_done → todo_archive
 4. **深入调查**：issue_detail / pr_summary / discussion_detail
 5. **上游追踪**：upstream_daily → 抓取上游提交；upstream_daily_act → 标记动作；upstream_daily_skip_noise → 跳过噪音
 6. **版本同步**：upstream_sync_check → 对比 release 同步状态；upstream_list → 总览；upstream_detail → 详情
@@ -188,12 +194,13 @@ export function createServer(): McpServer {
 
   server.tool(
     'todo_activate',
-    'Activate a todo: fetch issue details, assess difficulty, create implementation record file',
+    'Activate a todo: fetch issue details, assess difficulty, create implementation record. Branch name can be provided by LLM based on repo conventions, otherwise uses default naming.',
     {
       item: z.string().describe('Todo index (1-based) or text substring to match'),
+      branch: z.string().optional().describe('Branch name suggested by LLM based on repo conventions. If omitted, uses default: prefix/number-slug'),
       repo: repoParam,
     },
-    wrapHandler(async ({ item, repo }) => todoActivate(item as string, repo as string | undefined)),
+    wrapHandler(async ({ item, branch, repo }) => todoActivate(item as string, branch as string | undefined, repo as string | undefined)),
   )
 
   server.tool(
@@ -219,6 +226,19 @@ export function createServer(): McpServer {
     },
     wrapHandler(({ item, status, pr, branch, note, repo }) =>
       todoUpdate(item as string, { status: status as string | undefined, pr: pr as number | undefined, branch: branch as string | undefined, note: note as string | undefined }, repo as string | undefined),
+    ),
+  )
+
+  server.tool(
+    'todo_claim',
+    'Claim items from an issue: post a comment on GitHub and record locally. Use after todo_activate when LLM identifies claimable work in the issue body (subtasks, table rows, scope areas, or the whole issue).',
+    {
+      item: z.string().describe('Todo index (1-based) or text substring to match'),
+      items: z.array(z.string()).describe('Work items to claim, identified by LLM from issue body'),
+      repo: repoParam,
+    },
+    wrapHandler(async ({ item, items, repo }) =>
+      todoClaim(item as string, items as string[], repo as string | undefined),
     ),
   )
 
