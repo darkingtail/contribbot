@@ -4,17 +4,17 @@ import { homedir } from 'node:os'
 import { validatePathSegment } from '../../utils/config.js'
 import { parseFrontmatter } from '../../utils/frontmatter.js'
 
-interface SkillEntry {
+interface KnowledgeEntry {
   repo: string
   name: string
   description: string
 }
 
-export function listAllSkills(): SkillEntry[] {
+export function listAllKnowledge(): KnowledgeEntry[] {
   const baseDir = join(homedir(), '.contribbot')
   if (!existsSync(baseDir)) return []
 
-  const results: SkillEntry[] = []
+  const results: KnowledgeEntry[] = []
 
   for (const ownerEntry of readdirSync(baseDir, { withFileTypes: true })) {
     if (!ownerEntry.isDirectory()) continue
@@ -23,20 +23,20 @@ export function listAllSkills(): SkillEntry[] {
     for (const repoEntry of readdirSync(ownerDir, { withFileTypes: true })) {
       if (!repoEntry.isDirectory()) continue
       const repo = `${ownerEntry.name}/${repoEntry.name}`
-      const skillsDir = join(ownerDir, repoEntry.name, 'skills')
-      if (!existsSync(skillsDir)) continue
+      const knowledgeDir = join(ownerDir, repoEntry.name, 'knowledge')
+      if (!existsSync(knowledgeDir)) continue
 
-      for (const skillEntry of readdirSync(skillsDir, { withFileTypes: true })) {
-        if (!skillEntry.isDirectory()) continue
-        const skillPath = join(skillsDir, skillEntry.name, 'SKILL.md')
-        if (!existsSync(skillPath)) continue
+      for (const entry of readdirSync(knowledgeDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const docPath = join(knowledgeDir, entry.name, 'README.md')
+        if (!existsSync(docPath)) continue
 
-        const content = readFileSync(skillPath, 'utf-8')
+        const content = readFileSync(docPath, 'utf-8')
         const meta = parseFrontmatter(content)
         results.push({
           repo,
-          name: skillEntry.name,
-          description: meta.description || meta.name || skillEntry.name,
+          name: entry.name,
+          description: meta.description || meta.name || entry.name,
         })
       }
     }
@@ -45,7 +45,7 @@ export function listAllSkills(): SkillEntry[] {
   return results
 }
 
-export function readSkill(repo: string, skillName: string): string | null {
+export function readKnowledge(repo: string, knowledgeName: string): string | null {
   const parts = repo.split('/')
   const owner = parts[0] ?? ''
   const name = parts[1] ?? ''
@@ -53,9 +53,9 @@ export function readSkill(repo: string, skillName: string): string | null {
 
   validatePathSegment(owner)
   validatePathSegment(name)
-  validatePathSegment(skillName)
+  validatePathSegment(knowledgeName)
 
-  const skillPath = join(homedir(), '.contribbot', owner, name, 'skills', skillName, 'SKILL.md')
-  if (!existsSync(skillPath)) return null
-  return readFileSync(skillPath, 'utf-8')
+  const docPath = join(homedir(), '.contribbot', owner, name, 'knowledge', knowledgeName, 'README.md')
+  if (!existsSync(docPath)) return null
+  return readFileSync(docPath, 'utf-8')
 }

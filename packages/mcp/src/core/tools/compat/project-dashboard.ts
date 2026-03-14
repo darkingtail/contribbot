@@ -1,6 +1,6 @@
 import { getLatestRelease, getRepoCommits, getRepoIssues, getRepoPulls, parseRepo } from '../../clients/github.js'
 import { markdownTable, relativeTime, truncate } from '../../utils/format.js'
-import { listAllSkills } from '../core/skill-resources.js'
+import { listAllKnowledge } from '../core/knowledge-resources.js'
 
 export async function projectDashboard(repo?: string): Promise<string> {
   const { owner, name } = parseRepo(repo)
@@ -94,16 +94,16 @@ export async function projectDashboard(repo?: string): Promise<string> {
     lines.push(markdownTable(headers, rows))
   }
 
-  // Project skills
+  // Project knowledge
   const repoKey = `${owner}/${name}`
-  const skills = listAllSkills().filter(s => s.repo === repoKey)
-  if (skills.length > 0) {
+  const knowledge = listAllKnowledge().filter(k => k.repo === repoKey)
+  if (knowledge.length > 0) {
     lines.push('')
-    lines.push(`### Skills (${skills.length})`)
+    lines.push(`### Knowledge (${knowledge.length})`)
     const headers = ['Name', 'Description']
-    const rows = skills.map(s => [s.name, s.description])
+    const rows = knowledge.map(k => [k.name, k.description])
     lines.push(markdownTable(headers, rows))
-    lines.push(`> Read details: \`skill://${repoKey}/{name}\``)
+    lines.push(`> Read details: \`knowledge://${repoKey}/{name}\``)
   }
 
   return lines.join('\n')

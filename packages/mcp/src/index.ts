@@ -19,8 +19,8 @@ export { repoConfig } from './core/tools/core/repo-config-tool.js'
 export { projectList } from './core/tools/core/project-list.js'
 export { contributionStats } from './core/tools/core/contribution-stats.js'
 export { todoClaim } from './core/tools/core/todo-claim.js'
-export { skillList, skillRead, skillWrite } from './core/tools/core/skills.js'
-export { listAllSkills, readSkill } from './core/tools/core/skill-resources.js'
+export { knowledgeList, knowledgeRead, knowledgeWrite } from './core/tools/core/knowledge.js'
+export { listAllKnowledge, readKnowledge } from './core/tools/core/knowledge-resources.js'
 
 // Linkage layer — GitHub 操作 + 本地数据联动
 export { issueCreate } from './core/tools/linkage/issue-create.js'

@@ -267,7 +267,7 @@ src/
 ├── templates/               # 可自定义模板（首次使用自动生成带注释的默认模板）
 │   ├── todo_record.md       # todo 实现文档模板
 │   └── todo_claim.md        # claim 评论模板
-├── skills/                  # 可复用经验
+├── knowledge/               # 项目知识沉淀
 └── sync/                    # 同步记录
 ```
 
@@ -287,7 +287,7 @@ Phase 3: Agents（自主决策）        🔲 内置 LLM，自主调用 Skills
 | 2. Skills | ✅ | 10 skills（MCP 工具编排层），三层工具分类（core/linkage/compat） |
 | 3. Agents | 🔲 | 独立运行的开源协作 Agent：Docker 部署、聊天入口、定时巡检、记忆系统 |
 
-**Skills 的两层含义**：Phase 1 的 `skill_write` 产出的是 markdown 经验文档（项目知识沉淀）；Phase 2 的 Skills 是 MCP 之上的工作流编排层（可执行 workflow）。两者互补：经验文档作为 workflow 的上下文输入。
+**Knowledge vs Skills**：`knowledge_write` 产出的是项目知识沉淀（markdown 经验文档）；Skills 是 MCP 之上的工作流编排层（可执行 workflow）。两者互补：知识文档作为 workflow 的上下文输入。
 
 Phase 3 愿景：不只是 Agent SDK 包装，而是像 [nanobot](https://github.com/HKUDS/nanobot) 一样的**独立开源协作 Agent**：
 - 独立部署运行（Docker）

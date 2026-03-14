@@ -13,8 +13,8 @@ import { repoConfig } from '../core/tools/core/repo-config-tool.js'
 import { projectList } from '../core/tools/core/project-list.js'
 import { contributionStats } from '../core/tools/core/contribution-stats.js'
 import { todoClaim } from '../core/tools/core/todo-claim.js'
-import { skillWrite } from '../core/tools/core/skills.js'
-import { listAllSkills, readSkill } from '../core/tools/core/skill-resources.js'
+import { knowledgeWrite } from '../core/tools/core/knowledge.js'
+import { listAllKnowledge, readKnowledge } from '../core/tools/core/knowledge-resources.js'
 
 // ── Linkage: GitHub 操作 + 本地数据联动 ──────────────────
 import { issueCreate } from '../core/tools/linkage/issue-create.js'
@@ -74,7 +74,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 6. **版本同步**：upstream_sync_check → 对比 release 同步状态；upstream_list → 总览；upstream_detail → 详情
 7. **质量保障**：actions_status → CI；security_overview → 安全告警
 8. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply
-9. **记录沉淀**：skill_write → 可复用经验（Resource: skill://{repo}/{name}）
+9. **知识沉淀**：knowledge_write → 项目知识记录（Resource: knowledge://{repo}/{name}）
 10. **全局视图**：project_list → 跨项目概况；repo_config → 仓库配置
 11. **贡献统计**：contribution_stats → 个人贡献节奏
 12. **搜索**：issue_list / pr_list → 按状态/标签/关键词搜索
@@ -566,33 +566,33 @@ export function createServer(): McpServer {
     ),
   )
 
-  // ── Skills (Resource + Tool) ─────────────────────────────
+  // ── Knowledge (Resource + Tool) ─────────────────────────
 
   server.resource(
-    'skill',
-    new ResourceTemplate('skill://{repo}/{skillName}', {
+    'knowledge',
+    new ResourceTemplate('knowledge://{+repo}/{knowledgeName}', {
       list: async () => ({
-        resources: listAllSkills().map(s => ({
-          uri: `skill://${s.repo}/${s.name}`,
-          name: `${s.repo} / ${s.name}`,
-          description: s.description,
+        resources: listAllKnowledge().map(k => ({
+          uri: `knowledge://${k.repo}/${k.name}`,
+          name: `${k.repo} / ${k.name}`,
+          description: k.description,
           mimeType: 'text/markdown',
         })),
       }),
     }),
     {
-      title: 'Skill',
-      description: 'Personal reusable skills stored in ~/.contribbot/{owner}/{repo}/skills/',
+      title: 'Knowledge',
+      description: 'Project knowledge stored in ~/.contribbot/{owner}/{repo}/knowledge/',
       mimeType: 'text/markdown',
     },
-    async (uri, { repo, skillName }) => {
+    async (uri, { repo, knowledgeName }) => {
       try {
-        const content = readSkill(repo as string, skillName as string)
+        const content = readKnowledge(repo as string, knowledgeName as string)
         return {
           contents: [{
             uri: uri.href,
             mimeType: 'text/markdown',
-            text: content ?? `Skill "${skillName}" not found in ${repo}.`,
+            text: content ?? `Knowledge "${knowledgeName}" not found in ${repo}.`,
           }],
         }
       } catch (e) {
@@ -601,7 +601,7 @@ export function createServer(): McpServer {
           contents: [{
             uri: uri.href,
             mimeType: 'text/plain',
-            text: `Error reading skill: ${msg}`,
+            text: `Error reading knowledge: ${msg}`,
           }],
         }
       }
@@ -609,14 +609,14 @@ export function createServer(): McpServer {
   )
 
   server.tool(
-    'skill_write',
-    'Create or update a personal skill in ~/.contribbot/{owner}/{repo}/skills/{name}/SKILL.md',
+    'knowledge_write',
+    'Create or update project knowledge in ~/.contribbot/{owner}/{repo}/knowledge/{name}/README.md',
     {
-      name: z.string().describe('Skill directory name, e.g. "upstream-sync"'),
-      content: z.string().describe('Full SKILL.md content including frontmatter'),
+      name: z.string().describe('Knowledge directory name, e.g. "upstream-sync"'),
+      content: z.string().describe('Full README.md content including frontmatter'),
       repo: repoParam,
     },
-    wrapHandler(({ name, content, repo }) => skillWrite(name as string, content as string, repo as string | undefined)),
+    wrapHandler(({ name, content, repo }) => knowledgeWrite(name as string, content as string, repo as string | undefined)),
   )
 
   // ── MCP Prompts (enhanced versions of Skills, using MCP tools) ──

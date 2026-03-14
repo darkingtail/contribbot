@@ -140,14 +140,14 @@ upstream_daily ──→ upstream_daily_skip_noise ──→ 逐条 upstream_dai
 
 ---
 
-## Skills（1 Resource + 1 Tool）
+## Knowledge（1 Resource + 1 Tool）
 
-可复用经验沉淀系统，存储在 `~/.contribbot/{owner}/{repo}/skills/` 下。
+项目知识沉淀系统，存储在 `~/.contribbot/{owner}/{repo}/knowledge/` 下。
 
 | 类型 | 标识 | 说明 |
 |------|------|------|
-| Resource | `skill://{repo}/{skillName}` | 只读访问所有 skills，支持 list + read |
-| Tool | `skill_write` | 创建/更新 skill（`name` + `content` + `repo`） |
+| Resource | `knowledge://{repo}/{knowledgeName}` | 只读访问项目知识，支持 list + read |
+| Tool | `knowledge_write` | 创建/更新项目知识（`name` + `content` + `repo`） |
 
 ---
 
@@ -225,7 +225,7 @@ upstream_daily ──→ upstream_daily_skip_noise ──→ 逐条 upstream_dai
 | 6. 版本同步 | `upstream_sync_check` → `upstream_list` → `upstream_detail` | 版本级对比 |
 | 7. 质量保障 | `actions_status` / `security_overview` | CI + 安全 |
 | 8. GitHub 写入 | `issue_create` / `issue_close` / `comment_create` / `pr_create` / `pr_update` / `pr_review_reply` | 写操作 |
-| 9. 记录沉淀 | `skill_write` | 可复用经验 |
+| 9. 知识沉淀 | `knowledge_write` | 项目知识记录 |
 | 10. 全局视图 | `project_list` / `repo_config` | 跨项目管理 |
 
 ---

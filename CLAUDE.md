@@ -147,12 +147,12 @@ pnpm test         # 运行所有测试
 |------|------|
 | `project_list` | 所有已跟踪项目概况（todos/upstream 统计） |
 
-### Skills（Resource + Tool）
+### Knowledge（Resource + Tool）
 
 | 类型 | 标识 | 说明 |
 |------|------|------|
-| Resource | `skill://{repo}/{name}` | 只读访问所有 skills，支持 list + read |
-| Tool | `skill_write` | 创建/更新 skill |
+| Resource | `knowledge://{repo}/{name}` | 只读访问项目知识，支持 list + read |
+| Tool | `knowledge_write` | 创建/更新项目知识 |
 
 ## 数据存储
 
@@ -170,7 +170,7 @@ pnpm test         # 运行所有测试
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
 ├── archive.yaml                        # 已完成 todos 归档
-├── skills/                             # 可复用经验
+├── knowledge/                          # 项目知识沉淀
 └── sync/                               # 同步记录
 ```
 

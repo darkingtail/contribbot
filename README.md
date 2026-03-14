@@ -6,16 +6,90 @@ Provides 39 MCP tools + 10 skills covering todo management, upstream tracking, i
 
 ## Prerequisites
 
-- [Claude Code](https://claude.com/claude-code)
 - [GitHub CLI](https://cli.github.com/) (`gh`) — authenticated (`gh auth login`)
 
 ## Install
+
+### Claude Code (recommended)
 
 ```bash
 claude plugin install darkingtail/contribbot
 ```
 
-This installs both the skills and the MCP server (`contribbot-mcp`). No additional setup needed.
+Installs both the 10 skills and the MCP server. No additional setup needed.
+
+### Claude Desktop
+
+Add to config file (Settings → Developer → Edit Config):
+
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "contribbot": {
+      "command": "npx",
+      "args": ["-y", "contribbot-mcp@latest"]
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+Add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "contribbot": {
+      "command": "npx",
+      "args": ["-y", "contribbot-mcp@latest"]
+    }
+  }
+}
+```
+
+### Codex CLI
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.contribbot]
+command = "npx"
+args = ["-y", "contribbot-mcp@latest"]
+startup_timeout_sec = 30
+```
+
+> Codex CLI default startup timeout is 10 seconds — `npx` may need longer on first download.
+
+### Cursor / Cline / Continue / Other MCP-compatible tools
+
+Add to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "contribbot": {
+      "command": "npx",
+      "args": ["-y", "contribbot-mcp@latest"]
+    }
+  }
+}
+```
+
+### Platform support
+
+| Platform | Tools (39) | Skills (10) | MCP Prompts (4) |
+|----------|-----------|-------------|-----------------|
+| Claude Code | ✅ | ✅ via plugin | ✅ |
+| Claude Desktop | ✅ | — | ✅ |
+| Gemini CLI | ✅ | — | ✅ |
+| Codex CLI | ✅ | — | ✅ |
+| Cursor / Cline / etc. | ✅ | — | ✅ |
+
+Skills are markdown workflow instructions (`skills/*/SKILL.md`). Any platform can use them by loading the content as context.
 
 ## What It Does
 
@@ -86,12 +160,12 @@ First time? Run `/contribbot:project-onboard` to auto-detect and configure.
 
 ```
 tools/
-├── core/      21 tools — contribbot unique (todo_*, upstream_*, skills, config)
+├── core/      21 tools — contribbot unique (todo_*, upstream_*, knowledge, config)
 ├── linkage/    4 tools — GitHub ops + local data sync (issue_create, pr_create...)
 └── compat/    14 tools — GitHub wrappers for out-of-box use (issue_list, pr_summary...)
 ```
 
-- **Core** — Cannot be replaced by GitHub MCP. Todo management, upstream tracking, skills, repo config.
+- **Core** — Cannot be replaced by GitHub MCP. Todo management, upstream tracking, knowledge, repo config.
 - **Linkage** — GitHub operations that also update local data (e.g., `issue_create` auto-creates a todo).
 - **Compat** — Pure GitHub API wrappers. Ensures contribbot works standalone without GitHub MCP installed.
 
@@ -108,7 +182,7 @@ All data persists locally in `~/.contribbot/{owner}/{repo}/`:
 ├── upstream/          # Upstream implementation records
 ├── archive.yaml       # Archived todos
 ├── templates/         # Custom templates (e.g., todo_claim.md)
-├── skills/            # Personal reusable skills
+├── knowledge/         # Project knowledge
 └── sync/              # Sync history records
 ```
 
