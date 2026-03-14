@@ -4,9 +4,12 @@ Open source collaboration assistant for [Claude Code](https://claude.com/claude-
 
 Provides 39 MCP tools + 10 skills covering todo management, upstream tracking, issue/PR workflows, and multi-project oversight.
 
-## Install
+## Prerequisites
 
-Requires [Claude Code](https://claude.com/claude-code).
+- [Claude Code](https://claude.com/claude-code)
+- [GitHub CLI](https://cli.github.com/) (`gh`) — authenticated (`gh auth login`)
+
+## Install
 
 ```bash
 claude plugin install darkingtail/contribbot
