@@ -1,7 +1,7 @@
-import { closeIssue, createComment } from '../clients/github.js'
-import { TodoStore } from '../storage/todo-store.js'
-import { getContribDir } from '../utils/config.js'
-import { resolveRepo } from '../utils/resolve-repo.js'
+import { closeIssue, createComment } from '../../clients/github.js'
+import { TodoStore } from '../../storage/todo-store.js'
+import { getContribDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
 
 export async function issueClose(
   issueNumber: number,
