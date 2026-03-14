@@ -66,9 +66,13 @@ export class RecordFiles {
       this.ensureDir(templateDir)
       writeFileSync(templatePath, DEFAULT_TODO_TEMPLATE, 'utf-8')
     }
-    const template = readFileSync(templatePath, 'utf-8')
+    const raw = readFileSync(templatePath, 'utf-8')
 
-    const content = renderTemplate(template, { title, ref, type, date })
+    // Strip leading HTML comment (variable docs) before rendering, preserve in template file only
+    const content = renderTemplate(
+      raw.replace(/^<!--[\s\S]*?-->\s*/m, ''),
+      { title, ref, type, date },
+    )
 
     const fileName = ref.startsWith('#') ? `${ref.slice(1)}.md` : `${ref}.md`
     const filePath = join(dir, fileName)
