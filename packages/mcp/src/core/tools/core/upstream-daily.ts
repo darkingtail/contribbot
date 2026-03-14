@@ -159,27 +159,25 @@ export async function upstreamDaily(
   // ── State 2: No anchor, with sinceTag — initialize from releases or raw tag ──
   if (!anchorTag && sinceTag) {
     const releases = await listReleases(upOwner, upName, 100)
-    const sinceTagNormalized = sinceTag.replace(/^v/, '')
 
-    const sinceIndex = releases.findIndex((r) => {
-      const tagNormalized = r.tag_name.replace(/^v/, '')
-      return tagNormalized === sinceTagNormalized
-    })
+    // Match user input: exact first, then normalize (v prefix tolerance)
+    const sinceIndex = releases.findIndex(r =>
+      r.tag_name === sinceTag || r.tag_name.replace(/^v/, '') === sinceTag.replace(/^v/, ''),
+    )
 
     if (sinceIndex !== -1) {
-      // Found in releases — record newer releases as versions
+      // Found in releases — record newer releases as versions (store original tag_name)
       const newerReleases = releases.slice(0, sinceIndex)
       for (const release of [...newerReleases].reverse()) {
-        const version = release.tag_name.replace(/^v/, '')
-        store.addVersion(upstreamRepoKey, version, [])
+        store.addVersion(upstreamRepoKey, release.tag_name, [])
       }
       if (newerReleases.length === 0) {
-        store.addVersion(upstreamRepoKey, sinceTagNormalized, [])
+        store.addVersion(upstreamRepoKey, releases[sinceIndex]!.tag_name, [])
       }
     }
     else {
-      // Not found in releases — treat sinceTag as a raw tag/commit anchor
-      store.addVersion(upstreamRepoKey, sinceTagNormalized, [])
+      // Not found in releases — treat sinceTag as a raw tag/commit anchor (store as-is)
+      store.addVersion(upstreamRepoKey, sinceTag, [])
     }
 
     anchorTag = store.getLatestVersionTag(upstreamRepoKey)
@@ -192,28 +190,21 @@ export async function upstreamDaily(
 
   // Check for new releases and record them
   const releases = await listReleases(upOwner, upName)
-  const anchorNormalized = anchorTag.replace(/^v/, '')
-  const anchorIndex = releases.findIndex((r) => {
-    const tagNormalized = r.tag_name.replace(/^v/, '')
-    return tagNormalized === anchorNormalized
-  })
+  const anchorIndex = releases.findIndex(r =>
+    r.tag_name === anchorTag || r.tag_name.replace(/^v/, '') === anchorTag!.replace(/^v/, ''),
+  )
 
   if (anchorIndex > 0) {
-    // There are newer releases — record them (oldest first)
+    // There are newer releases — record them (oldest first, store original tag_name)
     const newerReleases = releases.slice(0, anchorIndex)
     for (const release of [...newerReleases].reverse()) {
-      const version = release.tag_name.replace(/^v/, '')
-      store.addVersion(upstreamRepoKey, version, [])
+      store.addVersion(upstreamRepoKey, release.tag_name, [])
     }
     anchorTag = store.getLatestVersionTag(upstreamRepoKey) ?? anchorTag
   }
 
-  // Determine the full tag_name (with v prefix if releases use it)
-  const anchorRelease = releases.find((r) => {
-    const tagNormalized = r.tag_name.replace(/^v/, '')
-    return tagNormalized === anchorTag!.replace(/^v/, '')
-  })
-  const compareBase = anchorRelease ? anchorRelease.tag_name : anchorTag
+  // Use stored anchorTag directly for compare (it's the original tag_name)
+  const compareBase = anchorTag
 
   // Compare anchor..HEAD
   const compareResult = await getCompareCommits(upOwner, upName, compareBase, 'HEAD')
