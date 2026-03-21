@@ -9,6 +9,7 @@ import { todoUpdate } from '../core/tools/core/todo-update.js'
 import { upstreamSyncCheck, syncHistory } from '../core/tools/core/upstream-sync-check.js'
 import { upstreamList, upstreamDetail, upstreamUpdate } from '../core/tools/core/upstream-manage.js'
 import { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from '../core/tools/core/upstream-daily.js'
+import { upstreamCompact } from '../core/tools/core/upstream-compact.js'
 import { repoConfig } from '../core/tools/core/repo-config-tool.js'
 import { projectList } from '../core/tools/core/project-list.js'
 import { contributionStats } from '../core/tools/core/contribution-stats.js'
@@ -565,6 +566,20 @@ export function createServer(): McpServer {
       repo: repoParam,
     },
     wrapHandler(({ upstream_repo, repo }) => upstreamDailySkipNoise(upstream_repo as string, repo as string | undefined)),
+  )
+
+  server.tool(
+    'upstream_compact',
+    'Compact upstream daily commits: remove old processed entries by date or keep count. Pass no params to see stats.',
+    {
+      upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
+      before: z.string().optional().describe('Remove processed commits before this date (YYYY-MM-DD). Mutually exclusive with keep.'),
+      keep: z.number().optional().describe('Keep only the latest N processed commits. Mutually exclusive with before.'),
+      repo: repoParam,
+    },
+    wrapHandler(async ({ upstream_repo, before, keep, repo }) =>
+      upstreamCompact(upstream_repo as string, before as string | undefined, keep as number | undefined, repo as string | undefined),
+    ),
   )
 
   server.tool(

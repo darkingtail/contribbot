@@ -20,6 +20,7 @@ export { projectList } from './core/tools/core/project-list.js'
 export { contributionStats } from './core/tools/core/contribution-stats.js'
 export { todoClaim } from './core/tools/core/todo-claim.js'
 export { todoCompact } from './core/tools/core/todo-compact.js'
+export { upstreamCompact } from './core/tools/core/upstream-compact.js'
 export { knowledgeList, knowledgeRead, knowledgeWrite } from './core/tools/core/knowledge.js'
 export { listAllKnowledge, readKnowledge } from './core/tools/core/knowledge-resources.js'
 

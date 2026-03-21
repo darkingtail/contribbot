@@ -51,9 +51,11 @@ metadata:
 
 （none 模式跳过此步）
 
-### 4. 归档
+### 4. 归档 & 清理
 
 调用 `todo_archive`，参数：`repo`。
+
+如果归档数据量较大（提示用户），可调用 `todo_compact` / `upstream_compact` 清理旧数据。
 
 ### 5. 输出报告
 

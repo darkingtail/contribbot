@@ -29,6 +29,7 @@ metadata:
 | 完成任务 | done | `todo_done` |
 | 删除任务 | delete | `todo_delete` |
 | 归档 | archive | `todo_archive` |
+| 清理归档 | compact | `todo_compact` |
 
 ---
 
@@ -112,3 +113,13 @@ metadata:
 调用 `todo_archive`，参数：`repo`。
 
 将所有 done 状态的 todo 移入归档。
+
+---
+
+## compact
+
+调用 `todo_compact`，参数：
+- `repo`
+- `before`（日期）或 `keep`（条数），二选一
+
+不传参数时显示归档统计，让用户决定清理策略。

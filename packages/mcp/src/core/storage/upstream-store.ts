@@ -221,6 +221,45 @@ export class UpstreamStore {
     return count
   }
 
+  // --- Compact ---
+
+  /**
+   * Compact daily commits for a repo: remove old processed entries by date or keep count.
+   * Only removes commits that have been acted on (action !== null).
+   */
+  compactDaily(repo: string, options: { before?: string; keep?: number }): { removed: number; remaining: number } {
+    const data = this.load()
+    const repoData = data[repo]
+    if (!repoData) return { removed: 0, remaining: 0 }
+
+    const commits = repoData.daily.commits
+    const processed = commits.filter(c => c.action !== null)
+    const pending = commits.filter(c => c.action === null)
+
+    let keptProcessed: DailyCommit[]
+
+    if (options.before) {
+      keptProcessed = processed.filter(c => c.date >= options.before!)
+    } else if (options.keep !== undefined) {
+      keptProcessed = processed.slice(-options.keep)
+    } else {
+      throw new Error('Exactly one of "before" or "keep" must be provided.')
+    }
+
+    const removed = processed.length - keptProcessed.length
+    repoData.daily.commits = [...pending, ...keptProcessed]
+    this.save(data)
+    return { removed, remaining: repoData.daily.commits.length }
+  }
+
+  getDailyStats(repo: string): { total: number; pending: number; processed: number; oldest: string | null } {
+    const daily = this.getDaily(repo)
+    const pending = daily.commits.filter(c => c.action === null).length
+    const processed = daily.commits.length - pending
+    const oldest = daily.commits.length > 0 ? daily.commits[0]!.date : null
+    return { total: daily.commits.length, pending, processed, oldest }
+  }
+
   // --- Private ---
 
   private load(): UpstreamFile {
