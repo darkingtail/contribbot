@@ -87,6 +87,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 - 创建 PR 后：如有 active todo，自动 todo_update 关联
 - 创建 issue 后：如来自 upstream daily，自动 upstream_daily_act 关联
 - 关闭 issue 时：如有对应 todo，自动标记 done
+- 完成 todo 相关工作后：主动询问用户是否标记 todo_done
 - 回复 review 前：先用 pr_review_comments 获取评论列表
 
 ## 注意事项
