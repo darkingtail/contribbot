@@ -241,13 +241,13 @@ export class UpstreamStore {
     if (options.before) {
       keptProcessed = processed.filter(c => c.date >= options.before!)
     } else if (options.keep !== undefined) {
-      keptProcessed = processed.slice(-options.keep)
+      keptProcessed = options.keep === 0 ? [] : processed.slice(-options.keep)
     } else {
       throw new Error('Exactly one of "before" or "keep" must be provided.')
     }
 
     const removed = processed.length - keptProcessed.length
-    repoData.daily.commits = [...pending, ...keptProcessed]
+    repoData.daily.commits = [...pending, ...keptProcessed].sort((a, b) => a.date.localeCompare(b.date))
     this.save(data)
     return { removed, remaining: repoData.daily.commits.length }
   }

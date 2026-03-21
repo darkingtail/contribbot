@@ -2,7 +2,7 @@
   "name": "contribbot-mcp",
   "version": "0.0.1",
   "type": "module",
-  "description": "contribbot MCP Server — 39 tools for open source collaboration",
+  "description": "contribbot MCP Server — 41 tools for open source collaboration",
   "license": "MIT",
   "bin": {
     "contribbot-mcp": "./dist/mcp/index.js"

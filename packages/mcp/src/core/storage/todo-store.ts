@@ -227,7 +227,7 @@ export class TodoStore {
     if (options.before) {
       kept = archived.filter(t => t.archived >= options.before!)
     } else if (options.keep !== undefined) {
-      kept = archived.slice(-options.keep)
+      kept = options.keep === 0 ? [] : archived.slice(-options.keep)
     } else {
       throw new Error('Exactly one of "before" or "keep" must be provided.')
     }

@@ -19,7 +19,7 @@ contribbot/
 │       │   │   │   └── record-files.ts
 │       │   │   ├── enums.ts          # 统一枚举（as const）
 │       │   │   ├── tools/            # 三层工具分类
-│       │   │   │   ├── core/         # 21 tools — contribbot 独有（todo_*, upstream_*, repo_config...）
+│       │   │   │   ├── core/         # 23 tools — contribbot 独有（todo_*, upstream_*, repo_config...）
 │       │   │   │   ├── linkage/      # 4 tools — GitHub + 本地联动（issue_create, pr_create...）
 │       │   │   │   └── compat/       # 14 tools — 纯 GitHub 封装（issue_list, pr_summary...）
 │       │   │   └── utils/
@@ -31,7 +31,7 @@ contribbot/
 │       │   │       └── github-helpers.ts
 │       │   ├── mcp/
 │       │   │   ├── index.ts          # MCP Server 入口（stdio）
-│       │   │   └── server.ts         # 注册 39 tools + 1 resource + 4 prompts
+│       │   │   └── server.ts         # 注册 41 tools + 1 resource + 4 prompts
 │       │   └── index.ts              # 统一导出
 │       ├── package.json              # contribbot-mcp
 │       ├── tsconfig.json
@@ -72,7 +72,7 @@ pnpm test         # 运行所有测试
 | 无 | 有 | upstream | 非 fork 跨栈追踪 |
 | 无 | 无 | none | 无上游对齐关系 |
 
-## MCP 工具清单（39 Tools + 1 Resource + 4 Prompts）
+## MCP 工具清单（41 Tools + 1 Resource + 4 Prompts）
 
 ### 项目概览
 
@@ -94,6 +94,7 @@ pnpm test         # 运行所有测试
 | `todo_claim` | 领取 issue 工作项：评论到 GitHub + 本地记录，自动升 active，模板可配置 |
 | `todo_delete` | 删除 todo |
 | `todo_archive` | 归档已完成的 todos |
+| `todo_compact` | 清理归档数据，按日期或条数 |
 
 ### Issues & PRs
 
@@ -125,6 +126,7 @@ pnpm test         # 运行所有测试
 | `upstream_daily` | 拉取上游 commits，版本锚定去重，自动检测已有 issue/PR |
 | `upstream_daily_act` | 对某条 commit 标记动作（skip/todo/issue/pr） |
 | `upstream_daily_skip_noise` | 批量跳过噪音 commits（ci/build/style/deps） |
+| `upstream_compact` | 清理已处理的 daily commits，按日期或条数 |
 
 ### 质量 & 统计
 
@@ -169,7 +171,7 @@ pnpm test         # 运行所有测试
 ├── upstream/                           # 上游实现记录
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
-├── archive.yaml                        # 已完成 todos 归档
+├── todos.archive.yaml                  # 已完成 todos 归档
 ├── knowledge/                          # 项目知识沉淀
 └── sync/                               # 同步记录
 ```

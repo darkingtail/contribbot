@@ -156,11 +156,11 @@ First time? Run `/contribbot:project-onboard` to auto-detect and configure.
 
 ## Tool Architecture
 
-39 tools organized in three layers:
+41 tools organized in three layers:
 
 ```
 tools/
-├── core/      21 tools — contribbot unique (todo_*, upstream_*, knowledge, config)
+├── core/      23 tools — contribbot unique (todo_*, upstream_*, knowledge, config)
 ├── linkage/    4 tools — GitHub ops + local data sync (issue_create, pr_create...)
 └── compat/    14 tools — GitHub wrappers for out-of-box use (issue_list, pr_summary...)
 ```
@@ -180,7 +180,7 @@ All data persists locally in `~/.contribbot/{owner}/{repo}/`:
 ├── todos/             # Implementation records (per issue/idea)
 ├── upstream.yaml      # Upstream tracking index
 ├── upstream/          # Upstream implementation records
-├── archive.yaml       # Archived todos
+├── todos.archive.yaml # Archived todos
 ├── templates/         # Custom templates (e.g., todo_claim.md)
 ├── knowledge/         # Project knowledge
 └── sync/              # Sync history records

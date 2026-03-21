@@ -225,5 +225,5 @@ export async function todoArchive(repo?: string): Promise<string> {
     if (result) count++
   }
 
-  return `Archived ${count} done todos to archive.yaml`
+  return `Archived ${count} done todos to todos.archive.yaml`
 }

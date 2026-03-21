@@ -234,7 +234,7 @@ src/
 │   │   └── record-files.ts # + 模板化创建 + issue 详情 enrich
 │   ├── enums.ts            # as const 枚举 + 运行时校验
 │   ├── tools/              # 三层工具分类
-│   │   ├── core/           # 21 tools — contribbot 独有
+│   │   ├── core/           # 23 tools — contribbot 独有
 │   │   ├── linkage/        # 4 tools — GitHub + 本地联动
 │   │   └── compat/         # 14 tools — 纯 GitHub 封装
 │   └── utils/
@@ -263,7 +263,7 @@ src/
 ├── upstream/                # 上游实现记录
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
-├── archive.yaml             # 已完成 todos 归档
+├── todos.archive.yaml                  # 已完成 todos 归档
 ├── templates/               # 可自定义模板（首次使用自动生成带注释的默认模板）
 │   ├── todo_record.md       # todo 实现文档模板
 │   └── todo_claim.md        # claim 评论模板
@@ -283,7 +283,7 @@ Phase 3: Agents（自主决策）        🔲 内置 LLM，自主调用 Skills
 
 | Phase | 状态 | 说明 |
 |-------|------|------|
-| 1. Tools | ✅ | 39 tools + 1 resource + 4 prompts，寄宿于 Claude Code 等宿主 |
+| 1. Tools | ✅ | 41 tools + 1 resource + 4 prompts，寄宿于 Claude Code 等宿主 |
 | 2. Skills | ✅ | 10 skills（MCP 工具编排层），三层工具分类（core/linkage/compat） |
 | 3. Agents | 🔲 | 独立运行的开源协作 Agent：Docker 部署、聊天入口、定时巡检、记忆系统 |
 

@@ -18,8 +18,8 @@ Phase 3: Agents（自主决策）        🔲
 
 | 能力 | 数量 | 说明 |
 |------|------|------|
-| Tools | 38 | 项目概览、todo 管理、issues/PRs 读写、上游追踪、质量检查、贡献统计 |
-| Resources | 1 | `skill://{repo}/{name}` — skills 知识库自动枚举 |
+| Tools | 41 | 项目概览、todo 管理、issues/PRs 读写、上游追踪、质量检查、贡献统计 |
+| Resources | 1 | `knowledge://{repo}/{name}` — 项目知识自动枚举 |
 | Prompts | 4 | daily-sync、start-task、pre-submit、weekly-review |
 
 ### 关键特性

@@ -1,6 +1,6 @@
 # contribbot 工具集合
 
-> 39 Tools + 1 Resource + 4 Prompts
+> 41 Tools + 1 Resource + 4 Prompts
 
 ---
 
@@ -24,7 +24,7 @@
 
 ---
 
-## Todo 管理（9 Tools）
+## Todo 管理（10 Tools）
 
 本地 YAML 结构化任务管理，生命周期：idea → backlog → active → pr_submitted → done → archive
 
@@ -39,6 +39,7 @@
 | `todo_done` | 标记完成 | `item`, `repo` |
 | `todo_delete` | 删除 todo | `item`, `repo` |
 | `todo_archive` | 归档所有已完成的 todos | `repo` |
+| `todo_compact` | 清理归档数据，按日期（before）或条数（keep）| `before?`, `keep?`, `repo` |
 
 ### 枚举值
 
@@ -100,13 +101,14 @@
 | `upstream_detail` | 查看某版本同步详情或实现记录 | `upstream_repo`, `version`, `repo` |
 | `upstream_update` | 更新同步条目：状态 / 关联 PR / 难度 | `upstream_repo`, `version`, `item_index`, `status?`, `pr?`, `difficulty?`, `repo` |
 
-### 每日追踪（3 Tools）
+### 每日追踪（4 Tools）
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
 | `upstream_daily` | 拉取上游 commits（anchor..HEAD），首次引导选择基准版本，支持 releases 和 tags | `upstream_repo`, `since_tag?`, `repo` |
 | `upstream_daily_act` | 标记某条 commit 的动作 | `upstream_repo`, `sha`, `action`, `ref?`, `repo` |
 | `upstream_daily_skip_noise` | 批量跳过噪音 commits（CI/deps/build/style） | `upstream_repo`, `repo` |
+| `upstream_compact` | 清理已处理的 daily commits，按日期（before）或条数（keep）| `upstream_repo`, `before?`, `keep?`, `repo` |
 
 ### 历史记录（1 Tool）
 
