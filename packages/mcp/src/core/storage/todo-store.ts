@@ -162,8 +162,22 @@ export class TodoStore {
     return removed
   }
 
+  private get archivePath(): string {
+    const newPath = join(this.baseDir, 'todos.archive.yaml')
+    if (existsSync(newPath)) return newPath
+    // Backward compat: migrate old archive.yaml
+    const oldPath = join(this.baseDir, 'archive.yaml')
+    if (existsSync(oldPath)) {
+      const content = readFileSync(oldPath, 'utf-8')
+      safeWriteFileSync(newPath, content)
+      // Keep old file for safety, will be ignored going forward
+      return newPath
+    }
+    return newPath
+  }
+
   /**
-   * Archive a todo: append to archive.yaml, then delete from todos.yaml.
+   * Archive a todo: append to todos.archive.yaml, then delete from todos.yaml.
    * Returns the archived item or undefined if index is invalid.
    */
   archiveAndDelete(index: number): ArchivedTodoItem | undefined {
@@ -179,19 +193,49 @@ export class TodoStore {
     this.save(todos)
 
     // Then append to archive
-    const archivePath = join(this.baseDir, 'archive.yaml')
     let archived: ArchivedTodoItem[] = []
-    if (existsSync(archivePath)) {
-      const content = readFileSync(archivePath, 'utf-8')
+    if (existsSync(this.archivePath)) {
+      const content = readFileSync(this.archivePath, 'utf-8')
       const data = parse(content) as { todos: ArchivedTodoItem[] } | null
       archived = data?.todos ?? []
     }
     archived.push(archivedItem)
 
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
-    safeWriteFileSync(archivePath, stringify({ todos: archived }))
+    safeWriteFileSync(this.archivePath, stringify({ todos: archived }))
 
     return archivedItem
+  }
+
+  listArchived(): ArchivedTodoItem[] {
+    if (!existsSync(this.archivePath)) return []
+    const content = readFileSync(this.archivePath, 'utf-8')
+    const data = parse(content) as { todos: ArchivedTodoItem[] } | null
+    return data?.todos ?? []
+  }
+
+  /**
+   * Compact archive: remove old entries by date or keep count.
+   * Exactly one of `before` or `keep` must be provided.
+   */
+  compact(options: { before?: string; keep?: number }): { removed: number; remaining: number } {
+    const archived = this.listArchived()
+    if (archived.length === 0) return { removed: 0, remaining: 0 }
+
+    let kept: ArchivedTodoItem[]
+
+    if (options.before) {
+      kept = archived.filter(t => t.archived >= options.before!)
+    } else if (options.keep !== undefined) {
+      kept = archived.slice(-options.keep)
+    } else {
+      throw new Error('Exactly one of "before" or "keep" must be provided.')
+    }
+
+    const removed = archived.length - kept.length
+    if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
+    safeWriteFileSync(this.archivePath, stringify({ todos: kept }))
+    return { removed, remaining: kept.length }
   }
 
   private save(todos: TodoItem[]): void {

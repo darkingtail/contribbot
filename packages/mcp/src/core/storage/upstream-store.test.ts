@@ -66,7 +66,10 @@ describe('UpstreamStore', () => {
     ])
     const daily = store.getDaily('ant-design/ant-design')
     expect(daily.commits).toHaveLength(2)
-    expect(daily.last_checked).toBe(new Date().toISOString().slice(0, 10))
+    // Use local timezone date (same as todayDate() in format.ts)
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(daily.last_checked).toBe(today)
 
     // Add again with one duplicate
     store.addDailyCommits('ant-design/ant-design', [

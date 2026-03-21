@@ -13,6 +13,7 @@ import { repoConfig } from '../core/tools/core/repo-config-tool.js'
 import { projectList } from '../core/tools/core/project-list.js'
 import { contributionStats } from '../core/tools/core/contribution-stats.js'
 import { todoClaim } from '../core/tools/core/todo-claim.js'
+import { todoCompact } from '../core/tools/core/todo-compact.js'
 import { knowledgeWrite } from '../core/tools/core/knowledge.js'
 import { listAllKnowledge, readKnowledge } from '../core/tools/core/knowledge-resources.js'
 
@@ -187,9 +188,22 @@ export function createServer(): McpServer {
 
   server.tool(
     'todo_archive',
-    'Archive all done todos: move from todos.yaml to archive.yaml',
+    'Archive all done todos: move from todos.yaml to todos.archive.yaml',
     { repo: repoParam },
     wrapHandler(({ repo }) => todoArchive(repo as string | undefined)),
+  )
+
+  server.tool(
+    'todo_compact',
+    'Compact todo archive: remove old entries by date or keep count. Pass no params to see archive stats.',
+    {
+      before: z.string().optional().describe('Remove entries archived before this date (YYYY-MM-DD). Mutually exclusive with keep.'),
+      keep: z.number().optional().describe('Keep only the latest N entries. Mutually exclusive with before.'),
+      repo: repoParam,
+    },
+    wrapHandler(async ({ before, keep, repo }) =>
+      todoCompact(before as string | undefined, keep as number | undefined, repo as string | undefined),
+    ),
   )
 
   server.tool(

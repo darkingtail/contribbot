@@ -125,7 +125,7 @@ describe('TodoStore', () => {
     expect(remaining[0]!.ref).toBe('#2')
 
     // Check archive file exists
-    expect(existsSync(join(dir, 'archive.yaml'))).toBe(true)
+    expect(existsSync(join(dir, 'todos.archive.yaml'))).toBe(true)
   })
 
   it('returns undefined for invalid index', () => {
