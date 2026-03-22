@@ -4,7 +4,7 @@
 
 Open source collaboration assistant. Helps developers efficiently maintain and contribute to open source projects.
 
-41 MCP tools + 10 skills — todo management, upstream tracking, issue/PR workflows, multi-project oversight.
+MCP tools + skills — todo management, upstream tracking, issue/PR workflows, multi-project oversight.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ claude plugin marketplace add https://github.com/darkingtail/contribbot
 claude plugin install contribbot
 ```
 
-This installs 10 skills + MCP server (`contribbot-mcp`). Skills provide guided workflows, MCP server provides the 41 tools.
+This installs skills + MCP server (`contribbot-mcp`). Skills provide guided workflows, MCP server provides the tools.
 
 ### Other Platforms
 
@@ -45,7 +45,7 @@ Most AI coding tools can read GitHub issues and create PRs. contribbot goes furt
 | Cross-stack tracking          | ❌     | ✅ track React → Vue feature parity           |
 | Project knowledge             | ❌     | ✅ persistent knowledge per repo              |
 
-### 10 Skills
+### Skills
 
 Skills are guided workflows that orchestrate MCP tools. In Claude Code, trigger them by name or natural language.
 
@@ -148,13 +148,13 @@ All data is local in `~/.contribbot/{owner}/{repo}/`:
 
 ## Tool Architecture
 
-41 tools organized in three layers:
+Tools organized in three layers:
 
 ```
 tools/
-├── core/      23 tools — contribbot unique (todo, upstream, knowledge, config)
-├── linkage/    4 tools — GitHub ops + local data sync (issue_create, pr_create...)
-└── compat/    14 tools — GitHub API wrappers for standalone use
+├── core/      contribbot unique (todo, upstream, knowledge, config)
+├── linkage/   GitHub ops + local data sync (issue_create, pr_create...)
+└── compat/    GitHub API wrappers for standalone use
 ```
 
 - **Core** — Cannot be replaced by GitHub MCP. Todo management, upstream tracking, knowledge, repo config, compact.
@@ -202,11 +202,11 @@ Project structure:
 
 ```
 contribbot/
-├── packages/mcp/     # contribbot-mcp (npm package, 41 tools)
+├── packages/mcp/     # contribbot-mcp (npm package)
 │   └── src/
 │       ├── core/     # Tools (core/linkage/compat), storage, clients, utils
 │       └── mcp/      # MCP server entry + tool registration
-├── skills/           # 10 skills (MCP tool orchestration)
+├── skills/           # Skills (MCP tool orchestration)
 ├── .claude-plugin/   # Plugin metadata for Claude Code
 └── .mcp.json         # MCP server config
 ```
