@@ -1,6 +1,6 @@
 # contribbot
 
-> /kənˈtrɪbɒt/ — contrib 中的 b 不发音，同 contribute
+> /kənˈtrɪbɒt/ — contrib + bot，两个 b 合并只读一个
 
 [English](README.md) | 中文
 

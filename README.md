@@ -1,6 +1,6 @@
 # contribbot
 
-> /kənˈtrɪbɒt/ — the "b" in "contrib" is silent, like "contribute"
+> /kənˈtrɪbɒt/ — contrib + bot, the "b" in "contrib" merges with "bot"
 
 [中文](README.zh.md) | English
 
