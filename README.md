@@ -19,7 +19,7 @@ Open source collaboration assistant. Helps developers efficiently maintain and c
 claude plugin marketplace add https://github.com/darkingtail/contribbot
 
 # Step 2: Install
-claude plugin install darkingtail/contribbot
+claude plugin install contribbot
 ```
 
 This installs 10 skills + MCP server (`contribbot-mcp`). Skills provide guided workflows, MCP server provides the 41 tools.
@@ -34,44 +34,44 @@ Most AI coding tools can read GitHub issues and create PRs. contribbot goes furt
 
 ### vs GitHub CLI alone
 
-| | gh CLI | contribbot |
-|---|---|---|
-| Read issues/PRs | ✅ | ✅ |
-| Create issues/PRs | ✅ | ✅ + auto-link to local todos |
-| Track personal tasks | ❌ | ✅ todo lifecycle with implementation records |
-| Track upstream changes | ❌ | ✅ commit-level tracking with triage |
-| Multi-maintainer coordination | ❌ | ✅ claim work items, comment to GitHub |
-| Fork alignment | ❌ | ✅ sync fork + cherry-pick decisions |
-| Cross-stack tracking | ❌ | ✅ track React → Vue feature parity |
-| Project knowledge | ❌ | ✅ persistent knowledge per repo |
+|                               | gh CLI | contribbot                                    |
+| ----------------------------- | ------ | --------------------------------------------- |
+| Read issues/PRs               | ✅     | ✅                                            |
+| Create issues/PRs             | ✅     | ✅ + auto-link to local todos                 |
+| Track personal tasks          | ❌     | ✅ todo lifecycle with implementation records |
+| Track upstream changes        | ❌     | ✅ commit-level tracking with triage          |
+| Multi-maintainer coordination | ❌     | ✅ claim work items, comment to GitHub        |
+| Fork alignment                | ❌     | ✅ sync fork + cherry-pick decisions          |
+| Cross-stack tracking          | ❌     | ✅ track React → Vue feature parity           |
+| Project knowledge             | ❌     | ✅ persistent knowledge per repo              |
 
 ### 10 Skills
 
 Skills are guided workflows that orchestrate MCP tools. In Claude Code, trigger them by name or natural language.
 
-| Skill | Description |
-|-------|-------------|
-| `contribbot:project-onboard` | New project setup — detect fork/upstream, init config, first sync |
-| `contribbot:daily-sync` | Daily check — sync fork, fetch upstream commits, skip noise, triage |
-| `contribbot:start-task` | Start working — pick todo, activate, LLM generates implementation plan |
-| `contribbot:todo` | Todo lifecycle — add, activate, claim, update, done, archive, compact |
-| `contribbot:issue` | Issue management — list, detail, create, close, comment |
-| `contribbot:pr` | PR management — list, summary, create, update, review, reply |
-| `contribbot:pre-submit` | Pre-merge check — PR review, CI status, security alerts |
-| `contribbot:weekly-review` | Weekly retrospective — contribution stats, progress, cleanup |
-| `contribbot:fork-triage` | Fork cherry-pick decisions for downstream consumers |
-| `contribbot:dashboard` | Project overview — single or cross-project |
+| Skill                        | Description                                                            |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `contribbot:project-onboard` | New project setup — detect fork/upstream, init config, first sync      |
+| `contribbot:daily-sync`      | Daily check — sync fork, fetch upstream commits, skip noise, triage    |
+| `contribbot:start-task`      | Start working — pick todo, activate, LLM generates implementation plan |
+| `contribbot:todo`            | Todo lifecycle — add, activate, claim, update, done, archive, compact  |
+| `contribbot:issue`           | Issue management — list, detail, create, close, comment                |
+| `contribbot:pr`              | PR management — list, summary, create, update, review, reply           |
+| `contribbot:pre-submit`      | Pre-merge check — PR review, CI status, security alerts                |
+| `contribbot:weekly-review`   | Weekly retrospective — contribution stats, progress, cleanup           |
+| `contribbot:fork-triage`     | Fork cherry-pick decisions for downstream consumers                    |
+| `contribbot:dashboard`       | Project overview — single or cross-project                             |
 
 ## Project Modes
 
 contribbot auto-detects your project's relationship with upstream repos and adapts its workflow accordingly.
 
-| Mode | Condition | What It Enables |
-|------|-----------|----------------|
-| **none** | No fork, no upstream | Issue/PR/todo management |
-| **fork** | Has fork source | Fork sync + cherry-pick decisions |
-| **upstream** | Has external upstream | Cross-stack commit tracking |
-| **fork+upstream** | Both | Fork sync + cross-stack tracking |
+| Mode              | Condition             | What It Enables                   |
+| ----------------- | --------------------- | --------------------------------- |
+| **none**          | No fork, no upstream  | Issue/PR/todo management          |
+| **fork**          | Has fork source       | Fork sync + cherry-pick decisions |
+| **upstream**      | Has external upstream | Cross-stack commit tracking       |
+| **fork+upstream** | Both                  | Fork sync + cross-stack tracking  |
 
 Run `/contribbot:project-onboard` to auto-detect and configure.
 
@@ -87,16 +87,16 @@ Your fork is recorded in `config.yaml` as the `fork` field:
 # ~/.contribbot/makeplane/plane/config.yaml
 role: admin
 org: null
-fork: darkingtail/plane    # your fork
+fork: darkingtail/plane # your fork
 upstream: null
 ```
 
 ### Three-layer capability
 
-| Layer | Capability | Modes |
-|-------|-----------|-------|
-| Basic | Issue/PR/todo management | All |
-| Fork tracking | Cherry-pick decisions from fork source | fork, fork+upstream |
+| Layer                | Capability                                 | Modes                   |
+| -------------------- | ------------------------------------------ | ----------------------- |
+| Basic                | Issue/PR/todo management                   | All                     |
+| Fork tracking        | Cherry-pick decisions from fork source     | fork, fork+upstream     |
 | Cross-stack tracking | Feature parity tracking across tech stacks | upstream, fork+upstream |
 
 ## Data Storage
@@ -175,11 +175,11 @@ Templates are auto-generated with documentation on first use. Edit them to custo
 
 `config.yaml` is auto-detected on first use via `repo_config`. Fields:
 
-| Field | Description |
-|-------|-------------|
-| `role` | Your GitHub permission level (auto-detected) |
-| `org` | Organization name (auto-detected) |
-| `fork` | Your fork repo, if this is a parent repo |
+| Field      | Description                                     |
+| ---------- | ----------------------------------------------- |
+| `role`     | Your GitHub permission level (auto-detected)    |
+| `org`      | Organization name (auto-detected)               |
+| `fork`     | Your fork repo, if this is a parent repo        |
 | `upstream` | External upstream repo for cross-stack tracking |
 
 ## Contributing
