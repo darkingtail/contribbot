@@ -56,6 +56,13 @@ export async function todoUpdate(
     throw new Error(`Failed to update todo at index ${storeIndex}.`)
   }
 
+  // not_planned → auto archive (decided not to do, move out of active list)
+  if (updateFields.status === 'not_planned') {
+    store.archiveAndDelete(storeIndex)
+    changes.push('archived (not planned)')
+    return `Updated & archived **${updated.title}**: ${changes.join(', ')}`
+  }
+
   // If note is provided, append to record file (auto-create if missing)
   if (fields.note && updated.ref) {
     const recordPath = records.resolveRefPath(updated.ref)

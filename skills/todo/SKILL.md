@@ -26,6 +26,7 @@ metadata:
 | 查看详情 | detail | `todo_detail` |
 | 更新任务 | update | `todo_update` |
 | 领取子任务 | claim | `todo_claim` |
+| 不做了 | not_planned | `todo_update(status=not_planned)` |
 | 完成任务 | done | `todo_done` |
 | 删除任务 | delete | `todo_delete` |
 | 归档 | archive | `todo_archive` |
@@ -88,6 +89,14 @@ metadata:
 4. 调用 `todo_claim` 发布评论 + 本地记录
 
 评论模板可通过 `~/.contribbot/{owner}/{repo}/templates/todo_claim.md` 文件自定义。
+
+---
+
+## not_planned
+
+调用 `todo_update`，参数：`repo`、`item`、`status=not_planned`。
+
+标记为"决定不做"，自动归档到 `todos.archive.yaml`。
 
 ---
 
