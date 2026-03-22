@@ -129,6 +129,9 @@ upstream: null
 │                            #   versions: release 级同步状态
 │                            #   daily: commit 级 triage（action: skip|todo|issue|pr|synced）
 │
+├── upstream.archive.yaml   # 已归档的上游 daily commits
+│                            #   由 upstream_compact 移入
+│
 ├── upstream/                # 上游实现文档
 │   └── {owner}/{repo}/
 │       └── {version}.md

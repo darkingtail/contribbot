@@ -224,8 +224,8 @@ export class UpstreamStore {
   // --- Compact ---
 
   /**
-   * Compact daily commits for a repo: remove old processed entries by date or keep count.
-   * Only removes commits that have been acted on (action !== null).
+   * Compact daily commits for a repo: move old processed entries to upstream.archive.yaml.
+   * Only moves commits that have been acted on (action !== null).
    */
   compactDaily(repo: string, options: { before?: string; keep?: number }): { removed: number; remaining: number } {
     const data = this.load()
@@ -246,7 +246,13 @@ export class UpstreamStore {
       throw new Error('Exactly one of "before" or "keep" must be provided.')
     }
 
-    const removed = processed.length - keptProcessed.length
+    // Move removed commits to archive
+    const removedCommits = processed.filter(c => !keptProcessed.includes(c))
+    if (removedCommits.length > 0) {
+      this.appendToArchive(repo, removedCommits)
+    }
+
+    const removed = removedCommits.length
     repoData.daily.commits = [...pending, ...keptProcessed].sort((a, b) => a.date.localeCompare(b.date))
     this.save(data)
     return { removed, remaining: repoData.daily.commits.length }
@@ -258,6 +264,41 @@ export class UpstreamStore {
     const processed = daily.commits.length - pending
     const oldest = daily.commits.length > 0 ? daily.commits[0]!.date : null
     return { total: daily.commits.length, pending, processed, oldest }
+  }
+
+  // --- Archive ---
+
+  private get archivePath(): string {
+    return join(this.baseDir, 'upstream.archive.yaml')
+  }
+
+  private appendToArchive(repo: string, commits: DailyCommit[]): void {
+    let archive: Record<string, DailyCommit[]> = {}
+    if (existsSync(this.archivePath)) {
+      const content = readFileSync(this.archivePath, 'utf-8')
+      archive = (parse(content) as Record<string, DailyCommit[]> | null) ?? {}
+    }
+
+    if (!archive[repo]) archive[repo] = []
+    archive[repo].push(...commits)
+
+    if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
+    safeWriteFileSync(this.archivePath, stringify(archive))
+  }
+
+  listArchived(repo: string): DailyCommit[] {
+    if (!existsSync(this.archivePath)) return []
+    const content = readFileSync(this.archivePath, 'utf-8')
+    const archive = (parse(content) as Record<string, DailyCommit[]> | null) ?? {}
+    return archive[repo] ?? []
+  }
+
+  getArchiveStats(repo: string): { total: number; oldest: string | null } {
+    const archived = this.listArchived(repo)
+    return {
+      total: archived.length,
+      oldest: archived.length > 0 ? archived[0]!.date : null,
+    }
   }
 
   // --- Private ---

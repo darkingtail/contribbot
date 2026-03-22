@@ -19,20 +19,22 @@ export async function upstreamCompact(
   // No params — show stats
   if (!before && keep === undefined) {
     const stats = store.getDailyStats(upstreamRepo)
-    if (stats.total === 0) {
+    const archiveStats = store.getArchiveStats(upstreamRepo)
+    if (stats.total === 0 && archiveStats.total === 0) {
       return `No daily commits for ${upstreamRepo} in ${owner}/${name}. Nothing to compact.`
     }
     return [
       `## Daily Commits — ${upstreamRepo} (${owner}/${name})`,
       '',
-      `> ${stats.total} total · ${stats.pending} pending · ${stats.processed} processed · oldest: ${stats.oldest ?? '—'}`,
+      `> Active: ${stats.total} total · ${stats.pending} pending · ${stats.processed} processed · oldest: ${stats.oldest ?? '—'}`,
+      `> Archived: ${archiveStats.total} commits${archiveStats.oldest ? ` · oldest: ${archiveStats.oldest}` : ''}`,
       '',
       'Use `before` (date) or `keep` (count) to compact processed commits:',
-      '- `upstream_compact(before="2025-01-01")` — remove processed commits before this date',
-      '- `upstream_compact(keep=100)` — keep only the latest 100 processed commits',
+      '- `upstream_compact(before="2025-01-01")` — move processed commits before this date to archive',
+      '- `upstream_compact(keep=100)` — keep only the latest 100 processed commits, archive the rest',
     ].join('\n')
   }
 
   const result = store.compactDaily(upstreamRepo, { before, keep })
-  return `Compacted daily commits for ${upstreamRepo}: removed ${result.removed} processed, remaining ${result.remaining} total.`
+  return `Compacted daily commits for ${upstreamRepo}: archived ${result.removed}, remaining ${result.remaining} active.`
 }

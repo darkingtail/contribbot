@@ -129,6 +129,9 @@ All data is local in `~/.contribbot/{owner}/{repo}/`:
 │                            #   versions: release-level sync status
 │                            #   daily: commit-level triage (action: skip|todo|issue|pr|synced)
 │
+├── upstream.archive.yaml   # Archived upstream daily commits
+│                            #   Moved here by upstream_compact
+│
 ├── upstream/                # Upstream implementation records
 │   └── {owner}/{repo}/
 │       └── {version}.md
