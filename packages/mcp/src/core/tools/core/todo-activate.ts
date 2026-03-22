@@ -41,6 +41,7 @@ export async function todoActivate(item: string, branch?: string, repo?: string)
 
   const { storeIndex, item: todo } = resolved
   let difficulty: TodoDifficulty = 'medium'
+  let existingClaims: { user: string; items: string[] }[] = []
 
   // Ensure record file exists (may be missing for old todos created before todo_add auto-creation)
   if (todo.ref) {
@@ -87,7 +88,6 @@ export async function todoActivate(item: string, branch?: string, repo?: string)
 
       // Detect existing claims from contribbot:claim markers
       const claimPattern = /<!-- contribbot:claim @(\S+) -->/g
-      const existingClaims: { user: string; items: string[] }[] = []
       for (const comment of comments) {
         const match = comment.body.match(claimPattern)
         if (match) {
