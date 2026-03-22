@@ -171,7 +171,11 @@ pnpm test         # 运行所有测试
 ├── upstream/                           # 上游实现记录
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
-├── todos.archive.yaml                  # 已完成 todos 归档
+├── todos.archive.yaml                  # 已完成 todos 归档（done + not_planned）
+├── upstream.archive.yaml               # 已归档的上游 daily commits
+├── templates/                          # 自定义模板（首次使用自动生成）
+│   ├── todo_record.md                  # todo 实现文档模板
+│   └── todo_claim.md                   # claim 评论模板
 ├── knowledge/                          # 项目知识沉淀
 └── sync/                               # 同步记录
 ```
@@ -181,3 +185,8 @@ pnpm test         # 运行所有测试
 - 所有列表/表格输出必须带**备注列**（提供上下文信息）
 - 工具间数据不共享状态，每次调用独立
 - repo 参数必须显式传 "owner/repo"，无默认值
+- **工具不做定性** — 子任务识别、分支命名、噪音过滤的项目级判断交给 LLM
+- **模板文件化** — templates/ 目录，首次使用自动生成带注释的默认模板
+- **todo 即有文档** — todo_add 时立即创建实现文档
+- **用户确认优先** — activate 时 LLM 先出方案大纲，用户确认后再写入
+- **not_planned 自动归档** — 标记 not_planned 时自动移入 todos.archive.yaml
