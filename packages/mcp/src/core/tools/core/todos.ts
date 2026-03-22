@@ -1,3 +1,4 @@
+import { existsSync, unlinkSync } from 'node:fs'
 import { getIssue } from '../../clients/github.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { TodoStore, refSortKey } from '../../storage/todo-store.js'
@@ -173,7 +174,9 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
 
 export async function todoDelete(indexOrText: string, repo?: string): Promise<string> {
   const { owner, name } = await resolveRepo(repo)
-  const store = new TodoStore(getContribDir(owner, name))
+  const contribDir = getContribDir(owner, name)
+  const store = new TodoStore(contribDir)
+  const records = new RecordFiles(contribDir)
 
   const resolved = store.resolveItem(indexOrText)
   if (!resolved) {
@@ -183,6 +186,14 @@ export async function todoDelete(indexOrText: string, repo?: string): Promise<st
   const deleted = store.delete(resolved.storeIndex)
   if (!deleted) {
     throw new Error(`Failed to delete todo at index ${resolved.storeIndex}.`)
+  }
+
+  // Delete associated record file
+  if (deleted.ref) {
+    const recordPath = records.resolveRefPath(deleted.ref)
+    if (recordPath && existsSync(recordPath)) {
+      unlinkSync(recordPath)
+    }
   }
 
   return `Deleted: ~~${deleted.title}~~${deleted.ref ? ` (${deleted.ref})` : ''}`
