@@ -1,5 +1,7 @@
 # contribbot
 
+[中文](README.zh.md) | English
+
 Open source collaboration assistant. Helps developers efficiently maintain and contribute to open source projects.
 
 41 MCP tools + 10 skills — todo management, upstream tracking, issue/PR workflows, multi-project oversight.
