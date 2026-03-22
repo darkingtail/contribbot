@@ -14,11 +14,11 @@ Phase 3: Agents（自主决策）        🔲
 
 MCP Server，寄宿于 Claude Code / Gemini CLI / Codex CLI / Cursor 等宿主。
 
-| 能力 | 数量 | 说明 |
-|------|------|------|
-| Tools | 41 | 三层分类（23 core / 4 linkage / 14 compat） |
-| Resources | 1 | `knowledge://{repo}/{name}` — 项目知识 |
-| Prompts | 4 | daily-sync、start-task、pre-submit、weekly-review |
+| 能力 | 说明 |
+|------|------|
+| Tools | 三层分类（core / linkage / compat），详见 [docs/tools.md](docs/tools.md) |
+| Resources | `knowledge://{repo}/{name}` — 项目知识 |
+| Prompts | daily-sync、start-task、pre-submit、weekly-review |
 
 ### 关键特性
 

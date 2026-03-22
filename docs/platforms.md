@@ -119,8 +119,8 @@ Add to `~/.config/zed/settings.json` (note: uses `context_servers`, not `mcpServ
 
 ## Platform Support Summary
 
-| Platform | Tools (41) | Skills (10) | MCP Prompts (4) | Install Method |
-|----------|-----------|-------------|-----------------|----------------|
+| Platform | Tools | Skills | MCP Prompts | Install Method |
+|----------|-------|--------|-------------|----------------|
 | Claude Code | ✅ | ✅ via plugin | ✅ | `claude plugin install` |
 | Claude Desktop | ✅ | — | ✅ | JSON config |
 | Gemini CLI | ✅ | — | ✅ | CLI or JSON config |
@@ -130,4 +130,4 @@ Add to `~/.config/zed/settings.json` (note: uses `context_servers`, not `mcpServ
 | VS Code | ✅ | — | ✅ | JSON config |
 | Zed | ✅ | — | ✅ | JSON config (`context_servers`) |
 
-> Skills are Claude Code plugin-specific. Other platforms get the same 41 tools + 4 MCP prompts (daily-sync, start-task, pre-submit, weekly-review). Skills are markdown workflow instructions — any platform can use them by loading the `skills/*/SKILL.md` content as context.
+> Skills are Claude Code plugin-specific. Other platforms get MCP tools + prompts. Skills are markdown workflow instructions — any platform can use them by loading the `skills/*/SKILL.md` content as context.

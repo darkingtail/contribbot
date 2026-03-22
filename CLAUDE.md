@@ -19,9 +19,9 @@ contribbot/
 │       │   │   │   └── record-files.ts
 │       │   │   ├── enums.ts          # 统一枚举（as const）
 │       │   │   ├── tools/            # 三层工具分类
-│       │   │   │   ├── core/         # 23 tools — contribbot 独有（todo_*, upstream_*, repo_config...）
-│       │   │   │   ├── linkage/      # 4 tools — GitHub + 本地联动（issue_create, pr_create...）
-│       │   │   │   └── compat/       # 14 tools — 纯 GitHub 封装（issue_list, pr_summary...）
+│       │   │   │   ├── core/         # contribbot 独有（todo_*, upstream_*, repo_config...）
+│       │   │   │   ├── linkage/     # GitHub + 本地联动（issue_create, pr_create...）
+│       │   │   │   └── compat/      # 纯 GitHub 封装（issue_list, pr_summary...）
 │       │   │   └── utils/
 │       │   │       ├── config.ts     # 项目路径
 │       │   │       ├── format.ts     # markdown 格式化
@@ -31,7 +31,7 @@ contribbot/
 │       │   │       └── github-helpers.ts
 │       │   ├── mcp/
 │       │   │   ├── index.ts          # MCP Server 入口（stdio）
-│       │   │   └── server.ts         # 注册 41 tools + 1 resource + 4 prompts
+│       │   │   └── server.ts         # 工具注册 + INSTRUCTIONS + Prompts
 │       │   └── index.ts              # 统一导出
 │       ├── package.json              # contribbot-mcp
 │       ├── tsconfig.json
@@ -72,7 +72,7 @@ pnpm test         # 运行所有测试
 | 无 | 有 | upstream | 非 fork 跨栈追踪 |
 | 无 | 无 | none | 无上游对齐关系 |
 
-## MCP 工具清单（41 Tools + 1 Resource + 4 Prompts）
+## MCP 工具清单
 
 ### 项目概览
 
