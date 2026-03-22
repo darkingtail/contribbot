@@ -191,25 +191,7 @@ Archived data accumulates over time. Use `todo_compact` / `upstream_compact` to 
 
 ## Contributing
 
-```bash
-pnpm install
-pnpm build        # Build MCP server
-pnpm dev          # Run MCP server with tsx (debug)
-pnpm test         # Run tests (71 tests)
-```
-
-Project structure:
-
-```
-contribbot/
-├── packages/mcp/     # contribbot-mcp (npm package)
-│   └── src/
-│       ├── core/     # Tools (core/linkage/compat), storage, clients, utils
-│       └── mcp/      # MCP server entry + tool registration
-├── skills/           # Skills (MCP tool orchestration)
-├── .claude-plugin/   # Plugin metadata for Claude Code
-└── .mcp.json         # MCP server config
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, architecture, and development guide.
 
 ## License
 

@@ -191,25 +191,7 @@ tools/
 
 ## 参与开发
 
-```bash
-pnpm install
-pnpm build        # 构建 MCP Server
-pnpm dev          # 用 tsx 运行（调试）
-pnpm test         # 运行测试（71 个）
-```
-
-项目结构：
-
-```
-contribbot/
-├── packages/mcp/     # contribbot-mcp（npm 包）
-│   └── src/
-│       ├── core/     # 工具（core/linkage/compat）、存储、客户端、工具函数
-│       └── mcp/      # MCP Server 入口 + 工具注册
-├── skills/           # Skills（MCP 工具编排层）
-├── .claude-plugin/   # Claude Code Plugin 元数据
-└── .mcp.json         # MCP Server 配置
-```
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## License
 
