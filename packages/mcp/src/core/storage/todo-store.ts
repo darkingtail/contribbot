@@ -186,7 +186,7 @@ export class TodoStore {
     if (index < 0 || index >= todos.length || !todo) return undefined
     const today = todayDate()
 
-    const archivedItem: ArchivedTodoItem = { ...todo, status: 'done', archived: today }
+    const archivedItem: ArchivedTodoItem = { ...todo, status: todo.status === 'not_planned' ? 'not_planned' : 'done', archived: today }
 
     // Delete from active first (safer: worst case = lost archive entry, not duplicate)
     todos.splice(index, 1)
