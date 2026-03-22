@@ -174,6 +174,10 @@ tools/
 - `templates/todo_claim.md` — GitHub claim 评论格式
   - 变量：`{{items}}`、`{{user}}`、`{{repo}}`、`{{issue}}`
 
+### 归档 & 清理
+
+归档数据会随时间增长。用 `todo_compact` / `upstream_compact` 按日期或条数清理。详见 [docs/tools.md](docs/tools.md)。
+
 ### 配置
 
 `config.yaml` 在首次使用 `repo_config` 时自动检测生成：

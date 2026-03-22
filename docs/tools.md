@@ -41,9 +41,31 @@
 | `todo_archive` | 归档所有已完成的 todos | `repo` |
 | `todo_compact` | 清理归档数据，按日期（before）或条数（keep）| `before?`, `keep?`, `repo` |
 
+### Compact 用法
+
+`todo_compact` 和 `upstream_compact` 支持两种互斥参数：
+
+```bash
+# 查看归档统计（不传参数）
+todo_compact(repo="owner/repo")
+upstream_compact(upstream_repo="upstream/repo", repo="owner/repo")
+
+# 按条数：只保留最近 N 条，其余归档
+todo_compact(repo="owner/repo", keep=50)
+upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", keep=100)
+
+# 按日期：归档此日期之前的条目
+todo_compact(repo="owner/repo", before="2025-01-01")
+upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", before="2025-06-01")
+```
+
+- `before` 和 `keep` **互斥**，只能传一个
+- `keep=0` 清空所有归档 / 已处理 commits
+- 数据移到 `todos.archive.yaml` / `upstream.archive.yaml`，不删除
+
 ### 枚举值
 
-- **status**: `idea` · `backlog` · `active` · `pr_submitted` · `done`
+- **status**: `idea` · `backlog` · `active` · `pr_submitted` · `done` · `not_planned`
 - **type**: `bug` · `feature` · `docs` · `chore`
 - **difficulty**: `easy` · `medium` · `hard`
 

@@ -174,6 +174,10 @@ Templates are auto-generated with documentation on first use. Edit them to custo
 - `templates/todo_claim.md` — GitHub claim comment format
   - Variables: `{{items}}`, `{{user}}`, `{{repo}}`, `{{issue}}`
 
+### Archive & Compact
+
+Archived data accumulates over time. Use `todo_compact` / `upstream_compact` to clean up — by date or count. See [docs/tools.md](docs/tools.md) for details.
+
 ### Config
 
 `config.yaml` is auto-detected on first use via `repo_config`. Fields:
