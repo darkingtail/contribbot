@@ -1,5 +1,7 @@
 # contribbot
 
+> /kənˈtrɪbɒt/ — the "b" in "contrib" is silent, like "contribute"
+
 [中文](README.zh.md) | English
 
 Open source collaboration assistant. Helps developers efficiently maintain and contribute to open source projects.

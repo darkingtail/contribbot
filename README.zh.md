@@ -1,5 +1,7 @@
 # contribbot
 
+> /kənˈtrɪbɒt/ — contrib 中的 b 不发音，同 contribute
+
 [English](README.md) | 中文
 
 开源协作助手。帮助开发者高效参与开源项目的维护和贡献。
