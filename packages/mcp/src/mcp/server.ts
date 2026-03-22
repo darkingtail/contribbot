@@ -98,7 +98,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 
 export function createServer(): McpServer {
   const server = new McpServer(
-    { name: 'contribbot', version: '0.0.1' },
+    { name: 'contribbot', version: '0.0.3' },
     { instructions: INSTRUCTIONS },
   )
 

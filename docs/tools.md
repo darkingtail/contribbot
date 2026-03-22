@@ -110,7 +110,7 @@ upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", before="2025-
 
 ---
 
-## 上游追踪（8 Tools）
+## 上游追踪（9 Tools）
 
 支持 fork source 和外部 upstream，共用 upstream.yaml，追踪源由 repo key 区分。无 release 的仓库自动 fallback 到 tags。
 

@@ -11,11 +11,6 @@ interface IssueRecordInfo {
   body: string
 }
 
-interface UpstreamRecordInfo {
-  link: string
-  publishedAt: string
-  items: string[]
-}
 
 interface PRReview {
   user: string
@@ -116,140 +111,6 @@ export class RecordFiles {
     writeFileSync(filePath, content, 'utf-8')
   }
 
-  /** @deprecated Use createTodoRecord + enrichWithIssueDetails instead */
-  createIssueRecord(issueNumber: number, info: IssueRecordInfo): string {
-    const dir = join(this.baseDir, 'todos')
-    this.ensureDir(dir)
-
-    const content = [
-      `# #${issueNumber} ${info.title}`,
-      '',
-      '## Issue 信息',
-      '',
-      `| 字段 | 值 |`,
-      `|------|------|`,
-      `| 链接 | ${info.link} |`,
-      `| 标签 | ${info.labels} |`,
-      `| 作者 | ${info.author} |`,
-      `| 创建时间 | ${info.createdAt} |`,
-      '',
-      info.body ? `> ${info.body}` : '',
-      '',
-      '## 评论总结',
-      '',
-      info.commentsSummary || '_暂无评论_',
-      '',
-      '## 分析',
-      '',
-      '_待分析_',
-      '',
-      '## 实现计划',
-      '',
-      '_待规划_',
-      '',
-      '## PR 反馈',
-      '',
-      PR_FEEDBACK_MARKER,
-      '',
-    ].join('\n')
-
-    const filePath = join(dir, `${issueNumber}.md`)
-    writeFileSync(filePath, content, 'utf-8')
-    return filePath
-  }
-
-  createUpstreamRecord(repo: string, version: string, info: UpstreamRecordInfo): string {
-    const parts = repo.split('/')
-    const owner = parts[0] ?? repo
-    const name = parts[1] ?? repo
-    const dir = join(this.baseDir, 'upstream', owner, name)
-    this.ensureDir(dir)
-
-    const itemsList = info.items.map(item => `- ${item}`).join('\n')
-
-    const content = [
-      `# ${repo}@${version}`,
-      '',
-      '## Release 信息',
-      '',
-      `| 字段 | 值 |`,
-      `|------|------|`,
-      `| 链接 | ${info.link} |`,
-      `| 发布时间 | ${info.publishedAt} |`,
-      '',
-      '## 同步项',
-      '',
-      itemsList,
-      '',
-      '## 实现计划',
-      '',
-      '_待规划_',
-      '',
-      '## PR 反馈',
-      '',
-      PR_FEEDBACK_MARKER,
-      '',
-    ].join('\n')
-
-    const filePath = join(dir, `${version}.md`)
-    writeFileSync(filePath, content, 'utf-8')
-    return filePath
-  }
-
-  createIdeaRecord(title: string): string {
-    const dir = join(this.baseDir, 'todos')
-    this.ensureDir(dir)
-
-    const nextId = this.getNextIdeaId(dir)
-
-    const content = [
-      `# ${title}`,
-      '',
-      '## 分析',
-      '',
-      '_待分析_',
-      '',
-      '## 实现计划',
-      '',
-      '_待规划_',
-      '',
-      '## PR 反馈',
-      '',
-      PR_FEEDBACK_MARKER,
-      '',
-    ].join('\n')
-
-    const filePath = join(dir, `idea-${nextId}.md`)
-    writeFileSync(filePath, content, 'utf-8')
-    return filePath
-  }
-
-  createSlugRecord(slug: string, title: string): string {
-    const dir = join(this.baseDir, 'todos')
-    this.ensureDir(dir)
-
-    const content = [
-      `# ${title}`,
-      '',
-      '## 分析',
-      '',
-      '_待分析_',
-      '',
-      '## 实现计划',
-      '',
-      '_待规划_',
-      '',
-      '## PR 反馈',
-      '',
-      PR_FEEDBACK_MARKER,
-      '',
-    ].join('\n')
-
-    const filePath = join(dir, `${slug}.md`)
-    writeFileSync(filePath, content, 'utf-8')
-    return filePath
-  }
-
   readRecord(ref: string): string | null {
     const filePath = this.resolveRefPath(ref)
     if (!filePath || !existsSync(filePath)) return null
@@ -294,23 +155,6 @@ export class RecordFiles {
 
     // Custom slug → todos/{slug}.md
     return join(this.baseDir, 'todos', `${ref}.md`)
-  }
-
-  private getNextIdeaId(dir: string): number {
-    if (!existsSync(dir)) return 1
-
-    const files = readdirSync(dir)
-    let maxId = 0
-
-    for (const file of files) {
-      const match = file.match(/^idea-(\d+)\.md$/)
-      if (match?.[1]) {
-        const id = Number.parseInt(match[1], 10)
-        if (id > maxId) maxId = id
-      }
-    }
-
-    return maxId + 1
   }
 
   private ensureDir(dir: string): void {
