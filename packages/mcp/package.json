@@ -1,6 +1,6 @@
 {
   "name": "contribbot-mcp",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "module",
   "description": "contribbot MCP Server — tools for open source collaboration",
   "license": "MIT",

@@ -87,7 +87,7 @@ pnpm test         # 运行所有测试
 |------|------|
 | `todo_list` | 查看本地 todos（YAML），按 ref# 排序，分 Active/Backlog&Ideas/Done 表格 |
 | `todo_add` | 添加 todo，支持 `ref` 参数自动拉 issue label 识别类型 |
-| `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、创建实现记录文件 |
+| `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、检测已有 claim |
 | `todo_detail` | 查看实现记录，自动刷新 PR reviews（5 分钟缓存） |
 | `todo_update` | 更新状态 / 关联 PR / 追加笔记 |
 | `todo_done` | 标记完成 |

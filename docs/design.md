@@ -322,6 +322,7 @@ Phase 3 愿景：不只是 Agent SDK 包装，而是像 [nanobot](https://github
 - 首次使用时自动生成带注释的默认模板（说明可用变量）
 - 文件名与工具名对应（`todo_record.md`、`todo_claim.md`）
 - 渲染时剥离注释头，不泄漏到 GitHub 评论
+- 机器标记（如 `<!-- contribbot:claim -->`）由工具代码强制追加，不在模板中——模板只控制用户可见内容
 
 ### Todo 生命周期
 
@@ -330,9 +331,10 @@ todo_add → 创建索引 + 实现文档（模板）
          → LLM 推断上下文有想法？→ todo_update(note) 记录
 
 todo_activate → enrich issue 详情到已有文档
+             → 检测已有 claim（解析 <!-- contribbot:claim --> 标记）
              → LLM 生成实现方案 → todo_update(note) 写入
 
-todo_claim → 评论到 GitHub（模板化）+ 本地记录 claimed_items + 自动升 active
+todo_claim → 评论到 GitHub（模板 + 工具追加机器标记）+ 本地记录 claimed_items + 自动升 active
 
 todo_detail → 查看文档 + 自动刷新 PR review
 
