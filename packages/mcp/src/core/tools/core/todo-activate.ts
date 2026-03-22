@@ -85,6 +85,22 @@ export async function todoActivate(item: string, branch?: string, repo?: string)
         })
         .join('\n')
 
+      // Detect existing claims from contribbot:claim markers
+      const claimPattern = /<!-- contribbot:claim @(\S+) -->/g
+      const existingClaims: { user: string; items: string[] }[] = []
+      for (const comment of comments) {
+        const match = comment.body.match(claimPattern)
+        if (match) {
+          const userMatch = comment.body.match(/<!-- contribbot:claim @(\S+)/)
+          const claimUser = userMatch?.[1] ?? comment.user?.login ?? 'unknown'
+          const itemLines = comment.body
+            .split('\n')
+            .filter(line => line.startsWith('- ') && !line.includes('<!--'))
+            .map(line => line.slice(2).trim())
+          existingClaims.push({ user: claimUser, items: itemLines })
+        }
+      }
+
       const labelsStr = issue.labels
         .map(l => (typeof l === 'string' ? l : l.name))
         .join(', ')
@@ -117,5 +133,13 @@ export async function todoActivate(item: string, branch?: string, repo?: string)
     throw new Error(`Failed to update todo at index ${storeIndex}.`)
   }
 
-  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel(difficulty)} · branch: \`${branchName}\``
+  let claimInfo = ''
+  if (existingClaims.length > 0) {
+    const claimLines = existingClaims.map(c =>
+      `- @${c.user}: ${c.items.length > 0 ? c.items.join(', ') : 'claimed (no specific items)'}`,
+    )
+    claimInfo = `\n\n**Existing claims:**\n${claimLines.join('\n')}`
+  }
+
+  return `Activated: **${updated.title}**${updated.ref ? ` (${updated.ref})` : ''} — difficulty: ${difficultyLabel(difficulty)} · branch: \`${branchName}\`${claimInfo}`
 }
