@@ -125,7 +125,7 @@ describe('TodoStore', () => {
     expect(remaining[0]!.ref).toBe('#2')
 
     // Check archive file exists
-    expect(existsSync(join(dir, 'archive.yaml'))).toBe(true)
+    expect(existsSync(join(dir, 'todos.archive.yaml'))).toBe(true)
   })
 
   it('returns undefined for invalid index', () => {
@@ -162,6 +162,86 @@ describe('TodoStore', () => {
 `)
     const todos = store.list()
     expect(todos[0]!.claimed_items).toBeNull()
+  })
+
+  // --- listArchived & compact ---
+
+  it('lists archived items', () => {
+    store.add({ ref: '#1', title: 'Task 1', type: 'bug' })
+    store.add({ ref: '#2', title: 'Task 2', type: 'feature' })
+    store.archiveAndDelete(0)
+    store.archiveAndDelete(0)
+    expect(store.listArchived()).toHaveLength(2)
+  })
+
+  it('compacts archive by keep count', () => {
+    store.add({ ref: '#1', title: 'Old', type: 'bug' })
+    store.add({ ref: '#2', title: 'Mid', type: 'feature' })
+    store.add({ ref: '#3', title: 'New', type: 'docs' })
+    store.archiveAndDelete(0)
+    store.archiveAndDelete(0)
+    store.archiveAndDelete(0)
+    expect(store.listArchived()).toHaveLength(3)
+
+    const result = store.compact({ keep: 1 })
+    expect(result.removed).toBe(2)
+    expect(result.remaining).toBe(1)
+    expect(store.listArchived()[0]!.ref).toBe('#3')
+  })
+
+  it('compacts archive by date', () => {
+    store.add({ ref: '#1', title: 'Old', type: 'bug' })
+    store.archiveAndDelete(0)
+    // Manually set old archive date
+    const { writeFileSync } = require('node:fs')
+    writeFileSync(join(dir, 'todos.archive.yaml'), `todos:
+  - ref: "#1"
+    title: Old
+    type: bug
+    status: done
+    difficulty: null
+    pr: null
+    branch: null
+    claimed_items: null
+    created: "2024-01-01"
+    updated: "2024-01-01"
+    archived: "2024-01-01"
+  - ref: "#2"
+    title: Recent
+    type: feature
+    status: done
+    difficulty: null
+    pr: null
+    branch: null
+    claimed_items: null
+    created: "2026-03-01"
+    updated: "2026-03-01"
+    archived: "2026-03-01"
+`)
+    const result = store.compact({ before: '2025-01-01' })
+    expect(result.removed).toBe(1)
+    expect(result.remaining).toBe(1)
+    expect(store.listArchived()[0]!.ref).toBe('#2')
+  })
+
+  it('compact keep=0 clears all', () => {
+    store.add({ ref: '#1', title: 'Task', type: 'bug' })
+    store.archiveAndDelete(0)
+    const result = store.compact({ keep: 0 })
+    expect(result.removed).toBe(1)
+    expect(result.remaining).toBe(0)
+  })
+
+  it('compact on empty archive returns zero', () => {
+    const result = store.compact({ keep: 10 })
+    expect(result.removed).toBe(0)
+    expect(result.remaining).toBe(0)
+  })
+
+  it('compact throws when neither before nor keep provided', () => {
+    store.add({ ref: '#1', title: 'Task', type: 'bug' })
+    store.archiveAndDelete(0)
+    expect(() => store.compact({})).toThrow('Exactly one')
   })
 
   // --- resolveItemFromAll ---

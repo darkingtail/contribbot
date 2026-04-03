@@ -1,8 +1,12 @@
 # contribbot
 
-Open source collaboration assistant for [Claude Code](https://claude.com/claude-code). Helps developers efficiently maintain and contribute to open source projects.
+> /kənˈtrɪbɒt/ — contrib + bot, the "b" in "contrib" merges with "bot"
 
-Provides 39 MCP tools + 10 skills covering todo management, upstream tracking, issue/PR workflows, and multi-project oversight.
+[中文](README.zh.md) | English
+
+Open source collaboration assistant. Helps developers efficiently maintain and contribute to open source projects.
+
+MCP tools + skills — todo management, upstream tracking, issue/PR workflows, multi-project oversight.
 
 ## Prerequisites
 
@@ -10,221 +14,186 @@ Provides 39 MCP tools + 10 skills covering todo management, upstream tracking, i
 
 ## Install
 
-### Claude Code (recommended)
+### Claude Code
 
 ```bash
-claude plugin install darkingtail/contribbot
+# Step 1: Add marketplace (first time only)
+claude plugin marketplace add https://github.com/darkingtail/contribbot
+
+# Step 2: Install
+claude plugin install contribbot
 ```
 
-Installs both the 10 skills and the MCP server. No additional setup needed.
+This installs skills + MCP server (`contribbot-mcp`). Skills provide guided workflows, MCP server provides the tools.
 
-### Claude Desktop
+### Other Platforms
 
-Add to config file (Settings → Developer → Edit Config):
+contribbot's MCP server works with any MCP-compatible tool. See [Other Platforms Setup](docs/platforms.md) for Claude Desktop, Gemini CLI, Codex CLI, Cursor, Windsurf, etc.
 
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+## What contribbot does for you
 
-```json
-{
-  "mcpServers": {
-    "contribbot": {
-      "command": "npx",
-      "args": ["-y", "contribbot-mcp@latest"]
-    }
-  }
-}
+Most AI coding tools can read GitHub issues and create PRs. contribbot goes further — it tracks **what you're working on**, **what changed upstream**, and **who's doing what** across multi-maintainer repos.
+
+### vs GitHub CLI alone
+
+|                               | gh CLI | contribbot                                    |
+| ----------------------------- | ------ | --------------------------------------------- |
+| Read issues/PRs               | ✅     | ✅                                            |
+| Create issues/PRs             | ✅     | ✅ + auto-link to local todos                 |
+| Track personal tasks          | ❌     | ✅ todo lifecycle with implementation records |
+| Track upstream changes        | ❌     | ✅ commit-level tracking with triage          |
+| Multi-maintainer coordination | ❌     | ✅ claim work items, comment to GitHub        |
+| Fork alignment                | ❌     | ✅ sync fork + cherry-pick decisions          |
+| Cross-stack tracking          | ❌     | ✅ track React → Vue feature parity           |
+| Project knowledge             | ❌     | ✅ persistent knowledge per repo              |
+
+### Skills
+
+Skills are guided workflows that orchestrate MCP tools. In Claude Code, trigger them by name or natural language.
+
+| Skill                        | Description                                                            |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `contribbot:project-onboard` | New project setup — detect fork/upstream, init config, first sync      |
+| `contribbot:daily-sync`      | Daily check — sync fork, fetch upstream commits, skip noise, triage    |
+| `contribbot:start-task`      | Start working — pick todo, activate, LLM generates implementation plan |
+| `contribbot:todo`            | Todo lifecycle — add, activate, claim, update, done, archive, compact  |
+| `contribbot:issue`           | Issue management — list, detail, create, close, comment                |
+| `contribbot:pr`              | PR management — list, summary, create, update, review, reply           |
+| `contribbot:pre-submit`      | Pre-merge check — PR review, CI status, security alerts                |
+| `contribbot:weekly-review`   | Weekly retrospective — contribution stats, progress, cleanup           |
+| `contribbot:fork-triage`     | Fork cherry-pick decisions for downstream consumers                    |
+| `contribbot:dashboard`       | Project overview — single or cross-project                             |
+
+## Project Modes
+
+contribbot auto-detects your project's relationship with upstream repos and adapts its workflow accordingly.
+
+| Mode              | Condition             | What It Enables                   |
+| ----------------- | --------------------- | --------------------------------- |
+| **none**          | No fork, no upstream  | Issue/PR/todo management          |
+| **fork**          | Has fork source       | Fork sync + cherry-pick decisions |
+| **upstream**      | Has external upstream | Cross-stack commit tracking       |
+| **fork+upstream** | Both                  | Fork sync + cross-stack tracking  |
+
+Run `/contribbot:project-onboard` to auto-detect and configure.
+
+### Why fork data is stored under parent repo
+
+When you work on `darkingtail/plane` (a fork of `makeplane/plane`), contribbot stores data under `~/.contribbot/makeplane/plane/` — the **parent repo** path.
+
+Why: multiple people may fork the same repo. Storing under the parent ensures everyone's local data aligns to the same canonical repo, and `sync_fork` / `upstream_daily` always know which repo is the source of truth.
+
+Your fork is recorded in `config.yaml` as the `fork` field:
+
+```yaml
+# ~/.contribbot/makeplane/plane/config.yaml
+role: admin
+org: null
+fork: darkingtail/plane # your fork
+upstream: null
 ```
 
-### Gemini CLI
+### Three-layer capability
 
-Add to `~/.gemini/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "contribbot": {
-      "command": "npx",
-      "args": ["-y", "contribbot-mcp@latest"]
-    }
-  }
-}
-```
-
-### Codex CLI
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.contribbot]
-command = "npx"
-args = ["-y", "contribbot-mcp@latest"]
-startup_timeout_sec = 30
-```
-
-> Codex CLI default startup timeout is 10 seconds — `npx` may need longer on first download.
-
-### Cursor / Cline / Continue / Other MCP-compatible tools
-
-Add to your MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "contribbot": {
-      "command": "npx",
-      "args": ["-y", "contribbot-mcp@latest"]
-    }
-  }
-}
-```
-
-### Platform support
-
-| Platform | Tools (39) | Skills (10) | MCP Prompts (4) |
-|----------|-----------|-------------|-----------------|
-| Claude Code | ✅ | ✅ via plugin | ✅ |
-| Claude Desktop | ✅ | — | ✅ |
-| Gemini CLI | ✅ | — | ✅ |
-| Codex CLI | ✅ | — | ✅ |
-| Cursor / Cline / etc. | ✅ | — | ✅ |
-
-Skills are markdown workflow instructions (`skills/*/SKILL.md`). Any platform can use them by loading the content as context.
-
-## What It Does
-
-### Todo Management
-
-Track personal tasks locally in `~/.contribbot/`, linked to GitHub issues:
-
-```
-/contribbot:todo add "Fix Cascader search" ref=#259
-/contribbot:start-task darkingtail/my-repo
-```
-
-- `todo_add` / `todo_activate` / `todo_claim` / `todo_detail` / `todo_update` / `todo_done` / `todo_delete` / `todo_archive`
-- Claim work items from issues — auto-comments on GitHub to coordinate with other maintainers
-- Branch naming suggested by LLM based on repo conventions
-
-### Upstream Tracking
-
-Track changes from upstream repos (fork source or external upstream):
-
-```
-/contribbot:daily-sync darkingtail/antdv-next
-```
-
-- `upstream_daily` — fetch new commits since last tracked version
-- `upstream_daily_skip_noise` — batch skip CI/deps/build noise
-- `upstream_sync_check` — compare release changelog with your sync status
-
-### Issue & PR Workflows
-
-```
-/contribbot:issue darkingtail/my-repo
-/contribbot:pr darkingtail/my-repo
-/contribbot:pre-submit darkingtail/my-repo 42
-```
-
-### Project Modes
-
-Automatically detected from your repo's fork/upstream configuration:
-
-| Mode | When | What It Enables |
-|------|------|----------------|
-| **none** | No fork, no upstream | Basic issue/PR/todo management |
-| **fork** | Has fork source | Fork sync + cherry-pick decisions |
-| **upstream** | Has external upstream | Cross-stack commit tracking |
-| **fork+upstream** | Both | Fork sync + cross-stack tracking |
-
-First time? Run `/contribbot:project-onboard` to auto-detect and configure.
-
-## Skills
-
-| Skill | Trigger | Description |
-|-------|---------|-------------|
-| `contribbot:daily-sync` | "daily sync", "每日同步" | Upstream sync workflow |
-| `contribbot:start-task` | "start task", "开始任务" | Pick and activate a todo |
-| `contribbot:pre-submit` | "pre-submit", "提交检查" | PR review readiness check |
-| `contribbot:weekly-review` | "weekly review", "周回顾" | Contribution stats + progress |
-| `contribbot:project-onboard` | "onboard", "接入项目" | New project setup |
-| `contribbot:fork-triage` | "fork triage", "二开同步" | Cherry-pick decisions for forks |
-| `contribbot:todo` | "todo", "任务列表" | Todo lifecycle management |
-| `contribbot:issue` | "issue", "创建 issue" | Issue management |
-| `contribbot:pr` | "pr", "创建 PR" | PR management |
-| `contribbot:dashboard` | "dashboard", "项目概况" | Project overview |
-
-## Tool Architecture
-
-39 tools organized in three layers:
-
-```
-tools/
-├── core/      21 tools — contribbot unique (todo_*, upstream_*, knowledge, config)
-├── linkage/    4 tools — GitHub ops + local data sync (issue_create, pr_create...)
-└── compat/    14 tools — GitHub wrappers for out-of-box use (issue_list, pr_summary...)
-```
-
-- **Core** — Cannot be replaced by GitHub MCP. Todo management, upstream tracking, knowledge, repo config.
-- **Linkage** — GitHub operations that also update local data (e.g., `issue_create` auto-creates a todo).
-- **Compat** — Pure GitHub API wrappers. Ensures contribbot works standalone without GitHub MCP installed.
+| Layer                | Capability                                 | Modes                   |
+| -------------------- | ------------------------------------------ | ----------------------- |
+| Basic                | Issue/PR/todo management                   | All                     |
+| Fork tracking        | Cherry-pick decisions from fork source     | fork, fork+upstream     |
+| Cross-stack tracking | Feature parity tracking across tech stacks | upstream, fork+upstream |
 
 ## Data Storage
 
-All data persists locally in `~/.contribbot/{owner}/{repo}/`:
+All data is local in `~/.contribbot/{owner}/{repo}/`:
 
 ```
 ~/.contribbot/{owner}/{repo}/
-├── config.yaml        # Repo config (role, fork, upstream)
-├── todos.yaml         # Todo index
-├── todos/             # Implementation records (per issue/idea)
-├── upstream.yaml      # Upstream tracking index
-├── upstream/          # Upstream implementation records
-├── archive.yaml       # Archived todos
-├── templates/         # Custom templates (e.g., todo_claim.md)
-├── knowledge/         # Project knowledge
-└── sync/              # Sync history records
+├── config.yaml              # Repo config
+│                            #   role: admin|maintain|write|triage|read
+│                            #   org: organization name or null
+│                            #   fork: your fork repo or null
+│                            #   upstream: external upstream or null
+│
+├── todos.yaml               # Active todos
+│                            #   ref: issue number (#123) or custom slug
+│                            #   title, type (bug/feature/docs/chore)
+│                            #   status: idea → backlog → active → pr_submitted → done | not_planned
+│                            #   difficulty: easy|medium|hard
+│                            #   pr, branch, claimed_items
+│
+├── todos/                   # Implementation records (one per todo)
+│   ├── 123.md               #   Created at todo_add, enriched at todo_activate
+│   └── playground.md        #   LLM generates implementation plan here
+│
+├── todos.archive.yaml       # Archived todos (done + not_planned)
+│                            #   Use todo_compact to clean old entries
+│
+├── upstream.yaml            # Upstream tracking
+│                            #   versions: release-level sync status
+│                            #   daily: commit-level triage (action: skip|todo|issue|pr|synced)
+│
+├── upstream.archive.yaml   # Archived upstream daily commits
+│                            #   Moved here by upstream_compact
+│
+├── upstream/                # Upstream implementation records
+│   └── {owner}/{repo}/
+│       └── {version}.md
+│
+├── templates/               # Custom templates (auto-generated on first use)
+│   ├── todo_record.md       #   Todo implementation doc template
+│   └── todo_claim.md        #   GitHub claim comment template
+│
+├── knowledge/               # Project knowledge (via knowledge_write)
+│   └── {name}/README.md
+│
+└── sync/                    # Sync history records
 ```
+
+## Tool Architecture
+
+Tools organized in three layers:
+
+```
+tools/
+├── core/      contribbot unique (todo, upstream, knowledge, config)
+├── linkage/   GitHub ops + local data sync (issue_create, pr_create...)
+└── compat/    GitHub API wrappers for standalone use
+```
+
+- **Core** — Cannot be replaced by GitHub MCP. Todo management, upstream tracking, knowledge, repo config, compact.
+- **Linkage** — GitHub operations that also update local data (e.g., `issue_create` auto-creates a todo).
+- **Compat** — Pure GitHub API wrappers. Ensures contribbot works without GitHub MCP installed.
+
+Full tool reference: [docs/tools.md](docs/tools.md)
 
 ## Customization
 
-### Claim Template
+### Templates
 
-When claiming work items from an issue, contribbot posts a comment on GitHub. Customize the template:
+Templates are auto-generated with documentation on first use. Edit them to customize:
 
-Create `~/.contribbot/{owner}/{repo}/templates/todo_claim.md`:
+- `templates/todo_record.md` — Todo implementation document format
+  - Variables: `{{title}}`, `{{ref}}`, `{{type}}`, `{{date}}`
+- `templates/todo_claim.md` — GitHub claim comment format
+  - Variables: `{{items}}`, `{{user}}`, `{{repo}}`, `{{issue}}`
 
-```markdown
-I'll work on the following:
+### Archive & Compact
 
-{{items}}
+Archived data accumulates over time. Use `todo_compact` / `upstream_compact` to clean up — by date or count. See [docs/tools.md](docs/tools.md) for details.
 
-<!-- contribbot:claim @{{user}} -->
-```
+### Config
 
-Available variables: `{{items}}`, `{{user}}`, `{{repo}}`, `{{issue}}`
+`config.yaml` is auto-detected on first use via `repo_config`. Fields:
 
-## Development
+| Field      | Description                                     |
+| ---------- | ----------------------------------------------- |
+| `role`     | Your GitHub permission level (auto-detected)    |
+| `org`      | Organization name (auto-detected)               |
+| `fork`     | Your fork repo, if this is a parent repo        |
+| `upstream` | External upstream repo for cross-stack tracking |
 
-```bash
-pnpm install
-pnpm build        # Build MCP server
-pnpm dev          # Run MCP server with tsx (debug)
-pnpm test         # Run tests
-```
+## Contributing
 
-### Project Structure
-
-```
-contribbot/
-├── packages/mcp/     # contribbot-mcp (npm package)
-│   └── src/
-│       ├── core/     # Tools, storage, clients, utils
-│       └── mcp/      # MCP server entry + registration
-├── skills/           # 10 skills (MCP tool orchestration)
-├── .claude-plugin/   # Plugin metadata
-└── .mcp.json         # MCP server registration
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, architecture, and development guide.
 
 ## License
 

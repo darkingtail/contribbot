@@ -1,4 +1,4 @@
-export const TodoStatus = { Idea: 'idea', Backlog: 'backlog', Active: 'active', PrSubmitted: 'pr_submitted', Done: 'done' } as const
+export const TodoStatus = { Idea: 'idea', Backlog: 'backlog', Active: 'active', PrSubmitted: 'pr_submitted', Done: 'done', NotPlanned: 'not_planned' } as const
 export type TodoStatus = typeof TodoStatus[keyof typeof TodoStatus]
 export const TODO_STATUSES = Object.values(TodoStatus) as [TodoStatus, ...TodoStatus[]]
 

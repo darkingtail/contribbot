@@ -13,12 +13,11 @@ const DEFAULT_TEMPLATE = `<!--
     {{user}}   — GitHub 用户名
     {{repo}}   — 仓库（owner/repo）
     {{issue}}  — issue 编号
+  注意：机器标记 contribbot:claim 由工具自动追加，不在模板中
 -->
 I'll work on the following:
 
-{{items}}
-
-<!-- contribbot:claim @{{user}} -->`
+{{items}}`
 
 function loadTemplate(contribDir: string): string {
   const templateDir = join(contribDir, 'templates')
@@ -85,12 +84,15 @@ export async function todoClaim(
 
   const itemsList = items.map(s => `- ${s}`).join('\n')
   const template = loadTemplate(contribDir)
-  const body = renderTemplate(template, {
+  const rendered = renderTemplate(template, {
     items: itemsList,
     user: user.login,
     repo: `${owner}/${name}`,
     issue: String(issueNumber),
   })
+
+  // Append machine-readable marker (not in template, always appended by tool)
+  const body = `${rendered}\n\n<!-- contribbot:claim @${user.login} -->`
 
   await createComment(owner, name, issueNumber, body)
 

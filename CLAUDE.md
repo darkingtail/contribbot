@@ -19,9 +19,9 @@ contribbot/
 │       │   │   │   └── record-files.ts
 │       │   │   ├── enums.ts          # 统一枚举（as const）
 │       │   │   ├── tools/            # 三层工具分类
-│       │   │   │   ├── core/         # 21 tools — contribbot 独有（todo_*, upstream_*, repo_config...）
-│       │   │   │   ├── linkage/      # 4 tools — GitHub + 本地联动（issue_create, pr_create...）
-│       │   │   │   └── compat/       # 14 tools — 纯 GitHub 封装（issue_list, pr_summary...）
+│       │   │   │   ├── core/         # contribbot 独有（todo_*, upstream_*, repo_config...）
+│       │   │   │   ├── linkage/     # GitHub + 本地联动（issue_create, pr_create...）
+│       │   │   │   └── compat/      # 纯 GitHub 封装（issue_list, pr_summary...）
 │       │   │   └── utils/
 │       │   │       ├── config.ts     # 项目路径
 │       │   │       ├── format.ts     # markdown 格式化
@@ -31,7 +31,7 @@ contribbot/
 │       │   │       └── github-helpers.ts
 │       │   ├── mcp/
 │       │   │   ├── index.ts          # MCP Server 入口（stdio）
-│       │   │   └── server.ts         # 注册 39 tools + 1 resource + 4 prompts
+│       │   │   └── server.ts         # 工具注册 + INSTRUCTIONS + Prompts
 │       │   └── index.ts              # 统一导出
 │       ├── package.json              # contribbot-mcp
 │       ├── tsconfig.json
@@ -72,7 +72,7 @@ pnpm test         # 运行所有测试
 | 无 | 有 | upstream | 非 fork 跨栈追踪 |
 | 无 | 无 | none | 无上游对齐关系 |
 
-## MCP 工具清单（39 Tools + 1 Resource + 4 Prompts）
+## MCP 工具清单
 
 ### 项目概览
 
@@ -87,13 +87,14 @@ pnpm test         # 运行所有测试
 |------|------|
 | `todo_list` | 查看本地 todos（YAML），按 ref# 排序，分 Active/Backlog&Ideas/Done 表格 |
 | `todo_add` | 添加 todo，支持 `ref` 参数自动拉 issue label 识别类型 |
-| `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、创建实现记录文件 |
+| `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、检测已有 claim |
 | `todo_detail` | 查看实现记录，自动刷新 PR reviews（5 分钟缓存） |
 | `todo_update` | 更新状态 / 关联 PR / 追加笔记 |
 | `todo_done` | 标记完成 |
 | `todo_claim` | 领取 issue 工作项：评论到 GitHub + 本地记录，自动升 active，模板可配置 |
 | `todo_delete` | 删除 todo |
 | `todo_archive` | 归档已完成的 todos |
+| `todo_compact` | 清理归档数据，按日期或条数 |
 
 ### Issues & PRs
 
@@ -125,6 +126,7 @@ pnpm test         # 运行所有测试
 | `upstream_daily` | 拉取上游 commits，版本锚定去重，自动检测已有 issue/PR |
 | `upstream_daily_act` | 对某条 commit 标记动作（skip/todo/issue/pr） |
 | `upstream_daily_skip_noise` | 批量跳过噪音 commits（ci/build/style/deps） |
+| `upstream_compact` | 清理已处理的 daily commits，按日期或条数 |
 
 ### 质量 & 统计
 
@@ -169,7 +171,11 @@ pnpm test         # 运行所有测试
 ├── upstream/                           # 上游实现记录
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
-├── archive.yaml                        # 已完成 todos 归档
+├── todos.archive.yaml                  # 已完成 todos 归档（done + not_planned）
+├── upstream.archive.yaml               # 已归档的上游 daily commits
+├── templates/                          # 自定义模板（首次使用自动生成）
+│   ├── todo_record.md                  # todo 实现文档模板
+│   └── todo_claim.md                   # claim 评论模板
 ├── knowledge/                          # 项目知识沉淀
 └── sync/                               # 同步记录
 ```
@@ -179,3 +185,8 @@ pnpm test         # 运行所有测试
 - 所有列表/表格输出必须带**备注列**（提供上下文信息）
 - 工具间数据不共享状态，每次调用独立
 - repo 参数必须显式传 "owner/repo"，无默认值
+- **工具不做定性** — 子任务识别、分支命名、噪音过滤的项目级判断交给 LLM
+- **模板文件化** — templates/ 目录，首次使用自动生成带注释的默认模板
+- **todo 即有文档** — todo_add 时立即创建实现文档
+- **用户确认优先** — activate 时 LLM 先出方案大纲，用户确认后再写入
+- **not_planned 自动归档** — 标记 not_planned 时自动移入 todos.archive.yaml

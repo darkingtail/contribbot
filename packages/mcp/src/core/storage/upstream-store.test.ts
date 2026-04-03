@@ -66,7 +66,10 @@ describe('UpstreamStore', () => {
     ])
     const daily = store.getDaily('ant-design/ant-design')
     expect(daily.commits).toHaveLength(2)
-    expect(daily.last_checked).toBe(new Date().toISOString().slice(0, 10))
+    // Use local timezone date (same as todayDate() in format.ts)
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(daily.last_checked).toBe(today)
 
     // Add again with one duplicate
     store.addDailyCommits('ant-design/ant-design', [
@@ -121,5 +124,94 @@ describe('UpstreamStore', () => {
       { sha: 'abc123', fields: { action: 'skip' } },
     ])
     expect(count).toBe(0)
+  })
+
+  // --- getDailyStats ---
+
+  it('returns daily stats', () => {
+    store.addDailyCommits('ant-design/ant-design', [
+      { sha: 'aaa', message: 'feat: A', type: 'feat', date: '2026-03-01' },
+      { sha: 'bbb', message: 'fix: B', type: 'fix', date: '2026-03-02' },
+      { sha: 'ccc', message: 'chore: C', type: 'chore', date: '2026-03-03' },
+    ])
+    store.updateDailyCommit('ant-design/ant-design', 'aaa', { action: 'skip' })
+
+    const stats = store.getDailyStats('ant-design/ant-design')
+    expect(stats.total).toBe(3)
+    expect(stats.pending).toBe(2)
+    expect(stats.processed).toBe(1)
+    expect(stats.oldest).toBe('2026-03-01')
+  })
+
+  it('returns empty stats for non-existent repo', () => {
+    const stats = store.getDailyStats('nonexistent/repo')
+    expect(stats.total).toBe(0)
+    expect(stats.oldest).toBeNull()
+  })
+
+  // --- compactDaily ---
+
+  it('compacts processed daily commits by keep count', () => {
+    store.addDailyCommits('ant-design/ant-design', [
+      { sha: 'aaa', message: 'feat: A', type: 'feat', date: '2026-03-01' },
+      { sha: 'bbb', message: 'fix: B', type: 'fix', date: '2026-03-02' },
+      { sha: 'ccc', message: 'chore: C', type: 'chore', date: '2026-03-03' },
+      { sha: 'ddd', message: 'feat: D', type: 'feat', date: '2026-03-04' },
+    ])
+    store.updateDailyCommit('ant-design/ant-design', 'aaa', { action: 'skip' })
+    store.updateDailyCommit('ant-design/ant-design', 'bbb', { action: 'todo' })
+    store.updateDailyCommit('ant-design/ant-design', 'ccc', { action: 'skip' })
+
+    const result = store.compactDaily('ant-design/ant-design', { keep: 1 })
+    expect(result.removed).toBe(2)
+    // 1 pending (ddd) + 1 kept processed (ccc) = 2
+    expect(result.remaining).toBe(2)
+  })
+
+  it('compacts processed daily commits by date', () => {
+    store.addDailyCommits('ant-design/ant-design', [
+      { sha: 'aaa', message: 'feat: A', type: 'feat', date: '2024-01-01' },
+      { sha: 'bbb', message: 'fix: B', type: 'fix', date: '2026-03-01' },
+    ])
+    store.updateDailyCommit('ant-design/ant-design', 'aaa', { action: 'skip' })
+    store.updateDailyCommit('ant-design/ant-design', 'bbb', { action: 'skip' })
+
+    const result = store.compactDaily('ant-design/ant-design', { before: '2025-01-01' })
+    expect(result.removed).toBe(1)
+    expect(result.remaining).toBe(1)
+  })
+
+  it('compact preserves pending commits', () => {
+    store.addDailyCommits('ant-design/ant-design', [
+      { sha: 'aaa', message: 'feat: A', type: 'feat', date: '2026-03-01' },
+      { sha: 'bbb', message: 'fix: B', type: 'fix', date: '2026-03-02' },
+    ])
+    store.updateDailyCommit('ant-design/ant-design', 'aaa', { action: 'skip' })
+    // bbb is still pending
+
+    const result = store.compactDaily('ant-design/ant-design', { keep: 0 })
+    expect(result.removed).toBe(1)
+    // pending bbb preserved
+    expect(result.remaining).toBe(1)
+  })
+
+  it('compact maintains chronological order', () => {
+    store.addDailyCommits('ant-design/ant-design', [
+      { sha: 'aaa', message: 'feat: A', type: 'feat', date: '2026-03-03' },
+      { sha: 'bbb', message: 'fix: B', type: 'fix', date: '2026-03-01' },
+    ])
+    store.updateDailyCommit('ant-design/ant-design', 'bbb', { action: 'skip' })
+
+    store.compactDaily('ant-design/ant-design', { keep: 1 })
+    const daily = store.getDaily('ant-design/ant-design')
+    // bbb (03-01, processed kept) should come before aaa (03-03, pending)
+    expect(daily.commits[0]!.sha).toBe('bbb')
+    expect(daily.commits[1]!.sha).toBe('aaa')
+  })
+
+  it('compact on non-existent repo returns zero', () => {
+    const result = store.compactDaily('nonexistent/repo', { keep: 10 })
+    expect(result.removed).toBe(0)
+    expect(result.remaining).toBe(0)
   })
 })

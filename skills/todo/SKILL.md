@@ -26,9 +26,11 @@ metadata:
 | 查看详情 | detail | `todo_detail` |
 | 更新任务 | update | `todo_update` |
 | 领取子任务 | claim | `todo_claim` |
+| 不做了 | not_planned | `todo_update(status=not_planned)` |
 | 完成任务 | done | `todo_done` |
 | 删除任务 | delete | `todo_delete` |
 | 归档 | archive | `todo_archive` |
+| 清理归档 | compact | `todo_compact` |
 
 ---
 
@@ -45,8 +47,10 @@ metadata:
 - `text`：任务描述
 - `ref`（可选）：GitHub issue 编号，自动拉取 issue 信息并从 labels 推断 type
 
+注意：ref 不可与已有 todo 重名（实现文档以 ref 命名，重名会覆盖）。自动生成的 slug ref 已有去重逻辑，手动传 ref 时需确认唯一。
+
 添加完成后，根据对话上下文判断用户是否已有实现想法、设计思路或技术方案：
-- **有** → 调用 `todo_update(note=想法摘要)` 记录到实现文档。输出简短摘要（1-2 句话），告知用户已记录到文档，附文档路径。
+- **有** → 先展示想法摘要给用户确认，确认后调用 `todo_update(note=想法摘要)` 记录到实现文档，告知已记录 + 文档路径。
 - **无** → 仅添加。
 
 ---
@@ -90,6 +94,14 @@ metadata:
 
 ---
 
+## not_planned
+
+调用 `todo_update`，参数：`repo`、`item`、`status=not_planned`。
+
+标记为"决定不做"，自动归档到 `todos.archive.yaml`。
+
+---
+
 ## done
 
 调用 `todo_done`，参数：`repo`、`item`（ref 编号）。
@@ -112,3 +124,13 @@ metadata:
 调用 `todo_archive`，参数：`repo`。
 
 将所有 done 状态的 todo 移入归档。
+
+---
+
+## compact
+
+调用 `todo_compact`，参数：
+- `repo`
+- `before`（日期）或 `keep`（条数），二选一
+
+不传参数时显示归档统计，让用户决定清理策略。

@@ -221,6 +221,86 @@ export class UpstreamStore {
     return count
   }
 
+  // --- Compact ---
+
+  /**
+   * Compact daily commits for a repo: move old processed entries to upstream.archive.yaml.
+   * Only moves commits that have been acted on (action !== null).
+   */
+  compactDaily(repo: string, options: { before?: string; keep?: number }): { removed: number; remaining: number } {
+    const data = this.load()
+    const repoData = data[repo]
+    if (!repoData) return { removed: 0, remaining: 0 }
+
+    const commits = repoData.daily.commits
+    const processed = commits.filter(c => c.action !== null)
+    const pending = commits.filter(c => c.action === null)
+
+    let keptProcessed: DailyCommit[]
+
+    if (options.before) {
+      keptProcessed = processed.filter(c => c.date >= options.before!)
+    } else if (options.keep !== undefined) {
+      keptProcessed = options.keep === 0 ? [] : processed.slice(-options.keep)
+    } else {
+      throw new Error('Exactly one of "before" or "keep" must be provided.')
+    }
+
+    // Move removed commits to archive
+    const removedCommits = processed.filter(c => !keptProcessed.includes(c))
+    if (removedCommits.length > 0) {
+      this.appendToArchive(repo, removedCommits)
+    }
+
+    const removed = removedCommits.length
+    repoData.daily.commits = [...pending, ...keptProcessed].sort((a, b) => a.date.localeCompare(b.date))
+    this.save(data)
+    return { removed, remaining: repoData.daily.commits.length }
+  }
+
+  getDailyStats(repo: string): { total: number; pending: number; processed: number; oldest: string | null } {
+    const daily = this.getDaily(repo)
+    const pending = daily.commits.filter(c => c.action === null).length
+    const processed = daily.commits.length - pending
+    const oldest = daily.commits.length > 0 ? daily.commits[0]!.date : null
+    return { total: daily.commits.length, pending, processed, oldest }
+  }
+
+  // --- Archive ---
+
+  private get archivePath(): string {
+    return join(this.baseDir, 'upstream.archive.yaml')
+  }
+
+  private appendToArchive(repo: string, commits: DailyCommit[]): void {
+    let archive: Record<string, DailyCommit[]> = {}
+    if (existsSync(this.archivePath)) {
+      const content = readFileSync(this.archivePath, 'utf-8')
+      archive = (parse(content) as Record<string, DailyCommit[]> | null) ?? {}
+    }
+
+    if (!archive[repo]) archive[repo] = []
+    archive[repo].push(...commits)
+
+    if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
+    safeWriteFileSync(this.archivePath, stringify(archive))
+  }
+
+  listArchived(repo: string): DailyCommit[] {
+    if (!existsSync(this.archivePath)) return []
+    const content = readFileSync(this.archivePath, 'utf-8')
+    const archive = (parse(content) as Record<string, DailyCommit[]> | null) ?? {}
+    return archive[repo] ?? []
+  }
+
+  getArchiveStats(repo: string): { total: number; oldest: string | null } {
+    const archived = this.listArchived(repo)
+    return {
+      total: archived.length,
+      oldest: archived.length > 0 ? archived[0]!.date : null,
+    }
+  }
+
   // --- Private ---
 
   private load(): UpstreamFile {

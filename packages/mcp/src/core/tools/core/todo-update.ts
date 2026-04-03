@@ -57,6 +57,7 @@ export async function todoUpdate(
   }
 
   // If note is provided, append to record file (auto-create if missing)
+  // Must run before not_planned archive to avoid losing the note
   if (fields.note && updated.ref) {
     const recordPath = records.resolveRefPath(updated.ref)
     if (recordPath && !existsSync(recordPath)) {
@@ -67,6 +68,13 @@ export async function todoUpdate(
       appendFileSync(recordPath, `\n\n> Note (${today}): ${fields.note}\n`, 'utf-8')
       changes.push(`note appended`)
     }
+  }
+
+  // not_planned → auto archive (decided not to do, move out of active list)
+  if (updateFields.status === 'not_planned') {
+    store.archiveAndDelete(storeIndex)
+    changes.push('archived (not planned)')
+    return `Updated & archived **${updated.title}**: ${changes.join(', ')}`
   }
 
   if (changes.length === 0) {

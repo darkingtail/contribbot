@@ -112,7 +112,16 @@ export async function upstreamDaily(
     if (releases.length === 0) {
       const tags = await listTags(upOwner, upName)
       if (tags.length === 0) {
-        throw new Error(`No releases or tags found for ${upOwner}/${upName}`)
+        return [
+          `## Initialize Sync Anchor`,
+          '',
+          `No releases or tags found for ${upOwner}/${upName}.`,
+          '',
+          'You can use a specific commit SHA as the tracking anchor:',
+          `\`upstream_daily(upstream_repo="${upOwner}/${upName}", since_tag="<commit-sha>")\``,
+          '',
+          'The anchor marks the starting point — only commits after it will be tracked.',
+        ].join('\n')
       }
 
       const lines: string[] = [

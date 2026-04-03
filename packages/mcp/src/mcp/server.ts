@@ -9,10 +9,12 @@ import { todoUpdate } from '../core/tools/core/todo-update.js'
 import { upstreamSyncCheck, syncHistory } from '../core/tools/core/upstream-sync-check.js'
 import { upstreamList, upstreamDetail, upstreamUpdate } from '../core/tools/core/upstream-manage.js'
 import { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from '../core/tools/core/upstream-daily.js'
+import { upstreamCompact } from '../core/tools/core/upstream-compact.js'
 import { repoConfig } from '../core/tools/core/repo-config-tool.js'
 import { projectList } from '../core/tools/core/project-list.js'
 import { contributionStats } from '../core/tools/core/contribution-stats.js'
 import { todoClaim } from '../core/tools/core/todo-claim.js'
+import { todoCompact } from '../core/tools/core/todo-compact.js'
 import { knowledgeWrite } from '../core/tools/core/knowledge.js'
 import { listAllKnowledge, readKnowledge } from '../core/tools/core/knowledge-resources.js'
 
@@ -85,6 +87,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 - 创建 PR 后：如有 active todo，自动 todo_update 关联
 - 创建 issue 后：如来自 upstream daily，自动 upstream_daily_act 关联
 - 关闭 issue 时：如有对应 todo，自动标记 done
+- 完成 todo 相关工作后：主动询问用户是否标记 todo_done
 - 回复 review 前：先用 pr_review_comments 获取评论列表
 
 ## 注意事项
@@ -95,7 +98,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 
 export function createServer(): McpServer {
   const server = new McpServer(
-    { name: 'contribbot', version: '0.1.0' },
+    { name: 'contribbot', version: '0.0.3' },
     { instructions: INSTRUCTIONS },
   )
 
@@ -187,9 +190,22 @@ export function createServer(): McpServer {
 
   server.tool(
     'todo_archive',
-    'Archive all done todos: move from todos.yaml to archive.yaml',
+    'Archive all done todos: move from todos.yaml to todos.archive.yaml',
     { repo: repoParam },
     wrapHandler(({ repo }) => todoArchive(repo as string | undefined)),
+  )
+
+  server.tool(
+    'todo_compact',
+    'Compact todo archive: remove old entries by date or keep count. Pass no params to see archive stats.',
+    {
+      before: z.string().optional().describe('Remove entries archived before this date (YYYY-MM-DD). Mutually exclusive with keep.'),
+      keep: z.number().optional().describe('Keep only the latest N entries. Mutually exclusive with before.'),
+      repo: repoParam,
+    },
+    wrapHandler(async ({ before, keep, repo }) =>
+      todoCompact(before as string | undefined, keep as number | undefined, repo as string | undefined),
+    ),
   )
 
   server.tool(
@@ -551,6 +567,20 @@ export function createServer(): McpServer {
       repo: repoParam,
     },
     wrapHandler(({ upstream_repo, repo }) => upstreamDailySkipNoise(upstream_repo as string, repo as string | undefined)),
+  )
+
+  server.tool(
+    'upstream_compact',
+    'Compact upstream daily commits: remove old processed entries by date or keep count. Pass no params to see stats.',
+    {
+      upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
+      before: z.string().optional().describe('Remove processed commits before this date (YYYY-MM-DD). Mutually exclusive with keep.'),
+      keep: z.number().optional().describe('Keep only the latest N processed commits. Mutually exclusive with before.'),
+      repo: repoParam,
+    },
+    wrapHandler(async ({ upstream_repo, before, keep, repo }) =>
+      upstreamCompact(upstream_repo as string, before as string | undefined, keep as number | undefined, repo as string | undefined),
+    ),
   )
 
   server.tool(
