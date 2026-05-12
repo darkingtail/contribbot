@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { TodoStore } from './todo-store.js'
@@ -126,6 +126,17 @@ describe('TodoStore', () => {
 
     // Check archive file exists
     expect(existsSync(join(dir, 'todos.archive.yaml'))).toBe(true)
+  })
+
+  it('keeps the active todo when archive write fails', () => {
+    store.add({ ref: '#1', title: 'Do not lose', type: 'bug' })
+    mkdirSync(join(dir, 'todos.archive.yaml.tmp'))
+
+    expect(() => store.archiveAndDelete(0)).toThrow()
+
+    const remaining = store.list()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0]!.ref).toBe('#1')
   })
 
   it('returns undefined for invalid index', () => {

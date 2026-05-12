@@ -188,11 +188,6 @@ export class TodoStore {
 
     const archivedItem: ArchivedTodoItem = { ...todo, status: todo.status === 'not_planned' ? 'not_planned' : 'done', archived: today }
 
-    // Delete from active first (safer: worst case = lost archive entry, not duplicate)
-    todos.splice(index, 1)
-    this.save(todos)
-
-    // Then append to archive
     let archived: ArchivedTodoItem[] = []
     if (existsSync(this.archivePath)) {
       const content = readFileSync(this.archivePath, 'utf-8')
@@ -203,6 +198,10 @@ export class TodoStore {
 
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
     safeWriteFileSync(this.archivePath, stringify({ todos: archived }))
+
+    // Delete from active only after archive write succeeds.
+    todos.splice(index, 1)
+    this.save(todos)
 
     return archivedItem
   }
