@@ -38,7 +38,8 @@ import { securityOverview } from '../core/tools/compat/security-overview.js'
 import { repoInfo } from '../core/tools/compat/repo-info.js'
 import { projectDashboard } from '../core/tools/compat/project-dashboard.js'
 
-const repoParam = z.string().optional().describe('GitHub repo "owner/name"')
+const requiredRepoParam = z.string().describe('GitHub repo "owner/name"')
+const optionalRepoParam = z.string().optional().describe('GitHub repo "owner/name"')
 
 function wrapHandler(fn: (args: Record<string, unknown>) => Promise<string> | string) {
   return async (args: Record<string, unknown>) => {
@@ -107,14 +108,14 @@ export function createServer(): McpServer {
   server.tool(
     'project_dashboard',
     'Project overview: open issues/PRs stats, labels distribution, recent commits, latest release',
-    { repo: repoParam },
+    { repo: requiredRepoParam },
     wrapHandler(async ({ repo }) => projectDashboard(repo as string | undefined)),
   )
 
   server.tool(
     'repo_info',
     'Repository metadata: stars, forks, topics, license, contributors',
-    { repo: repoParam },
+    { repo: requiredRepoParam },
     wrapHandler(async ({ repo }) => repoInfo(repo as string | undefined)),
   )
 
@@ -122,7 +123,7 @@ export function createServer(): McpServer {
     'repo_config',
     'View or update repo config (role, org, fork, upstream). Auto-detects on first access.',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       upstream: z.string().optional().describe('Set upstream repo, e.g. "upstream-org/upstream-repo"'),
     },
     wrapHandler(async ({ repo, upstream }) => repoConfig(repo as string | undefined, upstream as string | undefined)),
@@ -132,7 +133,7 @@ export function createServer(): McpServer {
     'sync_fork',
     'Sync fork default branch with upstream. Reads fork from config.yaml automatically.',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       branch: z.string().optional().describe('Branch to sync. Default: repo default branch (usually main)'),
     },
     wrapHandler(async ({ repo, branch }) => syncFork(repo as string | undefined, branch as string | undefined)),
@@ -151,7 +152,7 @@ export function createServer(): McpServer {
     'todo_list',
     'List personal todos stored locally in ~/.contribbot/{owner}/{repo}/todos.yaml (YAML-based)',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       status: z.enum(TODO_STATUSES).optional().describe('Filter by status'),
     },
     wrapHandler(({ repo, status }) => todoList(repo as string | undefined, status as string | undefined)),
@@ -163,7 +164,7 @@ export function createServer(): McpServer {
     {
       text: z.string().describe('Todo title, e.g. "研究 Cascader showSearch + loadData 共存方案"'),
       ref: z.string().optional().describe('标识：issue 编号（如 #259）或自定义名称（如 playground）'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ text, ref, repo }) => todoAdd(text as string, ref as string | undefined, repo as string | undefined)),
   )
@@ -173,7 +174,7 @@ export function createServer(): McpServer {
     'Mark a todo as done. Pass the 1-based index number (of open todos) or a text substring to match.',
     {
       item: z.string().describe('Todo index (1, 2, 3…) or text substring to match'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(({ item, repo }) => todoDone(item as string, repo as string | undefined)),
   )
@@ -183,7 +184,7 @@ export function createServer(): McpServer {
     'Delete a todo permanently. Pass the 1-based index number (of open todos) or a text substring to match.',
     {
       item: z.string().describe('Todo index (1, 2, 3…) or text substring to match'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(({ item, repo }) => todoDelete(item as string, repo as string | undefined)),
   )
@@ -191,7 +192,7 @@ export function createServer(): McpServer {
   server.tool(
     'todo_archive',
     'Archive all done todos: move from todos.yaml to todos.archive.yaml',
-    { repo: repoParam },
+    { repo: requiredRepoParam },
     wrapHandler(({ repo }) => todoArchive(repo as string | undefined)),
   )
 
@@ -201,7 +202,7 @@ export function createServer(): McpServer {
     {
       before: z.string().optional().describe('Remove entries archived before this date (YYYY-MM-DD). Mutually exclusive with keep.'),
       keep: z.number().optional().describe('Keep only the latest N entries. Mutually exclusive with before.'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ before, keep, repo }) =>
       todoCompact(before as string | undefined, keep as number | undefined, repo as string | undefined),
@@ -214,7 +215,7 @@ export function createServer(): McpServer {
     {
       item: z.string().describe('Todo index (1-based) or text substring to match'),
       branch: z.string().optional().describe('Branch name suggested by LLM based on repo conventions. If omitted, uses default: prefix/number-slug'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ item, branch, repo }) => todoActivate(item as string, branch as string | undefined, repo as string | undefined)),
   )
@@ -224,7 +225,7 @@ export function createServer(): McpServer {
     'View todo implementation record with auto-refreshed PR reviews',
     {
       item: z.string().describe('Todo index (1-based) or text substring to match'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ item, repo }) => todoDetail(item as string, repo as string | undefined)),
   )
@@ -238,7 +239,7 @@ export function createServer(): McpServer {
       pr: z.number().optional().describe('PR number to link'),
       branch: z.string().optional().describe('Branch name to associate with the todo'),
       note: z.string().optional().describe('Note to append to implementation record'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(({ item, status, pr, branch, note, repo }) =>
       todoUpdate(item as string, { status: status as string | undefined, pr: pr as number | undefined, branch: branch as string | undefined, note: note as string | undefined }, repo as string | undefined),
@@ -251,7 +252,7 @@ export function createServer(): McpServer {
     {
       item: z.string().describe('Todo index (1-based) or text substring to match'),
       items: z.array(z.string()).describe('Work items to claim, identified by LLM from issue body'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ item, items, repo }) =>
       todoClaim(item as string, items as string[], repo as string | undefined),
@@ -264,7 +265,7 @@ export function createServer(): McpServer {
     'issue_list',
     'Search issues by state, labels, or keywords',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       state: z.enum(['open', 'closed']).optional().describe('Filter: open | closed (default: open)'),
       labels: z.string().optional().describe('Comma-separated labels, e.g. "bug,sync"'),
       query: z.string().optional().describe('Additional search keywords'),
@@ -278,7 +279,7 @@ export function createServer(): McpServer {
     'pr_list',
     'Search pull requests by state or keywords',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       state: z.enum(['open', 'closed', 'merged']).optional().describe('Filter: open | closed | merged (default: open)'),
       query: z.string().optional().describe('Additional search keywords'),
     },
@@ -292,7 +293,7 @@ export function createServer(): McpServer {
     'Issue details: title, labels, linked PRs, upstream references, comments summary',
     {
       issue_number: z.number().describe('GitHub issue number'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ issue_number, repo }) => issueDetail(issue_number as number, repo as string | undefined)),
   )
@@ -302,7 +303,7 @@ export function createServer(): McpServer {
     'PR summary: author, status, changed files grouped by component, CI checks, reviews',
     {
       pr_number: z.number().describe('GitHub PR number'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ pr_number, repo }) => prSummary(pr_number as number, repo as string | undefined)),
   )
@@ -313,7 +314,7 @@ export function createServer(): McpServer {
     {
       issue_number: z.number().describe('Issue or PR number'),
       body: z.string().describe('Comment body (markdown)'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ issue_number, body, repo }) =>
       commentCreate(issue_number as number, body as string, repo as string | undefined),
@@ -327,7 +328,7 @@ export function createServer(): McpServer {
       issue_number: z.number().describe('Issue number to close'),
       comment: z.string().optional().describe('Closing comment'),
       todo_item: z.string().optional().describe('Todo index or text to mark as done'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ issue_number, comment, todo_item, repo }) =>
       issueClose(issue_number as number, comment as string | undefined, todo_item as string | undefined, repo as string | undefined),
@@ -344,7 +345,7 @@ export function createServer(): McpServer {
       upstream_sha: z.string().optional().describe('Upstream daily commit SHA to link'),
       upstream_repo: z.string().optional().describe('Upstream repo for the commit, e.g. "upstream-org/upstream-repo"'),
       auto_todo: z.boolean().optional().describe('Auto-create a todo for this issue (default: true)'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ title, body, labels, upstream_sha, upstream_repo, auto_todo, repo }) =>
       issueCreate(
@@ -364,7 +365,7 @@ export function createServer(): McpServer {
       body: z.string().optional().describe('New body'),
       state: z.enum(['open', 'closed']).optional().describe('New state'),
       draft: z.boolean().optional().describe('Draft status'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ pr_number, title, body, state, draft, repo }) =>
       prUpdate(pr_number as number, { title, body, state, draft } as Record<string, unknown>, repo as string | undefined),
@@ -381,7 +382,7 @@ export function createServer(): McpServer {
       body: z.string().optional().describe('PR description (markdown)'),
       draft: z.boolean().optional().describe('Create as draft PR (default: false)'),
       todo_item: z.string().optional().describe('Todo index or text to link (auto-sets status to pr_submitted)'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ title, head, base, body, draft, todo_item, repo }) =>
       prCreate(
@@ -397,7 +398,7 @@ export function createServer(): McpServer {
     'List all review comments on a PR with comment IDs, diff context, and content',
     {
       pr_number: z.number().describe('PR number'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ pr_number, repo }) => prReviewComments(pr_number as number, repo as string | undefined)),
   )
@@ -409,7 +410,7 @@ export function createServer(): McpServer {
       pr_number: z.number().describe('PR number'),
       comment_id: z.number().describe('Review comment ID (from pr_review_comments)'),
       body: z.string().describe('Reply content (markdown)'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ pr_number, comment_id, body, repo }) =>
       prReviewReply(pr_number as number, comment_id as number, body as string, repo as string | undefined),
@@ -422,7 +423,7 @@ export function createServer(): McpServer {
     'discussion_list',
     'List GitHub Discussions, optionally filtered by category',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       category: z.string().optional().describe('Filter by category name, e.g. "Q&A"'),
     },
     wrapHandler(async ({ repo, category }) => discussionList(repo as string | undefined, category as string | undefined)),
@@ -433,7 +434,7 @@ export function createServer(): McpServer {
     'Discussion details with all comments',
     {
       discussion_number: z.number().describe('Discussion number'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ discussion_number, repo }) => discussionDetail(discussion_number as number, repo as string | undefined)),
   )
@@ -444,7 +445,7 @@ export function createServer(): McpServer {
     'actions_status',
     'GitHub Actions workflow runs: recent CI status, failures highlight',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       branch: z.string().optional().describe('Filter by branch name'),
     },
     wrapHandler(async ({ repo, branch }) => actionsStatus(repo as string | undefined, branch as string | undefined)),
@@ -455,7 +456,7 @@ export function createServer(): McpServer {
   server.tool(
     'security_overview',
     'Security alerts: Dependabot vulnerabilities, code scanning alerts',
-    { repo: repoParam },
+    { repo: requiredRepoParam },
     wrapHandler(async ({ repo }) => securityOverview(repo as string | undefined)),
   )
 
@@ -483,7 +484,7 @@ export function createServer(): McpServer {
   server.tool(
     'sync_history',
     'List all saved upstream sync records for a repo',
-    { repo: repoParam },
+    { repo: requiredRepoParam },
     wrapHandler(({ repo }) => syncHistory(repo as string | undefined)),
   )
 
@@ -491,7 +492,7 @@ export function createServer(): McpServer {
     'upstream_list',
     'List upstream sync status: versions + daily commits summary',
     {
-      repo: repoParam,
+      repo: requiredRepoParam,
       upstream_repo: z.string().optional().describe('Filter by upstream repo, e.g. "upstream-org/upstream-repo"'),
     },
     wrapHandler(({ repo, upstream_repo }) => upstreamList(repo as string | undefined, upstream_repo as string | undefined)),
@@ -503,7 +504,7 @@ export function createServer(): McpServer {
     {
       upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
       version: z.string().describe('Release version, e.g. "6.3.1"'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ upstream_repo, version, repo }) =>
       upstreamDetail(upstream_repo as string, version as string, repo as string | undefined),
@@ -520,7 +521,7 @@ export function createServer(): McpServer {
       status: z.enum(UPSTREAM_ITEM_STATUSES).optional().describe('New status'),
       pr: z.number().optional().describe('PR number'),
       difficulty: z.enum(TODO_DIFFICULTIES).optional().describe('Difficulty'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(({ upstream_repo, version, item_index, status, pr, difficulty, repo }) =>
       upstreamUpdate(
@@ -537,7 +538,7 @@ export function createServer(): McpServer {
     {
       upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
       since_tag: z.string().optional().describe('Baseline version tag for first-time init, e.g. "5.20.0"'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ upstream_repo, since_tag, repo }) =>
       upstreamDaily(upstream_repo as string, repo as string | undefined, since_tag as string | undefined),
@@ -552,7 +553,7 @@ export function createServer(): McpServer {
       sha: z.string().describe('Commit SHA (or prefix)'),
       action: z.enum(DAILY_COMMIT_ACTIONS).describe('Action'),
       ref: z.string().optional().describe('Related issue/PR reference, e.g. "#42"'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(({ upstream_repo, sha, action, ref, repo }) =>
       upstreamDailyAct(upstream_repo as string, sha as string, action as string, ref as string | undefined, repo as string | undefined),
@@ -564,7 +565,7 @@ export function createServer(): McpServer {
     'Batch skip all noise commits (CI, deps, build, etc.)',
     {
       upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(({ upstream_repo, repo }) => upstreamDailySkipNoise(upstream_repo as string, repo as string | undefined)),
   )
@@ -576,7 +577,7 @@ export function createServer(): McpServer {
       upstream_repo: z.string().describe('Upstream repo, e.g. "upstream-org/upstream-repo"'),
       before: z.string().optional().describe('Remove processed commits before this date (YYYY-MM-DD). Mutually exclusive with keep.'),
       keep: z.number().optional().describe('Keep only the latest N processed commits. Mutually exclusive with before.'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(async ({ upstream_repo, before, keep, repo }) =>
       upstreamCompact(upstream_repo as string, before as string | undefined, keep as number | undefined, repo as string | undefined),
@@ -589,7 +590,7 @@ export function createServer(): McpServer {
     {
       days: z.number().optional().describe('Stats period in days (default: 7)'),
       author: z.string().optional().describe('GitHub username (default: current user)'),
-      repo: repoParam.describe('Target repo, or "all" for all tracked projects (default: all)'),
+      repo: optionalRepoParam.describe('Target repo, or "all" for all tracked projects (default: all)'),
     },
     wrapHandler(async ({ days, author, repo }) =>
       contributionStats(days as number | undefined, author as string | undefined, repo as string | undefined),
@@ -644,7 +645,7 @@ export function createServer(): McpServer {
     {
       name: z.string().describe('Knowledge directory name, e.g. "upstream-sync"'),
       content: z.string().describe('Full README.md content including frontmatter'),
-      repo: repoParam,
+      repo: requiredRepoParam,
     },
     wrapHandler(({ name, content, repo }) => knowledgeWrite(name as string, content as string, repo as string | undefined)),
   )
@@ -654,7 +655,7 @@ export function createServer(): McpServer {
   server.registerPrompt('daily-sync', {
     title: 'Daily Upstream Sync',
     description: 'Enhanced workflow: check project mode, sync fork, fetch upstream commits, skip noise, triage remaining',
-    argsSchema: { repo: repoParam },
+    argsSchema: { repo: optionalRepoParam },
   }, ({ repo }) => ({
     messages: [{
       role: 'user',
@@ -682,7 +683,7 @@ export function createServer(): McpServer {
     title: 'Start Task',
     description: 'Enhanced workflow: enter project context, pick a todo, activate it, review details',
     argsSchema: {
-      repo: repoParam,
+      repo: optionalRepoParam,
       item: z.string().optional().describe('Todo item to activate (index or text match)'),
     },
   }, ({ repo, item }) => ({
@@ -710,7 +711,7 @@ export function createServer(): McpServer {
     title: 'Pre-Submit Check',
     description: 'Enhanced workflow: review PR changes, check CI, review comments, security alerts, prepare for merge',
     argsSchema: {
-      repo: repoParam,
+      repo: optionalRepoParam,
       pr: z.string().describe('PR number to review'),
     },
   }, ({ repo, pr }) => ({
