@@ -39,4 +39,23 @@ describe('createServer tool schemas', () => {
 
     expect(contributionStats?.inputSchema.required ?? []).not.toContain('repo')
   })
+
+  it('registers bounty tools as repository-scoped tools', async () => {
+    const { tools } = await listTools()
+    const names = tools.map(t => t.name)
+
+    for (const name of [
+      'bounty_create',
+      'bounty_list',
+      'bounty_detail',
+      'bounty_claim',
+      'bounty_link_pr',
+      'bounty_mark_ready',
+      'bounty_settle',
+    ]) {
+      const tool = tools.find(t => t.name === name)
+      expect(names).toContain(name)
+      expect(tool?.inputSchema.required ?? []).toContain('repo')
+    }
+  })
 })

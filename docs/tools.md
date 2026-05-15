@@ -1,6 +1,6 @@
 # contribbot 工具集合
 
-> 41 Tools + 1 Resource + 4 Prompts
+> 48 Tools + 1 Resource + 4 Prompts
 
 ---
 
@@ -68,6 +68,33 @@ upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", before="2025-
 - **status**: `idea` · `backlog` · `active` · `pr_submitted` · `done` · `not_planned`
 - **type**: `bug` · `feature` · `docs` · `chore`
 - **difficulty**: `easy` · `medium` · `hard`
+
+---
+
+## Bounty 协调（7 Tools）
+
+为 GitHub 原生开源协作流程增加可选悬赏协调能力。bounty 数据本地存储在 `~/.contribbot/{owner}/{repo}/bounties.yaml`，不托管资金，不替代 GitHub issue / PR / review。
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `bounty_create` | 创建 bounty，关联 issue 或 todo ref，记录金额和首选 payout rail | `repo`, `title`, `amount`, `rail`, `ref?`, `currency?`, `creator?` |
+| `bounty_list` | 查看仓库 bounty 列表，可按状态过滤 | `repo`, `status?` |
+| `bounty_detail` | 查看单个 bounty 的 claim、PR、settlement 状态 | `repo`, `id` |
+| `bounty_claim` | 认领 bounty，记录 claimant、钱包地址和认领说明，返回可粘贴到 GitHub 的 markdown | `repo`, `id`, `claimant`, `claimant_wallet?`, `claim_note?` |
+| `bounty_link_pr` | 关联 bounty 到 PR | `repo`, `id`, `pr` |
+| `bounty_mark_ready` | 维护者确认 bounty 已满足结算条件 | `repo`, `id` |
+| `bounty_settle` | 记录结算结果或结算指令，支持 Arc USDC / GitHub Sponsors / manual | `repo`, `id`, `rail`, `tx?`, `note?` |
+
+### Bounty 枚举值
+
+- **rail**: `arc-usdc` · `github-sponsors` · `manual`
+- **status**: `open` · `claimed` · `ready` · `settled` · `cancelled`
+
+### MVP 边界
+
+- `arc-usdc` 在 MVP 中记录 Arc USDC settlement instruction 或 testnet tx，不托管私钥。
+- `github-sponsors` 和 `manual` 记录外部支付确认。
+- bounty 是可选协作增强，不改变 GitHub 的 issue / PR / review 中心地位。
 
 ---
 
