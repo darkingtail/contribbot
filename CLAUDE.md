@@ -154,7 +154,11 @@ pnpm test         # 运行所有测试
 | 类型 | 标识 | 说明 |
 |------|------|------|
 | Resource | `knowledge://{repo}/{name}` | 只读访问项目知识，支持 list + read |
-| Tool | `knowledge_write` | 创建/更新项目知识 |
+| Tool | `knowledge_write` | 直接创建/更新项目知识 |
+| Tool | `knowledge_propose_update` | 创建可审计的知识更新提案（不写 canonical） |
+| Tool | `knowledge_proposals` | 列出提案（pending/applied/rejected） |
+| Tool | `knowledge_apply_update` | 应用已批准提案 + provenance 脚注 |
+| Tool | `knowledge_reject_update` | 驳回 pending 提案 |
 
 ## 数据存储
 
@@ -171,6 +175,7 @@ pnpm test         # 运行所有测试
 ├── upstream/                           # 上游实现记录
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
+├── knowledge.proposals.yaml            # 知识演进提案索引（pending/applied/rejected）
 ├── todos.archive.yaml                  # 已完成 todos 归档（done + not_planned）
 ├── upstream.archive.yaml               # 已归档的上游 daily commits
 ├── templates/                          # 自定义模板（首次使用自动生成）

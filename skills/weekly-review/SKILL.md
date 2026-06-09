@@ -51,13 +51,23 @@ metadata:
 
 （none 模式跳过此步）
 
-### 4. 归档 & 清理
+### 4. 待审知识提案
+
+调用 `knowledge_proposals`，参数：`repo`、`status=pending`。
+
+如有待审提案，列出清单，引导维护者逐条决策：
+- **采纳** → `knowledge_apply_update`（proposal_id）
+- **驳回** → `knowledge_reject_update`（proposal_id，可附 reason）
+
+无待审提案则跳过。
+
+### 5. 归档 & 清理
 
 调用 `todo_archive`，参数：`repo`。
 
 如果归档数据量较大（提示用户），可调用 `todo_compact` / `upstream_compact` 清理旧数据。
 
-### 5. 输出报告
+### 6. 输出报告
 
 ```
 ## 周回顾 — {repo} ({date_range})
@@ -81,6 +91,9 @@ metadata:
 | 追踪源 | 覆盖率 | Pending |
 |--------|--------|---------|
 | {source} | {%} | {n} commits |
+
+### 待审知识提案
+{n} 条 pending：{已采纳/已驳回/仍待定 概要}
 
 ### 归档
 已归档 {n} 条已完成 todo。

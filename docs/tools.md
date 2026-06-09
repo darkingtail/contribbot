@@ -164,14 +164,30 @@ upstream_daily ──→ upstream_daily_skip_noise ──→ 逐条 upstream_dai
 
 ---
 
-## Knowledge（1 Resource + 1 Tool）
+## Knowledge（1 Resource + 5 Tools）
 
 项目知识沉淀系统，存储在 `~/.contribbot/{owner}/{repo}/knowledge/` 下。
 
 | 类型 | 标识 | 说明 |
 |------|------|------|
 | Resource | `knowledge://{repo}/{knowledgeName}` | 只读访问项目知识，支持 list + read |
-| Tool | `knowledge_write` | 创建/更新项目知识（`name` + `content` + `repo`） |
+| Tool | `knowledge_write` | 直接创建/更新项目知识（`name` + `content` + `repo`） |
+
+### 知识演进（Phase 3A — 可审计提案流）
+
+静态 `knowledge_write` 之外的 **propose → review → apply → audit** 工作流：host AI 推理出提案，
+maintainer 确认后才写入 canonical 知识，写入时带 provenance 脚注。提案索引存于
+`~/.contribbot/{owner}/{repo}/knowledge.proposals.yaml`。
+
+| Tool | 说明 |
+|------|------|
+| `knowledge_propose_update` | 创建一条待审提案（不写 canonical）。入参：`target` / `action`(create/append/revise) / `source_type` / `title` / `rationale` / `proposed_content` / `source_ref?` / `repo` |
+| `knowledge_proposals` | 列出提案（可按 `status` = pending/applied/rejected 过滤），用于拿 `kp-N` ID |
+| `knowledge_apply_update` | 应用已批准提案到 canonical 知识，写 provenance 脚注。入参：`proposal_id` / `repo` |
+| `knowledge_reject_update` | 驳回 pending 提案，不改 canonical。入参：`proposal_id` / `reason?` / `repo` |
+
+**action 语义**：`create` 目标必须不存在；`append` 追加到已有；`revise` 用完整新内容替换已有。
+provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revise 不堆叠。
 
 ---
 

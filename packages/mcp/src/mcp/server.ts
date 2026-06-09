@@ -1,6 +1,6 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { TODO_STATUSES, UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, DAILY_COMMIT_ACTIONS } from '../core/enums.js'
+import { TODO_STATUSES, UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, DAILY_COMMIT_ACTIONS, KNOWLEDGE_PROPOSAL_ACTIONS, KNOWLEDGE_PROPOSAL_STATUSES, KNOWLEDGE_SOURCE_TYPES } from '../core/enums.js'
 // ── Core: contribbot 独有能力 ────────────────────────────
 import { todoList, todoAdd, todoDone, todoDelete, todoArchive } from '../core/tools/core/todos.js'
 import { todoActivate } from '../core/tools/core/todo-activate.js'
@@ -17,6 +17,7 @@ import { todoClaim } from '../core/tools/core/todo-claim.js'
 import { todoCompact } from '../core/tools/core/todo-compact.js'
 import { knowledgeWrite } from '../core/tools/core/knowledge.js'
 import { listAllKnowledge, readKnowledge } from '../core/tools/core/knowledge-resources.js'
+import { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate } from '../core/tools/core/knowledge-evolution.js'
 
 // ── Linkage: GitHub 操作 + 本地数据联动 ──────────────────
 import { issueCreate } from '../core/tools/linkage/issue-create.js'
@@ -77,7 +78,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 6. **版本同步**：upstream_sync_check → 对比 release 同步状态；upstream_list → 总览；upstream_detail → 详情
 7. **质量保障**：actions_status → CI；security_overview → 安全告警
 8. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply
-9. **知识沉淀**：knowledge_write → 项目知识记录（Resource: knowledge://{repo}/{name}）
+9. **知识沉淀**：knowledge_write → 直接写项目知识；演进流（需 review）：knowledge_propose_update → knowledge_proposals → knowledge_apply_update / knowledge_reject_update（Resource: knowledge://{repo}/{name}）
 10. **全局视图**：project_list → 跨项目概况；repo_config → 仓库配置
 11. **贡献统计**：contribution_stats → 个人贡献节奏
 12. **搜索**：issue_list / pr_list → 按状态/标签/关键词搜索
@@ -90,6 +91,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 - 关闭 issue 时：如有对应 todo，自动标记 done
 - 完成 todo 相关工作后：主动询问用户是否标记 todo_done
 - 回复 review 前：先用 pr_review_comments 获取评论列表
+- 发现可复用的项目知识/约定时：用 knowledge_propose_update 提案，而非静默写入；由 maintainer review 后 apply
 
 ## 注意事项
 
@@ -648,6 +650,64 @@ export function createServer(): McpServer {
       repo: requiredRepoParam,
     },
     wrapHandler(({ name, content, repo }) => knowledgeWrite(name as string, content as string, repo as string | undefined)),
+  )
+
+  server.tool(
+    'knowledge_propose_update',
+    'Propose a reviewable update to project knowledge (does NOT write the canonical entry). Use after reasoning over task context to suggest durable knowledge; the maintainer applies it later.',
+    {
+      target: z.string().describe('Knowledge entry name to create/update, e.g. "ci-conventions"'),
+      action: z.enum(KNOWLEDGE_PROPOSAL_ACTIONS).describe('create (new entry) | append (add to existing) | revise (replace existing with full new content)'),
+      source_type: z.enum(KNOWLEDGE_SOURCE_TYPES).describe('Where this learning came from'),
+      title: z.string().describe('Short proposal title'),
+      rationale: z.string().describe('Why this belongs in durable project knowledge'),
+      proposed_content: z.string().describe('Proposed markdown content (for revise, the FULL revised entry)'),
+      source_ref: z.string().optional().describe('Source id, e.g. issue/PR number or todo ref'),
+      repo: requiredRepoParam,
+    },
+    wrapHandler(({ target, action, source_type, title, rationale, proposed_content, source_ref, repo }) =>
+      knowledgeProposeUpdate({
+        repo: repo as string | undefined,
+        target: target as string,
+        action: action as string,
+        source_type: source_type as string,
+        title: title as string,
+        rationale: rationale as string,
+        proposed_content: proposed_content as string,
+        source_ref: source_ref as string | undefined,
+      }),
+    ),
+  )
+
+  server.tool(
+    'knowledge_proposals',
+    'List knowledge proposals (pending/applied/rejected) for review. Use to get a proposal ID before applying or rejecting.',
+    {
+      repo: requiredRepoParam,
+      status: z.enum(KNOWLEDGE_PROPOSAL_STATUSES).optional().describe('Filter by status'),
+    },
+    wrapHandler(({ repo, status }) => knowledgeProposals(repo as string | undefined, status as string | undefined)),
+  )
+
+  server.tool(
+    'knowledge_apply_update',
+    'Apply an approved knowledge proposal into the canonical knowledge entry, with a provenance footer and audit trail.',
+    {
+      proposal_id: z.string().describe('Proposal ID, e.g. "kp-1"'),
+      repo: requiredRepoParam,
+    },
+    wrapHandler(({ proposal_id, repo }) => knowledgeApplyUpdate(repo as string | undefined, proposal_id as string)),
+  )
+
+  server.tool(
+    'knowledge_reject_update',
+    'Reject a pending knowledge proposal. Canonical knowledge is not modified.',
+    {
+      proposal_id: z.string().describe('Proposal ID, e.g. "kp-1"'),
+      reason: z.string().optional().describe('Optional reason for rejection'),
+      repo: requiredRepoParam,
+    },
+    wrapHandler(({ proposal_id, reason, repo }) => knowledgeRejectUpdate(repo as string | undefined, proposal_id as string, reason as string | undefined)),
   )
 
   // ── MCP Prompts (enhanced versions of Skills, using MCP tools) ──

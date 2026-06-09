@@ -1,6 +1,7 @@
 import { getLatestRelease, getRepoCommits, getRepoIssues, getRepoPulls, parseRepo } from '../../clients/github.js'
 import { markdownTable, relativeTime, truncate } from '../../utils/format.js'
 import { listAllKnowledge } from '../core/knowledge-resources.js'
+import { countPendingProposals } from '../core/knowledge-evolution.js'
 
 export async function projectDashboard(repo?: string): Promise<string> {
   const { owner, name } = parseRepo(repo)
@@ -104,6 +105,13 @@ export async function projectDashboard(repo?: string): Promise<string> {
     const rows = knowledge.map(k => [k.name, k.description])
     lines.push(markdownTable(headers, rows))
     lines.push(`> Read details: \`knowledge://${repoKey}/{name}\``)
+  }
+
+  // Pending knowledge proposals
+  const pendingProposals = countPendingProposals(owner, name)
+  if (pendingProposals > 0) {
+    lines.push('')
+    lines.push(`> 📝 待审知识提案: ${pendingProposals} 条 — 运行 \`knowledge_proposals\` 查看`)
   }
 
   return lines.join('\n')

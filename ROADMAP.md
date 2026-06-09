@@ -58,9 +58,25 @@ MCP Server，寄宿于 Claude Code / Gemini CLI / Codex CLI / Cursor 等宿主�
 
 ---
 
-## Phase 3: Agents 🔲
+## Phase 3: Agents 🚧
 
 独立运行的开源协作 Agent，内置 LLM 推理，自主调用 Skills 执行多步任务。
+
+### Phase 3A: 自演进仓库知识 🚧（进行中）
+
+迈向自主 Agent 的奠基切片——先给未来的 Agent 一个**可靠、可审计的记忆底座**，而非先上自主执行。
+在现有 MCP server 上新增 **propose → review → apply → audit** 的知识演进流
+（`knowledge_propose_update` / `knowledge_proposals` / `knowledge_apply_update` / `knowledge_reject_update`），
+canonical 知识写入带 provenance 脚注。详见
+[docs/superpowers/specs/2026-06-02-phase3-evolving-knowledge-design.md](docs/superpowers/specs/2026-06-02-phase3-evolving-knowledge-design.md)。
+
+### 自主 Agent 层方向
+
+contribbot 保持「**MCP server + agentskills.io skills**」定位（TypeScript），
+自主运行时复用 [Hermes Agent](https://github.com/NousResearch/hermes-agent)（Python，MCP 驱动）等成熟 host，
+不在 monorepo 自建 agent 运行时——MCP 协议边界让两侧语言无需统一。
+
+### 目标能力
 
 ### 目标能力
 

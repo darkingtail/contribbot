@@ -111,3 +111,15 @@ activate 完成后，基于 issue 内容（body + 评论 + 标签）生成实现
 - Issue: https://github.com/{owner}/{repo}/issues/{ref}
 - 实现记录: ~/.contribbot/{owner}/{repo}/todos/{ref}.md
 ```
+
+### 7. 沉淀可复用知识（可选）
+
+如果在调查/激活过程中发现了**可复用的项目知识**（架构约定、CI 行为、调试技巧、维护者偏好等），
+不要直接 `knowledge_write` 静默写入，而是提案待审：
+
+调用 `knowledge_propose_update`，参数：
+- `repo`、`target`（知识条目名）、`action`（create/append/revise）
+- `source_type: todo`、`source_ref`（todo 的 ref）
+- `title`、`rationale`（为什么值得沉淀）、`proposed_content`（完整 markdown）
+
+提示用户提案已创建（返回 `kp-N`），待 review 后用 `knowledge_apply_update` 应用。

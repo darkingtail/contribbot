@@ -3,8 +3,10 @@ export {
   TodoStatus, TodoType, TodoDifficulty,
   UpstreamItemStatus, UpstreamVersionStatus,
   DailyCommitAction, RepoRole, PRType,
+  KnowledgeProposalStatus, KnowledgeProposalAction, KnowledgeSourceType,
   TODO_STATUSES, TODO_TYPES, TODO_DIFFICULTIES,
   UPSTREAM_ITEM_STATUSES, DAILY_COMMIT_ACTIONS,
+  KNOWLEDGE_PROPOSAL_STATUSES, KNOWLEDGE_PROPOSAL_ACTIONS, KNOWLEDGE_SOURCE_TYPES,
 } from './core/enums.js'
 
 // Core layer — contribbot 独有能力
@@ -23,6 +25,7 @@ export { todoCompact } from './core/tools/core/todo-compact.js'
 export { upstreamCompact } from './core/tools/core/upstream-compact.js'
 export { knowledgeList, knowledgeRead, knowledgeWrite } from './core/tools/core/knowledge.js'
 export { listAllKnowledge, readKnowledge } from './core/tools/core/knowledge-resources.js'
+export { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate, countPendingProposals } from './core/tools/core/knowledge-evolution.js'
 
 // Linkage layer — GitHub 操作 + 本地数据联动
 export { issueCreate } from './core/tools/linkage/issue-create.js'
@@ -47,6 +50,8 @@ export { projectDashboard } from './core/tools/compat/project-dashboard.js'
 // Storage utilities
 export { inferMode } from './core/storage/repo-config.js'
 export type { ProjectMode } from './core/storage/repo-config.js'
+export { KnowledgeProposalStore } from './core/storage/knowledge-proposal-store.js'
+export type { KnowledgeProposal, ProposalInput } from './core/storage/knowledge-proposal-store.js'
 
 // Utilities
 export { safeWriteFileSync } from './core/utils/fs.js'

@@ -39,4 +39,13 @@ describe('createServer tool schemas', () => {
 
     expect(contributionStats?.inputSchema.required ?? []).not.toContain('repo')
   })
+
+  it('registers knowledge evolution tools requiring repo', async () => {
+    const { tools } = await listTools()
+    const names = tools.map(t => t.name)
+    for (const tool of ['knowledge_propose_update', 'knowledge_proposals', 'knowledge_apply_update', 'knowledge_reject_update']) {
+      expect(names).toContain(tool)
+      expect(tools.find(t => t.name === tool)!.inputSchema.required ?? []).toContain('repo')
+    }
+  })
 })

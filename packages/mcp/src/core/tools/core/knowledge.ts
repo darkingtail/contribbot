@@ -4,12 +4,16 @@ import { getContribDir, validatePathSegment } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
 import { parseFrontmatter } from '../../utils/frontmatter.js'
 
-function getKnowledgeDir(owner: string, name: string): string {
+export function getKnowledgeDir(owner: string, name: string): string {
   return join(getContribDir(owner, name), 'knowledge')
 }
 
-function getKnowledgePath(owner: string, repo: string, knowledgeName: string): string {
+export function getKnowledgePath(owner: string, repo: string, knowledgeName: string): string {
   return join(getKnowledgeDir(owner, repo), validatePathSegment(knowledgeName), 'README.md')
+}
+
+export function knowledgeExists(owner: string, repo: string, knowledgeName: string): boolean {
+  return existsSync(getKnowledgePath(owner, repo, knowledgeName))
 }
 
 export async function knowledgeList(repo?: string): Promise<string> {
