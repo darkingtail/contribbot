@@ -72,9 +72,13 @@ canonical 知识写入带 provenance 脚注。详见
 
 ### 自主 Agent 层方向
 
-contribbot 保持「**MCP server + agentskills.io skills**」定位（TypeScript），
-自主运行时复用 [Hermes Agent](https://github.com/NousResearch/hermes-agent)（Python，MCP 驱动）等成熟 host，
-不在 monorepo 自建 agent 运行时——MCP 协议边界让两侧语言无需统一。
+contribbot 是独立产品,自建 agent 运行时,不依赖外部 agent 框架。
+
+- **contribbot-mcp**(TypeScript):工具 + 技能 + 知识,寄宿模式已完整
+- **contribbot-agent**(Python):自建自主运行时——agent 循环 + MCP client(连自己的 mcp) + 记忆(复用 knowledge 提案) + 调度 + 部署
+- 已有 spike `experiments/agent_loop.py` 验证核心循环可行
+- MCP 协议让两侧语言无需统一,agent 通过标准 MCP client 调用 contribbot-mcp 的全部工具
+- **可选兼容**:用户若已有 Hermes/Claude Code 等支持 MCP 的 host,也可直接连 contribbot-mcp 使用
 
 ### 目标能力
 
