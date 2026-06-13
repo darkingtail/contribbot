@@ -61,6 +61,8 @@ describe('knowledge evolution tools', () => {
   it('propose does NOT write canonical knowledge', async () => {
     const out = await propose()
     expect(out).toContain('kp-1')
+    expect(out).toContain('# Arch')
+    expect(out).toContain('Layered.')
     expect(() => readFileSync(knowledgePath('arch'), 'utf-8')).toThrow()
     expect(countPendingProposals(owner, name)).toBe(1)
   })

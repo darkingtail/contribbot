@@ -89,6 +89,12 @@ export async function knowledgeProposeUpdate(args: {
     '',
     proposal.rationale ? `**Rationale**: ${proposal.rationale}` : '_No rationale provided._',
     '',
+    '### Proposed Content',
+    '',
+    '```markdown',
+    proposal.proposed_content,
+    '```',
+    '',
     `> This is a **proposal**, not knowledge yet. Review with \`knowledge_proposals\`, then`,
     `> \`knowledge_apply_update\` (apply \`${proposal.id}\`) or \`knowledge_reject_update\` to discard.`,
   ].join('\n')
