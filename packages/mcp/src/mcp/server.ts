@@ -18,6 +18,15 @@ import { todoCompact } from '../core/tools/core/todo-compact.js'
 import { knowledgeWrite } from '../core/tools/core/knowledge.js'
 import { listAllKnowledge, readKnowledge } from '../core/tools/core/knowledge-resources.js'
 import { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate } from '../core/tools/core/knowledge-evolution.js'
+import {
+  bountyClaim,
+  bountyCreate,
+  bountyDetail,
+  bountyLinkPr,
+  bountyList,
+  bountyMarkReady,
+  bountySettle,
+} from '../core/tools/core/bounties.js'
 
 // ── Linkage: GitHub 操作 + 本地数据联动 ──────────────────
 import { issueCreate } from '../core/tools/linkage/issue-create.js'
@@ -258,6 +267,122 @@ export function createServer(): McpServer {
     },
     wrapHandler(async ({ item, items, repo }) =>
       todoClaim(item as string, items as string[], repo as string | undefined),
+    ),
+  )
+
+  // ── Bounties ──────────────────────────────────────────────
+
+  server.tool(
+    'bounty_create',
+    'Create an optional bounty for a GitHub issue or contribbot todo. Records payout rail metadata; does not custody funds.',
+    {
+      repo: requiredRepoParam,
+      title: z.string().describe('Bounty title'),
+      amount: z.string().describe('Bounty amount as a decimal string, e.g. "25"'),
+      rail: z.enum(['arc-usdc', 'github-sponsors', 'manual']).describe('Preferred payout rail'),
+      ref: z.string().optional().describe('Issue ref or custom todo ref, e.g. "#123" or "agora-bounty"'),
+      currency: z.string().optional().describe('Currency label (default: USDC)'),
+      creator: z.string().optional().describe('Creator GitHub username or label'),
+    },
+    wrapHandler(async ({ repo, title, amount, rail, ref, currency, creator }) =>
+      bountyCreate(
+        {
+          title: title as string,
+          amount: amount as string,
+          rail: rail as 'arc-usdc' | 'github-sponsors' | 'manual',
+          ref: ref as string | undefined,
+          currency: currency as string | undefined,
+          creator: creator as string | undefined,
+        },
+        repo as string,
+      ),
+    ),
+  )
+
+  server.tool(
+    'bounty_list',
+    'List optional contribution bounties for a repository.',
+    {
+      repo: requiredRepoParam,
+      status: z.enum(['open', 'claimed', 'ready', 'settled', 'cancelled']).optional().describe('Filter by bounty status'),
+    },
+    wrapHandler(async ({ repo, status }) => bountyList(repo as string, status as string | undefined)),
+  )
+
+  server.tool(
+    'bounty_detail',
+    'Show one bounty with claim, PR, and settlement status.',
+    {
+      repo: requiredRepoParam,
+      id: z.string().describe('Bounty id or ref, e.g. "bounty-1" or "#123"'),
+    },
+    wrapHandler(async ({ repo, id }) => bountyDetail(id as string, repo as string)),
+  )
+
+  server.tool(
+    'bounty_claim',
+    'Claim a bounty and record claimant payout details. Returns markdown that can be posted to GitHub.',
+    {
+      repo: requiredRepoParam,
+      id: z.string().describe('Bounty id or ref, e.g. "bounty-1" or "#123"'),
+      claimant: z.string().describe('Claimant GitHub username or label'),
+      claimant_wallet: z.string().optional().describe('Wallet address for rails such as arc-usdc'),
+      claim_note: z.string().optional().describe('Claim note or scope statement'),
+    },
+    wrapHandler(async ({ repo, id, claimant, claimant_wallet, claim_note }) =>
+      bountyClaim(
+        id as string,
+        {
+          claimant: claimant as string,
+          claimant_wallet: claimant_wallet as string | undefined,
+          claim_note: claim_note as string | undefined,
+        },
+        repo as string,
+      ),
+    ),
+  )
+
+  server.tool(
+    'bounty_link_pr',
+    'Link a bounty to a GitHub pull request.',
+    {
+      repo: requiredRepoParam,
+      id: z.string().describe('Bounty id or ref, e.g. "bounty-1" or "#123"'),
+      pr: z.number().describe('Pull request number'),
+    },
+    wrapHandler(async ({ repo, id, pr }) => bountyLinkPr(id as string, pr as number, repo as string)),
+  )
+
+  server.tool(
+    'bounty_mark_ready',
+    'Mark a claimed bounty ready for settlement after maintainer review.',
+    {
+      repo: requiredRepoParam,
+      id: z.string().describe('Bounty id or ref, e.g. "bounty-1" or "#123"'),
+    },
+    wrapHandler(async ({ repo, id }) => bountyMarkReady(id as string, repo as string)),
+  )
+
+  server.tool(
+    'bounty_settle',
+    'Record bounty settlement through Arc USDC, GitHub Sponsors, or manual payout. For Arc USDC MVP, records transaction/instruction metadata.',
+    {
+      repo: requiredRepoParam,
+      id: z.string().describe('Bounty id or ref, e.g. "bounty-1" or "#123"'),
+      rail: z.enum(['arc-usdc', 'github-sponsors', 'manual']).describe('Settlement rail'),
+      tx: z.string().optional().describe('Transaction hash or external payment reference'),
+      note: z.string().optional().describe('Settlement note'),
+    },
+    wrapHandler(async ({ repo, id, rail, tx, note }) =>
+      bountySettle(
+        id as string,
+        {
+          rail: rail as 'arc-usdc' | 'github-sponsors' | 'manual',
+          tx: tx as string | undefined,
+          note: note as string | undefined,
+        },
+        repo as string,
+      ),
     ),
   )
 

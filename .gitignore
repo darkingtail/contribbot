@@ -2,3 +2,5 @@ node_modules/
 dist/
 .env
 packages/*/dist/
+.codex/
+AGENTS.md

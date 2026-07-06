@@ -26,6 +26,15 @@ export { upstreamCompact } from './core/tools/core/upstream-compact.js'
 export { knowledgeList, knowledgeRead, knowledgeWrite } from './core/tools/core/knowledge.js'
 export { listAllKnowledge, readKnowledge } from './core/tools/core/knowledge-resources.js'
 export { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate, countPendingProposals } from './core/tools/core/knowledge-evolution.js'
+export {
+  bountyClaim,
+  bountyCreate,
+  bountyDetail,
+  bountyLinkPr,
+  bountyList,
+  bountyMarkReady,
+  bountySettle,
+} from './core/tools/core/bounties.js'
 
 // Linkage layer — GitHub 操作 + 本地数据联动
 export { issueCreate } from './core/tools/linkage/issue-create.js'
@@ -52,6 +61,8 @@ export { inferMode } from './core/storage/repo-config.js'
 export type { ProjectMode } from './core/storage/repo-config.js'
 export { KnowledgeProposalStore } from './core/storage/knowledge-proposal-store.js'
 export type { KnowledgeProposal, ProposalInput } from './core/storage/knowledge-proposal-store.js'
+export { BOUNTY_RAILS, BOUNTY_STATUSES, BountyStore } from './core/storage/bounty-store.js'
+export type { BountyItem, BountyRail, BountySettlement, BountyStatus } from './core/storage/bounty-store.js'
 
 // Utilities
 export { safeWriteFileSync } from './core/utils/fs.js'
