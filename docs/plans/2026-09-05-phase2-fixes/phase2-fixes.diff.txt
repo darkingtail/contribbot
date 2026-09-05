@@ -1,0 +1,15 @@
+Phase 2 repair change summary
+
+BRANCH: main
+CHANGED_BRANCH_OR_FIELD:
+- actions_status.pr_number -> PR head SHA scoped workflow/check lookup
+- fork-triage -> commit_detail + compare_refs evidence-first decision flow
+
+MODIFIED_FILE:
+docs/plans/2026-09-05-phase2-fixes/phase2-fixes.md
+
+DIFF_FILE:
+docs/plans/2026-09-05-phase2-fixes/phase2-fixes.diff.txt
+
+The implementation diff is available from the working tree with:
+git diff -- packages/mcp/src/core/clients/github.ts packages/mcp/src/core/tools/compat/actions-status.ts packages/mcp/src/core/tools/compat/repo-investigation.ts packages/mcp/src/mcp/server.ts skills/pre-submit/SKILL.md skills/fork-triage/SKILL.md

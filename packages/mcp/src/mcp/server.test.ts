@@ -49,6 +49,29 @@ describe('createServer tool schemas', () => {
     }
   })
 
+  it('registers project guidance as a repository-scoped tool', async () => {
+    const { tools } = await listTools()
+    const guidance = tools.find(t => t.name === 'project_guidance')
+
+    expect(guidance).toBeDefined()
+    expect(guidance!.inputSchema.required ?? []).toContain('repo')
+  })
+
+  it('registers repository investigation tools as repository-scoped tools', async () => {
+    const { tools } = await listTools()
+    for (const name of ['commit_detail', 'compare_refs']) {
+      const tool = tools.find(t => t.name === name)
+      expect(tool).toBeDefined()
+      expect(tool!.inputSchema.required ?? []).toContain('repo')
+    }
+  })
+
+  it('supports PR-specific actions inspection', async () => {
+    const { tools } = await listTools()
+    const actions = tools.find(t => t.name === 'actions_status')
+    expect(actions?.inputSchema.properties).toHaveProperty('pr_number')
+  })
+
   it('registers bounty tools as repository-scoped tools', async () => {
     const { tools } = await listTools()
     const names = tools.map(t => t.name)

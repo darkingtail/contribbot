@@ -165,11 +165,13 @@ export interface GitHubComment {
   html_url?: string
 }
 
-interface GitHubPullFile {
+export interface GitHubPullFile {
   filename: string
   status: string
   additions: number
   deletions: number
+  changes?: number
+  patch?: string
 }
 
 interface GitHubReview {
@@ -178,7 +180,7 @@ interface GitHubReview {
   submitted_at: string | null
 }
 
-interface GitHubCheckRuns {
+export interface GitHubCheckRuns {
   check_runs: Array<{
     name: string
     status: string
@@ -228,6 +230,10 @@ export interface CompareResult {
     author: { login: string } | null
   }>
   total_commits: number
+  status?: string
+  ahead_by?: number
+  behind_by?: number
+  files?: GitHubPullFile[]
 }
 
 export async function getCompareCommits(
@@ -277,6 +283,22 @@ export async function getPullReviews(owner: string, repo: string, pullNumber: nu
 
 export async function getPullChecks(owner: string, repo: string, ref: string): Promise<GitHubCheckRuns> {
   return ghApi<GitHubCheckRuns>(`/repos/${owner}/${repo}/commits/${ref}/check-runs`)
+}
+
+export interface GitHubCommitDetail {
+  sha: string
+  html_url: string
+  commit: {
+    message: string
+    author: { name: string, date: string } | null
+  }
+  author: { login: string } | null
+  stats: { additions: number, deletions: number, total: number }
+  files: GitHubPullFile[]
+}
+
+export async function getCommitDetail(owner: string, repo: string, ref: string): Promise<GitHubCommitDetail> {
+  return ghApi<GitHubCommitDetail>(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`)
 }
 
 export async function searchCommits(owner: string, repo: string, query: string, perPage = 30, branch?: string): Promise<Array<{ sha: string }>> {

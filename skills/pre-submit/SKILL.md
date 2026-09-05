@@ -34,9 +34,10 @@ metadata:
 
 ### 3. CI 状态
 
-调用 `actions_status`，参数：`repo`。
+调用 `actions_status`，参数：`repo`、`pr_number`。
 
-确认所有 required checks 通过。
+工具会先解析该 PR 的 head SHA，再只查询该 SHA 对应的 workflow runs 和 check runs。
+确认目标 PR 自己的 checks 全部通过；不得用仓库最近一次成功运行代替 PR 检查结果。
 
 ### 4. 安全检查
 

@@ -43,6 +43,14 @@ metadata:
 
 ### 3. 逐条评估
 
+先获取证据：
+
+1. 对每条 pending commit 调用 `commit_detail`（`repo={fork_source}`、`ref={sha}`），读取 changed files 和 patch。
+2. 调用 `compare_refs`（`repo={fork_repo}`、`base={默认分支}`、`head={二开分支}`），确认二开分支实际修改过哪些文件。
+3. 将上游 commit 与二开分支的 changed files 交叉比较，再判断相关性和冲突风险。
+
+如果 GitHub 没有返回 patch，或二开分支名称不明确，应将结论标为“观察/证据不足”，不能猜测无冲突。
+
 对每条 pending commit，从三个维度评估：
 
 | 维度 | 问题 | 判断依据 |

@@ -1,0 +1,49 @@
+Phase 2 repair verification
+Date: 2026-09-05
+Branch: main
+
+CHANGED BRANCH/FIELD
+- actions_status.pr_number scopes CI to the exact PR head SHA.
+- fork-triage uses commit_detail and compare_refs before making a decision.
+
+MODIFIED_FILE
+docs/plans/2026-09-05-phase2-fixes/phase2-fixes.md
+
+DIFF_FILE
+docs/plans/2026-09-05-phase2-fixes/phase2-fixes.diff.txt
+
+VERIFICATION.txt
+docs/plans/2026-09-05-phase2-fixes/VERIFICATION.txt
+
+ROLLBACK.sh
+docs/plans/2026-09-05-phase2-fixes/ROLLBACK.sh
+
+BASELINE exact command:
+pnpm test
+BASELINE literal result:
+11 test files passed; 107 tests passed.
+BASELINE exit status:
+0
+
+MODIFIED exact commands:
+pnpm test
+pnpm build
+git diff --check
+MODIFIED literal result:
+15 test files passed; 117 tests passed.
+Build complete.
+No whitespace errors.
+MODIFIED exit status:
+0 for all commands.
+
+ROLLBACK exact command:
+Copy-Item <target-copy>.baseline <target-copy> -Force
+ROLLBACK test input:
+Copied MODIFIED_FILE to a separate target copy, mutated it, then restored it from its backup.
+ROLLBACK literal result:
+Restored behavior/status: target copy SHA256 matched the pre-change backup SHA256; MODIFIED_FILE remained changed.
+ROLLBACK exit status:
+0
+
+ROLLBACK.sh is the executable POSIX-shell equivalent for environments with bash:
+bash ROLLBACK.sh <target-copy>

@@ -47,6 +47,7 @@ import { actionsStatus } from '../core/tools/compat/actions-status.js'
 import { securityOverview } from '../core/tools/compat/security-overview.js'
 import { repoInfo } from '../core/tools/compat/repo-info.js'
 import { projectDashboard } from '../core/tools/compat/project-dashboard.js'
+import { commitDetail, compareRefs } from '../core/tools/compat/repo-investigation.js'
 
 const requiredRepoParam = z.string().describe('GitHub repo "owner/name"')
 const optionalRepoParam = z.string().optional().describe('GitHub repo "owner/name"')
@@ -128,6 +129,20 @@ export function createServer(): McpServer {
     'Repository metadata: stars, forks, topics, license, contributors',
     { repo: requiredRepoParam },
     wrapHandler(async ({ repo }) => repoInfo(repo as string | undefined)),
+  )
+
+  server.tool(
+    'commit_detail',
+    'Inspect one repository commit with changed files and bounded patch excerpts.',
+    { repo: requiredRepoParam, ref: z.string().describe('Commit SHA, tag, or branch ref') },
+    wrapHandler(({ repo, ref }) => commitDetail(ref as string, repo as string | undefined)),
+  )
+
+  server.tool(
+    'compare_refs',
+    'Compare two refs and return ahead/behind status plus changed-file evidence.',
+    { repo: requiredRepoParam, base: z.string().describe('Base branch, tag, or commit SHA'), head: z.string().describe('Head branch, tag, or commit SHA') },
+    wrapHandler(({ repo, base, head }) => compareRefs(base as string, head as string, repo as string | undefined)),
   )
 
   server.tool(
@@ -570,12 +585,13 @@ export function createServer(): McpServer {
 
   server.tool(
     'actions_status',
-    'GitHub Actions workflow runs: recent CI status, failures highlight',
+    'GitHub Actions status, optionally scoped to a branch or an exact PR head SHA.',
     {
       repo: requiredRepoParam,
       branch: z.string().optional().describe('Filter by branch name'),
+      pr_number: z.number().int().positive().optional().describe('Resolve this PR and inspect runs/checks for its head SHA'),
     },
-    wrapHandler(async ({ repo, branch }) => actionsStatus(repo as string | undefined, branch as string | undefined)),
+    wrapHandler(async ({ repo, branch, pr_number }) => actionsStatus(repo as string | undefined, branch as string | undefined, pr_number as number | undefined)),
   )
 
   // ── Security ──────────────────────────────────────────────
