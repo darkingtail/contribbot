@@ -17,7 +17,8 @@ import { todoClaim } from '../core/tools/core/todo-claim.js'
 import { todoCompact } from '../core/tools/core/todo-compact.js'
 import { knowledgeWrite } from '../core/tools/core/knowledge.js'
 import { listAllKnowledge, readKnowledge } from '../core/tools/core/knowledge-resources.js'
-import { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate } from '../core/tools/core/knowledge-evolution.js'
+import { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate, knowledgeRollbackUpdate } from '../core/tools/core/knowledge-evolution.js'
+import { patrolRecord, patrolRunGet } from '../core/tools/core/patrol-record.js'
 import {
   bountyClaim,
   bountyCreate,
@@ -48,6 +49,7 @@ import { securityOverview } from '../core/tools/compat/security-overview.js'
 import { repoInfo } from '../core/tools/compat/repo-info.js'
 import { projectDashboard } from '../core/tools/compat/project-dashboard.js'
 import { commitDetail, compareRefs } from '../core/tools/compat/repo-investigation.js'
+import { projectGuidance } from '../core/tools/core/project-guidance.js'
 
 const requiredRepoParam = z.string().describe('GitHub repo "owner/name"')
 const optionalRepoParam = z.string().optional().describe('GitHub repo "owner/name"')
@@ -134,14 +136,21 @@ export function createServer(): McpServer {
   server.tool(
     'commit_detail',
     'Inspect one repository commit with changed files and bounded patch excerpts.',
-    { repo: requiredRepoParam, ref: z.string().describe('Commit SHA, tag, or branch ref') },
+    {
+      repo: requiredRepoParam,
+      ref: z.string().describe('Commit SHA, tag, or branch ref'),
+    },
     wrapHandler(({ repo, ref }) => commitDetail(ref as string, repo as string | undefined)),
   )
 
   server.tool(
     'compare_refs',
     'Compare two refs and return ahead/behind status plus changed-file evidence.',
-    { repo: requiredRepoParam, base: z.string().describe('Base branch, tag, or commit SHA'), head: z.string().describe('Head branch, tag, or commit SHA') },
+    {
+      repo: requiredRepoParam,
+      base: z.string().describe('Base branch, tag, or commit SHA'),
+      head: z.string().describe('Head branch, tag, or commit SHA'),
+    },
     wrapHandler(({ repo, base, head }) => compareRefs(base as string, head as string, repo as string | undefined)),
   )
 
@@ -170,6 +179,48 @@ export function createServer(): McpServer {
     'List all tracked projects with todo and upstream stats',
     {},
     wrapHandler(() => projectList()),
+  )
+
+  server.tool(
+    'patrol_run_get',
+    'Load one previously recorded patrol Run, including snapshot, analysis, trace, Run state, and Action states.',
+    {
+      repo: requiredRepoParam,
+      run_id: z.string().describe('Recorded patrol Run ID'),
+    },
+    wrapHandler(({ repo, run_id }) => patrolRunGet(repo as string | undefined, run_id as string)),
+  )
+
+  server.tool(
+    'project_guidance',
+    'Read an allowlisted set of repository guidance documents plus local contribbot knowledge for task planning.',
+    { repo: requiredRepoParam },
+    wrapHandler(({ repo }) => projectGuidance(repo as string | undefined)),
+  )
+
+  server.tool(
+    'patrol_record',
+    'Persist one patrol report with its observation snapshot, structured analysis, and audit trace.',
+    {
+      repo: requiredRepoParam,
+      run_id: z.string().describe('Stable patrol run id, e.g. "20260711-120000-abc123"'),
+      report: z.string().describe('Rendered markdown patrol report'),
+      snapshot_json: z.string().describe('JSON object containing the observations used for analysis'),
+      analysis_json: z.string().describe('JSON object containing the structured patrol analysis'),
+      trace_json: z.string().describe('JSON array containing the ordered patrol execution trace'),
+      run_json: z.string().optional().describe('JSON object containing the Patrol Run state'),
+      actions_json: z.string().optional().describe('JSON array containing action execution states'),
+    },
+    wrapHandler(({ repo, run_id, report, snapshot_json, analysis_json, trace_json, run_json, actions_json }) => patrolRecord({
+      repo: repo as string | undefined,
+      run_id: run_id as string,
+      report: report as string,
+      snapshot_json: snapshot_json as string,
+      analysis_json: analysis_json as string,
+      trace_json: trace_json as string,
+      run_json: run_json as string | undefined,
+      actions_json: actions_json as string | undefined,
+    })),
   )
 
   // ── Todos ──────────────────────────────────────────────
@@ -822,7 +873,7 @@ export function createServer(): McpServer {
 
   server.tool(
     'knowledge_proposals',
-    'List knowledge proposals (pending/applied/rejected) for review. Use to get a proposal ID before applying or rejecting.',
+    'List knowledge proposals (pending/applied/rejected/rolled_back) for review. Use to get a proposal ID before applying, rejecting, or auditing a rollback.',
     {
       repo: requiredRepoParam,
       status: z.enum(KNOWLEDGE_PROPOSAL_STATUSES).optional().describe('Filter by status'),
@@ -849,6 +900,16 @@ export function createServer(): McpServer {
       repo: requiredRepoParam,
     },
     wrapHandler(({ proposal_id, reason, repo }) => knowledgeRejectUpdate(repo as string | undefined, proposal_id as string, reason as string | undefined)),
+  )
+
+  server.tool(
+    'knowledge_rollback_update',
+    'Rollback an applied knowledge proposal using the pre-apply snapshot recorded during apply.',
+    {
+      proposal_id: z.string().describe('Applied proposal ID, e.g. "kp-1"'),
+      repo: requiredRepoParam,
+    },
+    wrapHandler(({ proposal_id, repo }) => knowledgeRollbackUpdate(repo as string | undefined, proposal_id as string)),
   )
 
   // ── MCP Prompts (enhanced versions of Skills, using MCP tools) ──

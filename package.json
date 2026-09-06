@@ -7,6 +7,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --filter contribbot-mcp dev",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "agent:build": "uv build --project packages/agent",
+    "agent:test": "uv run --project packages/agent --group dev pytest",
+    "patrol": "uv run --project packages/agent contribbot patrol"
   }
 }

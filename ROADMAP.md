@@ -5,7 +5,7 @@ contribbot — 开源协作助手。三层演进：Tools → Skills → Agents�
 ```
 Phase 1: Tools（原子操作）        ✅ 已完成
 Phase 2: Skills（工具编排层）     ✅ 已完成
-Phase 3: Agents（自主决策）        🔲
+Phase 3: Agents（自主决策）        🚧
 ```
 
 ---
@@ -62,7 +62,7 @@ MCP Server，寄宿于 Claude Code / Gemini CLI / Codex CLI / Cursor 等宿主�
 
 独立运行的开源协作 Agent，内置 LLM 推理，自主调用 Skills 执行多步任务。
 
-### Phase 3A: 自演进仓库知识 🚧（进行中）
+### Phase 3A: 可审计仓库知识 ✅
 
 迈向自主 Agent 的奠基切片——先给未来的 Agent 一个**可靠、可审计的记忆底座**，而非先上自主执行。
 在现有 MCP server 上新增 **propose → review → apply → audit** 的知识演进流
@@ -70,17 +70,54 @@ MCP Server，寄宿于 Claude Code / Gemini CLI / Codex CLI / Cursor 等宿主�
 canonical 知识写入带 provenance 脚注。详见
 [docs/superpowers/specs/2026-06-02-phase3-evolving-knowledge-design.md](docs/superpowers/specs/2026-06-02-phase3-evolving-knowledge-design.md)。
 
+### Phase 3B: 可审计 Patrol Agent ✅
+
+第一条真实闭环已经实现：
+
+```text
+Observe -> Analyze -> Plan -> Act / Ask -> Learn
+```
+
+- `packages/agent` 提供 Python CLI：`contribbot patrol owner/repo`
+- 通过 MCP 读取 config、dashboard、todo、upstream、CI、安全状态和 knowledge
+- Codex 输出 schema 校验后的 findings、actions 和 knowledge candidates
+- 每次运行保存 report、snapshot、analysis 和 trace
+- 知识候选需要确认后才创建 proposal，canonical knowledge 仍需 apply
+- GitHub 公共写入不在 MVP 自动执行范围内
+- Run 可恢复，稳定 Action ID 防止重复 Todo
+- 调查请求支持 PR、Issue、CI、commit 和 refs 的结构化补证据
+
+详见 [docs/agent/patrol.md](docs/agent/patrol.md)。
+
+### Phase 3C: 多项目与调度 ✅
+
+- `patrol-all` 从任意目录巡检本机已维护仓库
+- `patrol-schedule --once` 支持外部计划任务唤醒
+- 单仓库失败不阻塞其他仓库
+- 无变化批次保持静默
+
+### Phase 3D: 仓库知识进化 ✅
+
+- 相同 Patrol 知识候选累计证据而不是重复创建
+- 报告记录本次判断使用了哪些仓库知识
+- 支持 propose / apply / reject / rollback 和 pre-apply 快照
+
+### Phase 3E: 受控修复 ✅（实验性）
+
+- 在隔离 Git worktree 中让 Codex 修改
+- 检查敏感路径并运行用户指定的 validation
+- 生成 `changes.patch`、`result.json` 和 `VERIFICATION.txt`
+- 不 commit、不 push、不创建 PR
+
 ### 自主 Agent 层方向
 
 contribbot 是独立产品,自建 agent 运行时,不依赖外部 agent 框架。
 
 - **contribbot-mcp**(TypeScript):工具 + 技能 + 知识,寄宿模式已完整
 - **contribbot-agent**(Python):自建自主运行时——agent 循环 + MCP client(连自己的 mcp) + 记忆(复用 knowledge 提案) + 调度 + 部署
-- 已有 spike `experiments/agent_loop.py` 验证核心循环可行
+- 已有正式 `packages/agent` 运行时，`experiments/agent_loop.py` 保留为早期 spike
 - MCP 协议让两侧语言无需统一,agent 通过标准 MCP client 调用 contribbot-mcp 的全部工具
 - **可选兼容**:用户若已有 Hermes/Claude Code 等支持 MCP 的 host,也可直接连 contribbot-mcp 使用
-
-### 目标能力
 
 ### 目标能力
 

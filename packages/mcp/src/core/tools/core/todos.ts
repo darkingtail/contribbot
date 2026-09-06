@@ -114,6 +114,14 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
     return null
   })()
 
+  if (effectiveRef) {
+    const normalizedRef = /^#?\d+$/.test(effectiveRef)
+      ? (effectiveRef.startsWith('#') ? effectiveRef : `#${effectiveRef}`)
+      : effectiveRef
+    const existing = store.list().find(todo => todo.ref === normalizedRef)
+    if (existing) return `Todo already exists: **${existing.title}** (${existing.type}, ref: ${existing.ref})`
+  }
+
   if (!effectiveRef) {
     // Auto-generate slug ref from English keywords in title
     const words = text.match(/[a-zA-Z][a-zA-Z0-9]*/g) ?? []

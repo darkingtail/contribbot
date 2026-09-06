@@ -19,13 +19,15 @@ export { upstreamList, upstreamDetail, upstreamUpdate } from './core/tools/core/
 export { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from './core/tools/core/upstream-daily.js'
 export { repoConfig } from './core/tools/core/repo-config-tool.js'
 export { projectList } from './core/tools/core/project-list.js'
+export { projectGuidance } from './core/tools/core/project-guidance.js'
 export { contributionStats } from './core/tools/core/contribution-stats.js'
 export { todoClaim } from './core/tools/core/todo-claim.js'
 export { todoCompact } from './core/tools/core/todo-compact.js'
 export { upstreamCompact } from './core/tools/core/upstream-compact.js'
 export { knowledgeList, knowledgeRead, knowledgeWrite } from './core/tools/core/knowledge.js'
 export { listAllKnowledge, readKnowledge } from './core/tools/core/knowledge-resources.js'
-export { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate, countPendingProposals } from './core/tools/core/knowledge-evolution.js'
+export { knowledgeProposeUpdate, knowledgeProposals, knowledgeApplyUpdate, knowledgeRejectUpdate, knowledgeRollbackUpdate, countPendingProposals } from './core/tools/core/knowledge-evolution.js'
+export { patrolRecord, patrolRunGet } from './core/tools/core/patrol-record.js'
 export {
   bountyClaim,
   bountyCreate,
@@ -55,12 +57,15 @@ export { actionsStatus } from './core/tools/compat/actions-status.js'
 export { securityOverview } from './core/tools/compat/security-overview.js'
 export { repoInfo } from './core/tools/compat/repo-info.js'
 export { projectDashboard } from './core/tools/compat/project-dashboard.js'
+export { commitDetail, compareRefs } from './core/tools/compat/repo-investigation.js'
 
 // Storage utilities
 export { inferMode } from './core/storage/repo-config.js'
 export type { ProjectMode } from './core/storage/repo-config.js'
 export { KnowledgeProposalStore } from './core/storage/knowledge-proposal-store.js'
 export type { KnowledgeProposal, ProposalInput } from './core/storage/knowledge-proposal-store.js'
+export { PatrolStore } from './core/storage/patrol-store.js'
+export type { PatrolRunInput, PatrolRunPaths, StoredPatrolRun } from './core/storage/patrol-store.js'
 export { BOUNTY_RAILS, BOUNTY_STATUSES, BountyStore } from './core/storage/bounty-store.js'
 export type { BountyItem, BountyRail, BountySettlement, BountyStatus } from './core/storage/bounty-store.js'
 

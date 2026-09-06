@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant S as Scheduler / CLI
+    participant O as Patrol Orchestrator
+    participant M as contribbot MCP
+    participant A as Analyzer
+    participant I as Investigator
+    participant U as Maintainer
+    participant E as Action Executor
+    participant V as Verifier
+    participant R as Audit Recorder
+
+    S->>O: start patrol(repo)
+    O->>R: Run queued → observing
+    O->>M: config, dashboard, todos, upstream, CI, security, knowledge
+    M-->>O: observation snapshot + coverage
+    O->>R: save snapshot
+    O->>A: analyze(snapshot, repo knowledge)
+    A-->>O: findings + investigation requests + actions
+
+    loop until evidence is sufficient or limit reached
+        O->>I: investigate request
+        I->>M: PR / Issue / CI / commit / compare lookup
+        M-->>I: additional evidence
+        I-->>O: evidence references
+        O->>A: revise judgment
+        A-->>O: updated findings and actions
+    end
+
+    O->>R: Run → awaiting_confirmation
+    O->>U: evidence + impact + proposed action + risk
+    alt approved local Todo / knowledge proposal
+        U-->>O: approve
+        O->>R: Action → executing
+        O->>E: execute through MCP
+        E->>M: todo_add / knowledge proposal
+        M-->>E: tool result
+        E-->>V: claimed result
+        V->>M: read back target state
+        M-->>V: verified state
+        V-->>O: completed / failed
+        O->>R: save Action result; Run → succeeded / partial
+    else rejected or unattended
+        U-->>O: reject / no response
+        O->>R: Action → rejected / skipped; Run → succeeded
+    end
+
+    O->>R: derive reviewable knowledge candidates
+    R-->>S: report + snapshot + analysis + trace + run/actions

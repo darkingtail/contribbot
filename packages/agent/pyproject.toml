@@ -1,0 +1,31 @@
+[project]
+name = "contribbot-agent"
+version = "0.1.0"
+description = "Repository patrol agent for contribbot"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "mcp>=1.12,<2",
+  "pydantic>=2.11,<3",
+]
+
+[project.scripts]
+contribbot = "contribbot_agent.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/contribbot_agent"]

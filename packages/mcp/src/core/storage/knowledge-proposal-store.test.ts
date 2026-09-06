@@ -97,4 +97,25 @@ describe('KnowledgeProposalStore', () => {
     expect(reloaded.get('kp-2')?.source_ref).toBe('42')
     expect(existsSync(join(dir, 'knowledge.proposals.yaml'))).toBe(true)
   })
+
+  it('records and transitions an applied rollback snapshot', () => {
+    store.add(sampleInput())
+    store.markApplied('kp-1', { existed: true, content: '# Previous' })
+    const rolledBack = store.markRolledBack('kp-1')
+    expect(rolledBack.status).toBe('rolled_back')
+    expect(rolledBack.previous_content).toBe('# Previous')
+    expect(rolledBack.rolled_back_at).not.toBeNull()
+  })
+
+  it('refreshes a matching patrol proposal instead of duplicating it', () => {
+    const first = store.addOrRefresh(sampleInput({ source_type: 'patrol', source_ref: 'run-1' }))
+    const second = store.addOrRefresh(sampleInput({ source_type: 'patrol', source_ref: 'run-2' }))
+
+    expect(first.created).toBe(true)
+    expect(second.created).toBe(false)
+    expect(second.proposal.id).toBe('kp-1')
+    expect(second.proposal.evidence_count).toBe(2)
+    expect(second.proposal.source_refs).toEqual(['run-1', 'run-2'])
+    expect(store.list()).toHaveLength(1)
+  })
 })

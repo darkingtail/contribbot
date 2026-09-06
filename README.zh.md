@@ -4,9 +4,34 @@
 
 [English](README.md) | 中文
 
-开源协作助手。帮助开发者高效参与开源项目的维护和贡献。
+正在演进为仓库级巡检 Agent 的开源协作助手。
 
-MCP 工具 + Skills — 任务管理、上游追踪、Issue/PR 工作流、多项目总览。
+稳定的 MCP 工具与 Skills 负责任务管理、上游追踪、Issue/PR 工作流和多项目总览。Phase 3 运行时已经支持可恢复巡检、多项目调度、知识进化和隔离修复。
+
+## Phase 3 巡检（实验性）
+
+运行一次仓库维护闭环：
+
+```bash
+uv sync --project packages/agent
+uv run --project packages/agent contribbot patrol darkingtail/contribbot
+```
+
+Patrol 通过 contribbot MCP 工具观察仓库状态，调用 Codex 生成结构化判断，保存报告和完整审计轨迹；发现知识候选时先询问，再创建可审查的知识提案。MVP 不执行任何 GitHub 公共写入。
+
+```bash
+# 从任意目录巡检全部已维护仓库
+uv run --project D:/dev/darkingtail/contribbot/packages/agent contribbot patrol-all
+
+# 运行一次定时配置；无变化时保持静默
+uv run --project packages/agent contribbot patrol-schedule --once --config agent.json
+
+# 在隔离 worktree 中修改并验证，不 commit / push / 创建 PR
+uv run --project packages/agent contribbot remediate D:/dev/my-repo \
+  --prompt "修复失败测试" --validate "pnpm test"
+```
+
+行为、安全边界和审计文件详见 [仓库巡检 Agent](docs/agent/patrol.md)。
 
 ## 前置要求
 
@@ -144,6 +169,10 @@ upstream: null
 │
 ├── knowledge/               # 项目知识沉淀（通过 knowledge_write）
 │   └── {name}/README.md
+│
+├── patrol/                  # Phase 3 巡检报告与审计文件
+│   ├── latest.md
+│   └── runs/{run-id}/       # report、snapshot、analysis、trace
 │
 └── sync/                    # 同步历史记录
 ```

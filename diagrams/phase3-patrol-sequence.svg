@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1700" height="1080" viewBox="0 0 1700 1080">
+<defs><marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="white"/>
+<text x="850" y="38" text-anchor="middle" font-family="Segoe UI,Arial" font-size="28" font-weight="700" fill="#0F172A">Repository Patrol Sequence</text>
+<g font-family="Segoe UI,Arial">
+<rect x="15" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="90" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Scheduler / CLI</text>
+<line x1="90" y1="117" x2="90" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="205" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="280" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Orchestrator</text>
+<line x1="280" y1="117" x2="280" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="395" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="470" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">MCP</text>
+<line x1="470" y1="117" x2="470" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="585" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="660" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Analyzer</text>
+<line x1="660" y1="117" x2="660" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="775" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="850" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Investigator</text>
+<line x1="850" y1="117" x2="850" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="965" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="1040" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Maintainer</text>
+<line x1="1040" y1="117" x2="1040" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="1155" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="1230" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Executor</text>
+<line x1="1230" y1="117" x2="1230" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="1345" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="1420" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Verifier</text>
+<line x1="1420" y1="117" x2="1420" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<rect x="1535" y="65" width="150" height="52" rx="8" fill="#EFF6FF" stroke="#2563EB"/>
+<text x="1610" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#1E3A8A">Audit</text>
+<line x1="1610" y1="117" x2="1610" y2="1030" stroke="#CBD5E1" stroke-dasharray="6 6"/>
+<line x1="90" y1="150" x2="272" y2="150" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="185.0" y="143" text-anchor="middle" font-size="12" fill="#334155">start patrol(repo)</text>
+<line x1="280" y1="190" x2="1602" y2="190" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="945.0" y="183" text-anchor="middle" font-size="12" fill="#334155">Run: queued -&gt; observing</text>
+<line x1="280" y1="235" x2="462" y2="235" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="375.0" y="228" text-anchor="middle" font-size="12" fill="#334155">collect config, todos, upstream, CI, security, knowledge</text>
+<line x1="470" y1="275" x2="288" y2="275" stroke="#475569" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+<text x="375.0" y="268" text-anchor="middle" font-size="12" fill="#334155">snapshot + coverage</text>
+<line x1="280" y1="315" x2="1602" y2="315" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="945.0" y="308" text-anchor="middle" font-size="12" fill="#334155">save snapshot</text>
+<line x1="280" y1="360" x2="652" y2="360" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="470.0" y="353" text-anchor="middle" font-size="12" fill="#334155">analyze snapshot + repository knowledge</text>
+<line x1="660" y1="400" x2="288" y2="400" stroke="#475569" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+<text x="470.0" y="393" text-anchor="middle" font-size="12" fill="#334155">findings + investigation requests + actions</text>
+<rect x="245" y="430" width="700" height="230" rx="10" fill="#FFF7ED" fill-opacity="0.55" stroke="#F97316" stroke-dasharray="7 5"/>
+<text x="260" y="454" font-size="13" font-weight="700" fill="#9A3412">Loop: until evidence is sufficient or the investigation limit is reached</text>
+<line x1="280" y1="490" x2="842" y2="490" stroke="#EA580C" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="565.0" y="483" text-anchor="middle" font-size="12" fill="#334155">investigate request</text>
+<line x1="850" y1="530" x2="478" y2="530" stroke="#EA580C" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="660.0" y="523" text-anchor="middle" font-size="12" fill="#334155">PR / Issue / CI / commit / compare lookup</text>
+<line x1="470" y1="570" x2="842" y2="570" stroke="#EA580C" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+<text x="660.0" y="563" text-anchor="middle" font-size="12" fill="#334155">additional evidence</text>
+<line x1="850" y1="610" x2="288" y2="610" stroke="#EA580C" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+<text x="565.0" y="603" text-anchor="middle" font-size="12" fill="#334155">evidence references</text>
+<line x1="280" y1="650" x2="652" y2="650" stroke="#EA580C" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="470.0" y="643" text-anchor="middle" font-size="12" fill="#334155">revise judgment</text>
+<line x1="280" y1="700" x2="1602" y2="700" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="945.0" y="693" text-anchor="middle" font-size="12" fill="#334155">Run -&gt; awaiting_confirmation</text>
+<line x1="280" y1="740" x2="1032" y2="740" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="660.0" y="733" text-anchor="middle" font-size="12" fill="#334155">show evidence, impact, action and risk</text>
+<rect x="245" y="770" width="1360" height="220" rx="10" fill="#ECFDF5" fill-opacity="0.65" stroke="#059669"/>
+<text x="260" y="794" font-size="13" font-weight="700" fill="#065F46">Approved path</text>
+<line x1="1040" y1="825" x2="288" y2="825" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="660.0" y="818" text-anchor="middle" font-size="12" fill="#334155">approve</text>
+<line x1="280" y1="860" x2="1222" y2="860" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="755.0" y="853" text-anchor="middle" font-size="12" fill="#334155">execute through MCP</text>
+<line x1="1230" y1="895" x2="478" y2="895" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="850.0" y="888" text-anchor="middle" font-size="12" fill="#334155">todo_add / knowledge proposal</text>
+<line x1="470" y1="930" x2="1222" y2="930" stroke="#475569" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+<text x="850.0" y="923" text-anchor="middle" font-size="12" fill="#334155">tool result</text>
+<line x1="1230" y1="965" x2="1412" y2="965" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="1325.0" y="958" text-anchor="middle" font-size="12" fill="#334155">claimed result</text>
+<line x1="1420" y1="1000" x2="478" y2="1000" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="945.0" y="993" text-anchor="middle" font-size="12" fill="#334155">read back and verify</text>
+<line x1="280" y1="1035" x2="1602" y2="1035" stroke="#475569" stroke-width="2"  marker-end="url(#arr)"/>
+<text x="945.0" y="1028" text-anchor="middle" font-size="12" fill="#334155">save Action result; Run -&gt; succeeded / partial</text>
+</g></svg>

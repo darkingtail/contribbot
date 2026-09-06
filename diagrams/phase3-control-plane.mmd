@@ -1,0 +1,28 @@
+graph LR
+    ENTRY[CLI / TUI / Scheduler] --> ORCH[Patrol Orchestrator]
+    ORCH --> RUN[(Run & Action State)]
+    ORCH --> OBS[Observer]
+    ORCH --> DECIDE[Analyzer + Investigator]
+    ORCH --> POLICY[Policy + Approval Gate]
+    ORCH --> EXEC[Action Executor]
+    ORCH --> VERIFY[Verifier]
+    ORCH --> AUDIT[Audit Recorder]
+
+    OBS --> MCP[contribbot MCP]
+    DECIDE --> MCP
+    EXEC --> MCP
+    MCP --> GH[GitHub API / gh CLI]
+    MCP --> LOCAL[Todo / Upstream / Knowledge]
+
+    DECIDE --> MODEL[Codex / Rules Backend]
+    POLICY --> USER[Maintainer]
+    EXEC -. approved code change .-> WT[Isolated Worktree]
+    WT --> VERIFY
+    VERIFY --> RUN
+    RUN --> AUDIT
+    AUDIT --> STORE[~/.contribbot/repo/patrol]
+
+    AUDIT --> LEARN[Knowledge Evolver]
+    LEARN --> PROPOSAL[Reviewable Knowledge Proposal]
+    PROPOSAL --> USER
+    USER -. approve .-> LOCAL

@@ -7,6 +7,7 @@ import {
   knowledgeProposals,
   knowledgeApplyUpdate,
   knowledgeRejectUpdate,
+  knowledgeRollbackUpdate,
   countPendingProposals,
 } from './knowledge-evolution.js'
 
@@ -136,5 +137,34 @@ describe('knowledge evolution tools', () => {
   it('proposals list is empty initially', async () => {
     const out = await knowledgeProposals(repo())
     expect(out).toContain('No proposals')
+  })
+
+  it('patrol proposals accumulate evidence without creating duplicates', async () => {
+    const first = await propose({ source_type: 'patrol', source_ref: 'run-1' })
+    const second = await propose({ source_type: 'patrol', source_ref: 'run-2' })
+    expect(first).toContain('created')
+    expect(second).toContain('refreshed')
+    expect(second).toContain('2 observation(s)')
+    expect(countPendingProposals(owner, name)).toBe(1)
+  })
+
+  it('rolls back a created knowledge entry', async () => {
+    await propose()
+    await knowledgeApplyUpdate(repo(), 'kp-1')
+    const out = await knowledgeRollbackUpdate(repo(), 'kp-1')
+    expect(out).toContain('rolled back')
+    expect(() => readFileSync(knowledgePath('arch'), 'utf-8')).toThrow()
+    expect(await knowledgeProposals(repo(), 'rolled_back')).toContain('kp-1')
+  })
+
+  it('rolls back a revision to the previous canonical content', async () => {
+    await propose()
+    await knowledgeApplyUpdate(repo(), 'kp-1')
+    await propose({ action: 'revise', proposed_content: '# Arch v2\n\nChanged.' })
+    await knowledgeApplyUpdate(repo(), 'kp-2')
+    await knowledgeRollbackUpdate(repo(), 'kp-2')
+    const content = readFileSync(knowledgePath('arch'), 'utf-8')
+    expect(content).toContain('Layered.')
+    expect(content).not.toContain('Changed.')
   })
 })

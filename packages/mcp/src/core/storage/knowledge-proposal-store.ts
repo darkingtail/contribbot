@@ -22,6 +22,12 @@ export interface KnowledgeProposal {
   applied_at: string | null
   rejected_at: string | null
   rejected_reason: string | null
+  previous_content?: string | null
+  previous_existed?: boolean
+  rolled_back_at?: string | null
+  evidence_count?: number
+  source_refs?: string[]
+  last_observed_at?: string
 }
 
 interface ProposalsFile {
@@ -58,7 +64,15 @@ export class KnowledgeProposalStore {
     if (!existsSync(this.yamlPath)) return []
     const content = readFileSync(this.yamlPath, 'utf-8')
     const data = parse(content) as ProposalsFile | null
-    return data?.proposals ?? []
+    return (data?.proposals ?? []).map(p => ({
+      ...p,
+      evidence_count: p.evidence_count ?? 1,
+      source_refs: p.source_refs ?? (p.source_ref ? [p.source_ref] : []),
+      last_observed_at: p.last_observed_at ?? p.created_at,
+      previous_content: p.previous_content ?? null,
+      previous_existed: p.previous_existed ?? false,
+      rolled_back_at: p.rolled_back_at ?? null,
+    }))
   }
 
   get(id: string): KnowledgeProposal | undefined {
@@ -92,19 +106,51 @@ export class KnowledgeProposalStore {
       applied_at: null,
       rejected_at: null,
       rejected_reason: null,
+      evidence_count: 1,
+      source_refs: input.source_ref ? [input.source_ref] : [],
+      last_observed_at: todayDate(),
+      previous_content: null,
+      previous_existed: false,
+      rolled_back_at: null,
     }
     proposals.push(proposal)
     this.save(proposals)
     return proposal
   }
 
+  addOrRefresh(input: ProposalInput): { proposal: KnowledgeProposal; created: boolean } {
+    const proposals = this.list()
+    const existing = proposals.find(p =>
+      p.status === 'pending'
+      && p.repo === input.repo
+      && p.target === input.target
+      && p.action === input.action
+      && p.title === input.title
+      && p.proposed_content === input.proposed_content,
+    )
+    if (!existing) return { proposal: this.add(input), created: true }
+
+    existing.evidence_count = (existing.evidence_count ?? 1) + 1
+    existing.last_observed_at = todayDate()
+    if (input.source_ref && !(existing.source_refs ?? []).includes(input.source_ref)) {
+      existing.source_refs = [...(existing.source_refs ?? []), input.source_ref]
+    }
+    if (input.rationale && input.rationale !== existing.rationale) {
+      existing.rationale = `${existing.rationale}\n\nAdditional evidence: ${input.rationale}`.trim()
+    }
+    this.save(proposals)
+    return { proposal: existing, created: false }
+  }
+
   /**
    * Mark a pending proposal as applied. Throws if not found or not pending.
    */
-  markApplied(id: string): KnowledgeProposal {
+  markApplied(id: string, previous?: { existed: boolean; content: string | null }): KnowledgeProposal {
     return this.transition(id, (p) => {
       p.status = 'applied'
       p.applied_at = todayDate()
+      p.previous_existed = previous?.existed ?? false
+      p.previous_content = previous?.content ?? null
     })
   }
 
@@ -117,6 +163,19 @@ export class KnowledgeProposalStore {
       p.rejected_at = todayDate()
       p.rejected_reason = reason ?? null
     })
+  }
+
+  markRolledBack(id: string): KnowledgeProposal {
+    const proposals = this.list()
+    const proposal = proposals.find(p => p.id === id)
+    if (!proposal) throw new Error(`Proposal "${id}" not found.`)
+    if (proposal.status !== 'applied') {
+      throw new Error(`Proposal "${id}" is ${proposal.status}, only applied proposals can be rolled back.`)
+    }
+    proposal.status = 'rolled_back'
+    proposal.rolled_back_at = todayDate()
+    this.save(proposals)
+    return proposal
   }
 
   private transition(id: string, mutate: (p: KnowledgeProposal) => void): KnowledgeProposal {

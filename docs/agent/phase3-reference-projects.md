@@ -2,8 +2,8 @@
 
 ## Status
 
-Active Design. This note records the reference set for the first Phase 3
-implementation pass.
+Reference Decision. The first patrol loop described here is now implemented in
+`packages/agent`. See [Repository Patrol Agent](patrol.md) for current behavior.
 
 ## Goal
 
@@ -190,10 +190,9 @@ The first patrol runtime should:
 - ask before GitHub comments, issues, PRs, or other public writes;
 - leave an inspectable trace for every run.
 
-## Non-Goals For The First Pass
+## Boundaries
 
 - no agent team;
-- no scheduler;
 - no autonomous GitHub writes;
 - no automatic issue closing;
 - no automatic PR creation;
@@ -201,15 +200,22 @@ The first patrol runtime should:
 - no vector database requirement;
 - no hidden memory mutation.
 
-## Next Implementation Step
+The first single-repository pass intentionally excluded scheduling. A later
+increment added local report-only scheduling after the auditable loop was
+proven; it did not relax the write boundaries above.
 
-Create the smallest useful command:
+## Implemented Steps
+
+The first useful commands are now available:
 
 ```bash
 contribbot patrol owner/repo
+contribbot patrol-all
+contribbot patrol-schedule --once --config agent.json
+contribbot remediate /path/to/repo --prompt "..." --validate "pnpm test"
 ```
 
-The first version can be read-heavy:
+The first version is read-heavy:
 
 1. load repo config;
 2. gather dashboard, todos, upstream state, CI/security state, and knowledge;
@@ -217,5 +223,8 @@ The first version can be read-heavy:
 4. list recommended actions by risk level;
 5. create knowledge proposals for stable findings only after explicit approval.
 
-That is enough to make Phase 3 real without pretending the whole agent platform
-already exists.
+The runtime now has structured Run and Action state, bounded investigation,
+cross-project failure isolation, report-only scheduling, and an isolated
+worktree executor. Public GitHub writes and publishing worktree changes remain
+outside unattended execution. This makes Phase 3 runnable without pretending
+the whole agent platform already exists.

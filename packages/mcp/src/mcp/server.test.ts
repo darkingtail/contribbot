@@ -43,9 +43,18 @@ describe('createServer tool schemas', () => {
   it('registers knowledge evolution tools requiring repo', async () => {
     const { tools } = await listTools()
     const names = tools.map(t => t.name)
-    for (const tool of ['knowledge_propose_update', 'knowledge_proposals', 'knowledge_apply_update', 'knowledge_reject_update']) {
+    for (const tool of ['knowledge_propose_update', 'knowledge_proposals', 'knowledge_apply_update', 'knowledge_reject_update', 'knowledge_rollback_update']) {
       expect(names).toContain(tool)
       expect(tools.find(t => t.name === tool)!.inputSchema.required ?? []).toContain('repo')
+    }
+  })
+
+  it('registers patrol audit and recovery tools as repository-scoped', async () => {
+    const { tools } = await listTools()
+    for (const name of ['patrol_record', 'patrol_run_get']) {
+      const tool = tools.find(t => t.name === name)
+      expect(tool).toBeDefined()
+      expect(tool!.inputSchema.required ?? []).toContain('repo')
     }
   })
 

@@ -2,5 +2,9 @@ node_modules/
 dist/
 .env
 packages/*/dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
 .codex/
 AGENTS.md

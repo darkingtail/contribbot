@@ -5,6 +5,22 @@ import { TodoStore } from '../../storage/todo-store.js'
 import { UpstreamStore } from '../../storage/upstream-store.js'
 import { markdownTable } from '../../utils/format.js'
 
+const RESERVED_RUNTIME_DIRS = new Set(['remediation', 'worktrees'])
+
+const PROJECT_MARKERS = [
+  'config.yaml',
+  'todos.yaml',
+  'upstream.yaml',
+  'knowledge.proposals.yaml',
+  'todos.archive.yaml',
+  'upstream.archive.yaml',
+]
+
+function isTrackedProjectDir(dir: string): boolean {
+  return PROJECT_MARKERS.some(marker => existsSync(join(dir, marker)))
+    || ['knowledge', 'patrol', 'sync'].some(folder => existsSync(join(dir, folder)))
+}
+
 export function projectList(): string {
   const contribRoot = join(homedir(), '.contribbot')
 
@@ -14,7 +30,7 @@ export function projectList(): string {
 
   const owners = readdirSync(contribRoot).filter((f) => {
     const p = join(contribRoot, f)
-    return statSync(p).isDirectory() && !f.startsWith('.')
+    return statSync(p).isDirectory() && !f.startsWith('.') && !RESERVED_RUNTIME_DIRS.has(f)
   })
 
   interface ProjectInfo {
@@ -31,7 +47,8 @@ export function projectList(): string {
   for (const owner of owners) {
     const ownerDir = join(contribRoot, owner)
     const repos = readdirSync(ownerDir).filter((f) => {
-      return statSync(join(ownerDir, f)).isDirectory()
+      const repoDir = join(ownerDir, f)
+      return statSync(repoDir).isDirectory() && isTrackedProjectDir(repoDir)
     })
 
     for (const repo of repos) {

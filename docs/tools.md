@@ -1,15 +1,18 @@
 # contribbot 工具集合
 
-> 48 Tools + 1 Resource + 4 Prompts
+> 58 Tools + 1 Resource + 4 Prompts
 
 ---
 
-## 项目概览（2 Tools）
+## 项目概览（5 Tools）
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
 | `project_dashboard` | 项目全貌：open issues/PRs 统计、labels 分布、近期 commits、最新 release | `repo` |
 | `repo_info` | 仓库元信息：stars、forks、topics、license、contributors | `repo` |
+| `project_guidance` | 读取仓库规范文档和本地 contribbot Knowledge，供任务规划参考 | `repo` |
+| `commit_detail` | 查看单个 commit 的 changed files 和受限 patch 摘要 | `repo`, `ref` |
+| `compare_refs` | 比较两个 refs 的 ahead/behind 和 changed files | `repo`, `base`, `head` |
 
 ---
 
@@ -21,6 +24,17 @@
 | `sync_fork` | 同步 fork 默认分支到上游最新，从 config.yaml 读取 fork 信息 | `repo`, `branch?` |
 | `project_list` | 所有已跟踪项目概况（todos/upstream 统计） | — |
 | `contribution_stats` | 个人贡献统计：PRs/issues/reviews 数量 | `days?`, `author?`, `repo` |
+
+---
+
+## Patrol 审计（2 Tools）
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `patrol_record` | 保存报告、观察、分析、轨迹、Run 与 Action 状态，并更新 latest 指针 | `repo`, `run_id`, `report`, `snapshot_json`, `analysis_json`, `trace_json`, `run_json?`, `actions_json?` |
+| `patrol_run_get` | 读取完整历史 Run，供恢复待处理 Action | `repo`, `run_id` |
+
+该工具只负责结构化持久化，不做仓库判断。通常由 Python `contribbot patrol` 运行时调用。
 
 ---
 
@@ -209,9 +223,10 @@ maintainer 确认后才写入 canonical 知识，写入时带 provenance 脚注�
 | Tool | 说明 |
 |------|------|
 | `knowledge_propose_update` | 创建一条待审提案（不写 canonical）。入参：`target` / `action`(create/append/revise) / `source_type` / `title` / `rationale` / `proposed_content` / `source_ref?` / `repo` |
-| `knowledge_proposals` | 列出提案（可按 `status` = pending/applied/rejected 过滤），用于拿 `kp-N` ID |
+| `knowledge_proposals` | 列出提案（可按 `status` = pending/applied/rejected/rolled_back 过滤），用于拿 `kp-N` ID |
 | `knowledge_apply_update` | 应用已批准提案到 canonical 知识，写 provenance 脚注。入参：`proposal_id` / `repo` |
 | `knowledge_reject_update` | 驳回 pending 提案，不改 canonical。入参：`proposal_id` / `reason?` / `repo` |
+| `knowledge_rollback_update` | 用 apply 时保存的旧内容回滚 applied 提案。入参：`proposal_id` / `repo` |
 
 **action 语义**：`create` 目标必须不存在；`append` 追加到已有；`revise` 用完整新内容替换已有。
 provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revise 不堆叠。

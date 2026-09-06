@@ -35,7 +35,16 @@ metadata:
 
 ### 3. 激活 Todo
 
-先分析仓库的分支命名规范（查看已有分支名称），建议合适的分支名。
+先调用 `project_guidance`（repo）读取项目规范文档和本地 Knowledge。
+
+分支命名依据按以下优先级处理：
+
+1. 项目规范文档（如 `AGENTS.md`、`CLAUDE.md`、`CONTRIBUTING.md` 或仓库中明确的开发文档）
+2. contribbot Knowledge
+3. 最近实际使用的分支样本（如当前宿主能够提供）
+4. 默认命名规则
+
+如果规范文档没有说明分支命名，不要声称已经读取到规范；可以使用默认命名并明确标注依据。
 
 调用 `todo_activate`，参数：`repo`、`item`、`branch`（建议的分支名，如无法判断可省略使用默认值）。
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { getContribDir, validatePathSegment } from '../../utils/config.js'
 import { safeWriteFileSync } from '../../utils/fs.js'
@@ -64,7 +64,7 @@ export async function knowledgeProposeUpdate(args: {
   if (!args.proposed_content?.trim()) throw new Error('proposed_content is required.')
 
   const store = storeFor(owner, name)
-  const proposal = store.add({
+  const input = {
     repo: `${owner}/${name}`,
     target,
     action,
@@ -73,10 +73,13 @@ export async function knowledgeProposeUpdate(args: {
     title: args.title.trim(),
     rationale: args.rationale?.trim() ?? '',
     proposed_content: args.proposed_content,
-  })
+  }
+  const { proposal, created } = sourceType === 'patrol'
+    ? store.addOrRefresh(input)
+    : { proposal: store.add(input), created: true }
 
   return [
-    `## Knowledge proposal created — \`${proposal.id}\``,
+    `## Knowledge proposal ${created ? 'created' : 'refreshed'} — \`${proposal.id}\``,
     '',
     `| Field | Value |`,
     `| --- | --- |`,
@@ -86,6 +89,7 @@ export async function knowledgeProposeUpdate(args: {
     `| Source | ${sourceLabel(proposal)} |`,
     `| Title | ${proposal.title} |`,
     `| Status | pending |`,
+    `| Evidence | ${proposal.evidence_count ?? 1} observation(s) |`,
     '',
     proposal.rationale ? `**Rationale**: ${proposal.rationale}` : '_No rationale provided._',
     '',
@@ -115,10 +119,11 @@ export async function knowledgeProposals(repo?: string, status?: string): Promis
   }
 
   const statusEmoji = (s: KnowledgeProposalStatus) =>
-    s === 'pending' ? '🟡 pending' : s === 'applied' ? '🟢 applied' : '🔴 rejected'
+    s === 'pending' ? '🟡 pending' : s === 'applied' ? '🟢 applied' : s === 'rolled_back' ? '↩️ rolled back' : '🔴 rejected'
 
   const note = (p: KnowledgeProposal): string => {
     if (p.status === 'applied') return `applied ${p.applied_at}`
+    if (p.status === 'rolled_back') return `rolled back ${p.rolled_back_at}`
     if (p.status === 'rejected') return p.rejected_reason ? `rejected: ${truncate(p.rejected_reason, 40)}` : `rejected ${p.rejected_at}`
     return `created ${p.created_at}`
   }
@@ -130,7 +135,7 @@ export async function knowledgeProposals(repo?: string, status?: string): Promis
     `\`${p.target}\``,
     sourceLabel(p),
     truncate(p.title, 50),
-    note(p),
+    `${note(p)} · evidence ${p.evidence_count ?? 1}`,
   ])
 
   return [
@@ -153,6 +158,7 @@ export async function knowledgeApplyUpdate(repo: string | undefined, proposalId:
 
   const path = getKnowledgePath(owner, name, proposal.target)
   const exists = knowledgeExists(owner, name, proposal.target)
+  const previousContent = exists ? readFileSync(path, 'utf-8') : null
   const appliedAt = todayDate()
 
   let finalContent: string
@@ -184,7 +190,7 @@ export async function knowledgeApplyUpdate(repo: string | undefined, proposalId:
   }
 
   writeKnowledge(path, finalContent)
-  store.markApplied(proposalId)
+  store.markApplied(proposalId, { existed: exists, content: previousContent })
 
   return [
     `## Knowledge proposal applied — \`${proposal.id}\``,
@@ -198,6 +204,34 @@ export async function knowledgeApplyUpdate(repo: string | undefined, proposalId:
     `| Applied | ${appliedAt} |`,
     '',
     `Provenance footer recorded in the knowledge entry.`,
+  ].join('\n')
+}
+
+export async function knowledgeRollbackUpdate(repo: string | undefined, proposalId: string): Promise<string> {
+  const { owner, name } = await resolveRepo(repo)
+  const store = storeFor(owner, name)
+  const proposal = store.get(proposalId)
+  if (!proposal) throw new Error(`Proposal "${proposalId}" not found. Use \`knowledge_proposals\` to list them.`)
+  if (proposal.status !== 'applied') {
+    throw new Error(`Proposal "${proposalId}" is ${proposal.status}, only applied proposals can be rolled back.`)
+  }
+  const path = getKnowledgePath(owner, name, proposal.target)
+  if (proposal.previous_existed) {
+    if (proposal.previous_content === null || proposal.previous_content === undefined) {
+      throw new Error(`Proposal "${proposalId}" has no rollback snapshot.`)
+    }
+    writeKnowledge(path, proposal.previous_content)
+  } else if (existsSync(path)) {
+    rmSync(path)
+  }
+  store.markRolledBack(proposalId)
+  return [
+    `## Knowledge proposal rolled back — \`${proposal.id}\``, '',
+    '| Field | Value |', '| --- | --- |',
+    `| Target | \`${proposal.target}\` |`,
+    `| Restored | ${proposal.previous_existed ? 'previous canonical content' : 'knowledge entry removed'} |`,
+    `| Status | rolled_back |`, '',
+    'The apply operation was reversed using its stored pre-apply snapshot.',
   ].join('\n')
 }
 

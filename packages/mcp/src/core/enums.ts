@@ -27,7 +27,7 @@ export type RepoRole = typeof RepoRole[keyof typeof RepoRole]
 export const PRType = { Feat: 'feat', Fix: 'fix', Other: 'other' } as const
 export type PRType = typeof PRType[keyof typeof PRType]
 
-export const KnowledgeProposalStatus = { Pending: 'pending', Applied: 'applied', Rejected: 'rejected' } as const
+export const KnowledgeProposalStatus = { Pending: 'pending', Applied: 'applied', Rejected: 'rejected', RolledBack: 'rolled_back' } as const
 export type KnowledgeProposalStatus = typeof KnowledgeProposalStatus[keyof typeof KnowledgeProposalStatus]
 export const KNOWLEDGE_PROPOSAL_STATUSES = Object.values(KnowledgeProposalStatus) as [KnowledgeProposalStatus, ...KnowledgeProposalStatus[]]
 
@@ -35,7 +35,7 @@ export const KnowledgeProposalAction = { Create: 'create', Append: 'append', Rev
 export type KnowledgeProposalAction = typeof KnowledgeProposalAction[keyof typeof KnowledgeProposalAction]
 export const KNOWLEDGE_PROPOSAL_ACTIONS = Object.values(KnowledgeProposalAction) as [KnowledgeProposalAction, ...KnowledgeProposalAction[]]
 
-export const KnowledgeSourceType = { Todo: 'todo', Issue: 'issue', Pr: 'pr', Review: 'review', Debug: 'debug', DailySync: 'daily-sync', Manual: 'manual' } as const
+export const KnowledgeSourceType = { Todo: 'todo', Issue: 'issue', Pr: 'pr', Review: 'review', Debug: 'debug', DailySync: 'daily-sync', Patrol: 'patrol', Manual: 'manual' } as const
 export type KnowledgeSourceType = typeof KnowledgeSourceType[keyof typeof KnowledgeSourceType]
 export const KNOWLEDGE_SOURCE_TYPES = Object.values(KnowledgeSourceType) as [KnowledgeSourceType, ...KnowledgeSourceType[]]
 

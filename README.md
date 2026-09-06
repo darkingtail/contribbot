@@ -4,9 +4,34 @@
 
 [中文](README.zh.md) | English
 
-Open source collaboration assistant. Helps developers efficiently maintain and contribute to open source projects.
+Open source collaboration assistant evolving into a repository-level patrol agent.
 
-MCP tools + skills — todo management, upstream tracking, issue/PR workflows, multi-project oversight.
+Stable MCP tools and skills handle todo management, upstream tracking, issue/PR workflows, and multi-project oversight. The Phase 3 runtime now supports resumable patrols, multi-project scheduling, knowledge evolution, and isolated remediation.
+
+## Phase 3 Patrol (Experimental)
+
+Run one repository maintenance loop:
+
+```bash
+uv sync --project packages/agent
+uv run --project packages/agent contribbot patrol darkingtail/contribbot
+```
+
+The patrol observes repository state through contribbot MCP tools, asks Codex for a structured assessment, saves a report and complete audit trail, and requests confirmation before creating reviewable knowledge proposals. It never performs public GitHub writes in the MVP.
+
+```bash
+# Patrol every tracked repository from any directory
+uv run --project D:/dev/darkingtail/contribbot/packages/agent contribbot patrol-all
+
+# Run one scheduled batch; unchanged batches are silent
+uv run --project packages/agent contribbot patrol-schedule --once --config agent.json
+
+# Edit and validate in an isolated worktree without commit/push/PR creation
+uv run --project packages/agent contribbot remediate D:/dev/my-repo \
+  --prompt "Fix the failing test" --validate "pnpm test"
+```
+
+See [Repository Patrol Agent](docs/agent/patrol.md) for behavior, safety boundaries, and audit files.
 
 ## Prerequisites
 
@@ -144,6 +169,10 @@ All data is local in `~/.contribbot/{owner}/{repo}/`:
 │
 ├── knowledge/               # Project knowledge (via knowledge_write)
 │   └── {name}/README.md
+│
+├── patrol/                  # Phase 3 patrol reports and audit artifacts
+│   ├── latest.md
+│   └── runs/{run-id}/       # report, snapshot, analysis, trace
 │
 └── sync/                    # Sync history records
 ```
