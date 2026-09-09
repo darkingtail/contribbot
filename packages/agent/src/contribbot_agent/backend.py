@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import shutil
 import subprocess
@@ -9,6 +10,40 @@ from pathlib import Path
 from typing import Protocol
 
 from .models import PatrolAnalysis, PatrolSnapshot
+
+
+def strict_json_schema(model: type[object]) -> dict[str, object]:
+    """Make Pydantic's schema acceptable to Codex strict structured output."""
+    schema = copy.deepcopy(model.model_json_schema())  # type: ignore[attr-defined]
+
+    def normalize(node: object) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                original_required = set(node.get("required", []))
+                node["required"] = list(properties)
+                for name, child in properties.items():
+                    if name not in original_required and not _is_nullable(child):
+                        properties[name] = {"anyOf": [child, {"type": "null"}]}
+                    normalize(properties[name])
+            for value in node.values():
+                normalize(value)
+        elif isinstance(node, list):
+            for value in node:
+                normalize(value)
+
+    def _is_nullable(node: object) -> bool:
+        return isinstance(node, dict) and (
+            node.get("type") == ["string", "null"]
+            or node.get("type") == ["null", "string"]
+            or any(
+                isinstance(item, dict) and item.get("type") == "null"
+                for item in node.get("anyOf", [])
+            )
+        )
+
+    normalize(schema)
+    return schema
 
 
 class Analyzer(Protocol):
@@ -36,7 +71,7 @@ class CodexAnalyzer:
             schema_path = temp / "analysis.schema.json"
             output_path = temp / "analysis.json"
             schema_path.write_text(
-                json.dumps(PatrolAnalysis.model_json_schema(), indent=2),
+                json.dumps(strict_json_schema(PatrolAnalysis), indent=2),
                 encoding="utf-8",
             )
 

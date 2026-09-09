@@ -116,6 +116,16 @@ class PatrolAnalysis(StrictModel):
     knowledge_candidates: list[KnowledgeCandidate]
     knowledge_used: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_optional_lists(cls, value: object) -> object:
+        if isinstance(value, dict):
+            value = dict(value)
+            for field in ("investigation_requests", "knowledge_used"):
+                if value.get(field) is None:
+                    value[field] = []
+        return value
+
 
 class TraceEvent(StrictModel):
     timestamp: str

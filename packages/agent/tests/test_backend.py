@@ -1,7 +1,9 @@
+import json
+
 import pytest
 
-from contribbot_agent.backend import CodexAnalyzer, RulesAnalyzer
-from contribbot_agent.models import Observation, PatrolAction, PatrolSnapshot
+from contribbot_agent.backend import CodexAnalyzer, RulesAnalyzer, strict_json_schema
+from contribbot_agent.models import Observation, PatrolAction, PatrolAnalysis, PatrolSnapshot
 
 
 def test_codex_prompt_treats_repository_content_as_untrusted() -> None:
@@ -48,3 +50,28 @@ def test_action_safety_floor_is_enforced_by_runtime() -> None:
 
     assert public_action.safety == "confirm"
     assert destructive_action.safety == "manual"
+
+
+def test_codex_schema_requires_and_nulls_optional_properties() -> None:
+    schema = strict_json_schema(PatrolAnalysis)
+    request = schema["$defs"]["InvestigationRequest"]
+
+    assert set(request["required"]) == set(request["properties"])
+    assert "null" in json.dumps(request["properties"]["base"])
+
+
+def test_patrol_analysis_normalizes_null_optional_lists() -> None:
+    analysis = PatrolAnalysis.model_validate(
+        {
+            "health": "unknown",
+            "summary": "ok",
+            "findings": [],
+            "investigation_requests": None,
+            "actions": [],
+            "knowledge_candidates": [],
+            "knowledge_used": None,
+        }
+    )
+
+    assert analysis.investigation_requests == []
+    assert analysis.knowledge_used == []
