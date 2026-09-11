@@ -49,6 +49,14 @@ describe('createServer tool schemas', () => {
     }
   })
 
+  it('registers project initialization as a repository-scoped tool', async () => {
+    const { tools } = await listTools()
+    const init = tools.find(t => t.name === 'project_init')
+
+    expect(init).toBeDefined()
+    expect(init!.inputSchema.required ?? []).toContain('repo')
+  })
+
   it('registers patrol audit and recovery tools as repository-scoped', async () => {
     const { tools } = await listTools()
     for (const name of ['patrol_record', 'patrol_run_get']) {

@@ -10,6 +10,9 @@ pnpm install
 
 ## Development
 
+For source-based MCP, Skills, Agent, and Web UI debugging, see
+[Local Development Runtime](docs/development/local-dev-runtime.md).
+
 ```bash
 pnpm build        # Build MCP server
 pnpm dev          # Run MCP server with tsx (debug)

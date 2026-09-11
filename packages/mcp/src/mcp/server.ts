@@ -12,6 +12,7 @@ import { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from '../core
 import { upstreamCompact } from '../core/tools/core/upstream-compact.js'
 import { repoConfig } from '../core/tools/core/repo-config-tool.js'
 import { projectList } from '../core/tools/core/project-list.js'
+import { projectInit } from '../core/tools/core/project-init.js'
 import { contributionStats } from '../core/tools/core/contribution-stats.js'
 import { todoClaim } from '../core/tools/core/todo-claim.js'
 import { todoCompact } from '../core/tools/core/todo-compact.js'
@@ -78,7 +79,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 - **fork+upstream**（fork=有, upstream=有）：fork 同步 + 跨栈复刻追踪
 - **upstream**（fork=无, upstream=有）：非 fork 跨栈追踪
 
-首次进入项目时用 repo_config 查看模式。upstream_daily 和 upstream_sync_check 同时支持 fork source 和外部 upstream 追踪。
+首次进入一个仓库会话时优先使用 project_init 建立项目上下文；它会读取 repo_config 和全局项目列表，不执行巡检或公开写入。之后再用 repo_config 查看模式。upstream_daily 和 upstream_sync_check 同时支持 fork source 和外部 upstream 追踪。
 
 ## 工具组合逻辑
 
@@ -91,7 +92,7 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 7. **质量保障**：actions_status → CI；security_overview → 安全告警
 8. **GitHub 写入**：issue_create / issue_close / comment_create / pr_create / pr_update / pr_review_reply
 9. **知识沉淀**：knowledge_write → 直接写项目知识；演进流（需 review）：knowledge_propose_update → knowledge_proposals → knowledge_apply_update / knowledge_reject_update（Resource: knowledge://{repo}/{name}）
-10. **全局视图**：project_list → 跨项目概况；repo_config → 仓库配置
+10. **进入项目**：project_init → 初始化仓库会话上下文；project_list → 跨项目概况；repo_config → 仓库配置
 11. **贡献统计**：contribution_stats → 个人贡献节奏
 12. **搜索**：issue_list / pr_list → 按状态/标签/关键词搜索
 
@@ -179,6 +180,13 @@ export function createServer(): McpServer {
     'List all tracked projects with todo and upstream stats',
     {},
     wrapHandler(() => projectList()),
+  )
+
+  server.tool(
+    'project_init',
+    'Initialize a repository-scoped contribbot session: load repo config and global tracked projects without running actions.',
+    { repo: requiredRepoParam },
+    wrapHandler(({ repo }) => projectInit(repo as string)),
   )
 
   server.tool(

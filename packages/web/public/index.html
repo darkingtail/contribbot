@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>contribbot / Control Room</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">c</span><span>contribbot</span></div>
+        <div class="eyebrow">MAINTENANCE CONTROL ROOM</div>
+        <nav>
+          <button class="nav-item active" data-view="overview"><span>Overview</span><kbd>1</kbd></button>
+          <button class="nav-item" data-view="patrol"><span>Patrol runs</span><kbd>2</kbd></button>
+          <button class="nav-item" data-view="todos"><span>Todos</span><kbd>3</kbd></button>
+        </nav>
+        <div class="sidebar-foot"><span class="status-dot"></span><span>Local data connected</span></div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div><div class="eyebrow">REPOSITORY OPERATIONS</div><h1 id="page-title">Project overview</h1></div>
+          <div class="top-actions"><span id="last-updated">Loading...</span><button class="icon-button" id="refresh" title="Refresh data" aria-label="Refresh data">↻</button></div>
+        </header>
+        <section class="content" id="app"><div class="loading">Loading tracked projects...</div></section>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

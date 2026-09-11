@@ -2,6 +2,17 @@
 
 The Phase 3 patrol runtime for contribbot.
 
+Initialize the current repository context before using contribbot in a new AI
+session:
+
+```bash
+uv run --project packages/agent contribbot init
+```
+
+This detects the current repository's `origin`, initializes `repo_config`, and
+prints the explicit repository context and safe next steps. It does not run a
+patrol or perform public GitHub writes.
+
 ```bash
 uv sync --project packages/agent
 uv run --project packages/agent contribbot patrol darkingtail/contribbot

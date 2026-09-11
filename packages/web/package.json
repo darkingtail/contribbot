@@ -1,0 +1,12 @@
+{
+  "name": "contribbot-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.8.2"
+  }
+}

@@ -9,6 +9,7 @@ from . import __version__
 from .backend import Analyzer, CodexAnalyzer, RulesAnalyzer
 from .config import load_config, save_default_config
 from .executor import WorktreeExecutor
+from .init_context import initialize_context
 from .mcp_client import ContribbotMcpClient
 from .models import KnowledgeCandidate, PatrolAction
 from .orchestrator import PatrolAllRunner, batch_needs_attention, render_batch
@@ -55,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_config = commands.add_parser("init-config", help="Create an agent JSON config if missing.")
     init_config.add_argument("--config", help="Optional config path; defaults to ~/.contribbot/agent.json.")
+
+    init = commands.add_parser("init", help="Initialize contribbot context from the current Git repository.")
+    init.add_argument("repo", nargs="?", help='Optional GitHub repository in "owner/repo" form.')
+    init.add_argument("--path", help="Local repository path; defaults to the current directory.")
 
     remediate = commands.add_parser("remediate", help="Let Codex modify an isolated worktree and validate it without publishing.")
     remediate.add_argument("repo_path", help="Path to a clean local Git repository root.")
@@ -157,6 +162,10 @@ def main() -> None:
         if args.command == "init-config":
             from pathlib import Path
             print(save_default_config(Path(args.config) if args.config else None))
+            raise SystemExit(0)
+        if args.command == "init":
+            from pathlib import Path
+            print(asyncio.run(initialize_context(args.repo, Path(args.path) if args.path else None)))
             raise SystemExit(0)
         if args.command == "remediate":
             raise SystemExit(run_remediate(args))

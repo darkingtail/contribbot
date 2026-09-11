@@ -1,6 +1,6 @@
 # contribbot 工具集合
 
-> 58 Tools + 1 Resource + 4 Prompts
+> 59 Tools + 1 Resource + 4 Prompts
 
 ---
 
@@ -10,6 +10,7 @@
 |------|------|------|
 | `project_dashboard` | 项目全貌：open issues/PRs 统计、labels 分布、近期 commits、最新 release | `repo` |
 | `repo_info` | 仓库元信息：stars、forks、topics、license、contributors | `repo` |
+| `project_init` | 初始化仓库会话上下文：读取项目配置与全局项目列表，不执行巡检或公开写入 | `repo` |
 | `project_guidance` | 读取仓库规范文档和本地 contribbot Knowledge，供任务规划参考 | `repo` |
 | `commit_detail` | 查看单个 commit 的 changed files 和受限 patch 摘要 | `repo`, `ref` |
 | `compare_refs` | 比较两个 refs 的 ahead/behind 和 changed files | `repo`, `base`, `head` |
