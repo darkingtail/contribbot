@@ -3,6 +3,33 @@ import { repoConfig } from './repo-config-tool.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
 import { RepoConfig, upstreamStatus } from '../../storage/repo-config.js'
 import { getContribDir } from '../../utils/config.js'
+import { TodoStore, currentTodoExecution } from '../../storage/todo-store.js'
+
+function renderTodoRecovery(owner: string, name: string): string[] {
+  const store = new TodoStore(getContribDir(owner, name))
+  const active = store.listForDisplay().filter(todo => todo.status === 'active')
+  const lines = ['## Active Todo Recovery', '']
+  if (active.length === 0) return [...lines, '_No active todos._', '']
+
+  for (const todo of active) {
+    const execution = currentTodoExecution(todo)
+    lines.push(`### ${todo.ref ? `${todo.ref} ` : ''}${todo.title}`, `- Status: \`${todo.status}\``)
+    if (execution) {
+      lines.push(
+        `- Execution: \`${execution.id}\``,
+        `- Phase: \`${execution.phase}\``,
+        `- Next: ${execution.next}`,
+        `- Blocked on: ${execution.blocked_on ?? '—'}`,
+        `- History: ${todo.executions.length} execution(s)`,
+      )
+    }
+    else {
+      lines.push('- No open execution. Use `todo_activate` when work resumes.', `- History: ${todo.executions.length} execution(s)`)
+    }
+    lines.push('')
+  }
+  return lines
+}
 
 /**
  * Initialize a repository-scoped contribbot session without performing writes
@@ -39,6 +66,7 @@ export async function projectInit(repo: string): Promise<string> {
       'Existing nonempty upstream is already configured; do not ask again. Confirmation does not authorize patrols, public writes, or restoring archived projects.',
       '',
     ] : []),
+    ...renderTodoRecovery(canonical.owner, canonical.name),
     '## Available Next Steps',
     ...(archived ? [
       '**This project is archived. Initialization does not reactivate it.**',

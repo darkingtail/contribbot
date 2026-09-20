@@ -54,9 +54,11 @@ function idNumber(id: string): number {
 }
 
 export class KnowledgeProposalStore {
+  private baseDir: string
   private yamlPath: string
 
-  constructor(private baseDir: string) {
+  constructor(baseDir: string) {
+    this.baseDir = baseDir
     this.yamlPath = join(baseDir, 'knowledge.proposals.yaml')
   }
 

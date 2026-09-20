@@ -49,8 +49,9 @@ metadata:
 
 调用 `todo_list`，参数：`repo`。
 
-查找关联该 PR 的 todo，如有且 status 未更新：
-→ 调用 `todo_update`（repo、item、status=pr_submitted、pr={pr_number}）
+查找该 PR 对应的 Todo；已关联则不重复更新。不根据 PR 状态更改 Todo 主状态。
+尚未关联且用户意图明确时，只调用 `todo_update`（repo、item、pr={pr_number}）。
+若 `pr_create` 远端成功但本地关联失败，按原请求恢复，不用此更新代替在途日志处置。
 
 ### 6. 输出报告
 

@@ -1,12 +1,20 @@
 import { existsSync, unlinkSync } from 'node:fs'
 import { getIssue } from '../../clients/github.js'
 import { RecordFiles } from '../../storage/record-files.js'
-import { TodoStore, refSortKey } from '../../storage/todo-store.js'
+import { TodoStore } from '../../storage/todo-store.js'
+import { currentTodoExecution } from '../../storage/todo-store.js'
+import { TODO_STATUSES, validateEnum } from '../../enums.js'
 import type { TodoType } from '../../enums.js'
 import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
 import { difficultyEmoji, todayDate } from '../../utils/format.js'
 import { detectTypeFromLabels } from '../../utils/github-helpers.js'
+import { closeManagedWithReadback } from '../../execution/closure.js'
+import type { ClosureRequest } from '../../execution/closure.js'
+import { formatTodoPullLinks } from '../../storage/todo-pulls.js'
+export { archiveTodos as todoArchive } from './todo-lifecycle.js'
+
+export type TodoCompletion = Omit<ClosureRequest, 'directory' | 'todo_id' | 'target'>
 
 function refLink(ref: string | null, owner: string, name: string): string {
   if (!ref) return '—'
@@ -17,15 +25,11 @@ function refLink(ref: string | null, owner: string, name: string): string {
   return ref
 }
 
-function prLink(pr: number | null, owner: string, name: string): string {
-  if (!pr) return '—'
-  return `[#${pr}](https://github.com/${owner}/${name}/pull/${pr})`
-}
-
 export async function todoList(repo?: string, status?: string): Promise<string> {
+  if (status !== undefined) validateEnum(TODO_STATUSES, status, 'status')
   const { owner, name } = await resolveRepo(repo)
   const store = new TodoStore(getContribDir(owner, name))
-  const allTodos = store.listSorted()
+  const allTodos = store.listForDisplay()
 
   if (allTodos.length === 0) {
     return `## Todos — ${owner}/${name}\n\n_No todos yet. Use \`todo_add\` to create one._`
@@ -36,37 +40,40 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
     ? allTodos.filter(t => t.status === status)
     : allTodos
 
+  const displayIndexes = new Map(allTodos.map((todo, index) => [todo, index + 1]))
+
   if (todos.length === 0) {
     return `## Todos — ${owner}/${name}\n\n_No todos with status "${status}"._`
   }
 
   const active = todos
-    .filter(t => t.status === 'active' || t.status === 'pr_submitted')
-    .sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
+    .filter(t => t.status === 'active')
 
   const backlogIdeas = todos
     .filter(t => t.status === 'idea' || t.status === 'backlog')
-    .sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
 
   const done = todos
     .filter(t => t.status === 'done')
-    .sort((a, b) => refSortKey(a.ref) - refSortKey(b.ref))
+  const paused = todos.filter(t => t.status === 'paused')
+  const cancelled = todos.filter(t => t.status === 'cancelled')
 
   const lines: string[] = [
     `## Todos — ${owner}/${name}`,
     '',
-    `> ${active.length} active · ${backlogIdeas.filter(t => t.status === 'backlog').length} backlog · ${backlogIdeas.filter(t => t.status === 'idea').length} idea · ${done.length} done`,
+    `> ${active.length} active · ${backlogIdeas.filter(t => t.status === 'backlog').length} backlog · ${backlogIdeas.filter(t => t.status === 'idea').length} idea · ${paused.length} paused · ${done.length} done · ${cancelled.length} cancelled`,
     '',
   ]
 
   // Active table
   if (active.length > 0) {
     lines.push('### Active')
-    lines.push('| # | Ref | Type | Title | Difficulty | Status | Branch | PR |')
-    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
-    active.forEach((t, i) => {
+    lines.push('| # | Ref | Type | Title | Difficulty | Status | Branch | PR | Note |')
+    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+    active.forEach((t) => {
       const branch = t.branch ? `\`${t.branch}\`` : '—'
-      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${t.status} | ${branch} | ${prLink(t.pr, owner, name)} |`)
+      const execution = currentTodoExecution(t)
+      const note = execution ? `${execution.phase}: ${execution.next}` : 'No open execution'
+      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${t.status} | ${branch} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | ${note} |`)
     })
     lines.push('')
   }
@@ -74,10 +81,10 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
   // Backlog & Ideas table
   if (backlogIdeas.length > 0) {
     lines.push('### Backlog & Ideas')
-    lines.push('| # | Ref | Type | Title | Status |')
-    lines.push('| --- | --- | --- | --- | --- |')
-    backlogIdeas.forEach((t, i) => {
-      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${t.status} |`)
+    lines.push('| # | Ref | Type | Title | Status | PR | Note |')
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |')
+    backlogIdeas.forEach((t) => {
+      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${t.status} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | ${t.executions.length} execution(s) |`)
     })
     lines.push('')
   }
@@ -85,11 +92,20 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
   // Done table
   if (done.length > 0) {
     lines.push('### Done')
-    lines.push('| # | Ref | Type | Title | Difficulty | PR |')
-    lines.push('| --- | --- | --- | --- | --- | --- |')
-    done.forEach((t, i) => {
-      lines.push(`| ${i + 1} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${prLink(t.pr, owner, name)} |`)
+    lines.push('| # | Ref | Type | Title | Difficulty | PR | Note |')
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |')
+    done.forEach((t) => {
+      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | Completed, not archived; ${t.executions.length} execution(s) |`)
     })
+    lines.push('')
+  }
+  for (const [title, items, note] of [
+    ['Paused', paused, 'Paused, not finished; explicit local continuation required'],
+    ['Cancelled', cancelled, 'Cancelled, not archived; reopen explicitly before new work'],
+  ] as const) {
+    if (!items.length) continue
+    lines.push(`### ${title}`, '| # | Ref | Type | Title | PR | Note |', '| --- | --- | --- | --- | --- | --- |')
+    for (const t of items) lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | ${note}; ${t.executions.length} execution(s) |`)
     lines.push('')
   }
 
@@ -98,7 +114,28 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
 
 export async function todoAdd(text: string, ref?: string, repo?: string): Promise<string> {
   const { owner, name } = await resolveRepo(repo)
-  const store = new TodoStore(getContribDir(owner, name))
+  const contribDir = getContribDir(owner, name)
+  const store = new TodoStore(contribDir)
+  const records = new RecordFiles(contribDir)
+
+  const existingResult = (existing: ReturnType<TodoStore['findByRef']>): string | undefined => {
+    if (!existing) return undefined
+    if (!existing.id && existing.ref) {
+      const resolved = store.resolveItem(existing.ref)
+      if (resolved) existing = store.ensureTodoId(resolved.storeIndex) ?? existing
+    }
+    if (existing.ref) {
+      records.ensureTodoRecord(
+        existing.ref,
+        existing.title,
+        existing.type,
+        todayDate(),
+        existing.id,
+        { adoptUnowned: !store.hasArchivedRef(existing.ref, existing.id) },
+      )
+    }
+    return `Todo already exists: **${existing.title}** (${existing.type}, ref: ${existing.ref})`
+  }
 
   let finalRef: string | null = null
   let type: TodoType = 'chore'
@@ -118,8 +155,8 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
     const normalizedRef = /^#?\d+$/.test(effectiveRef)
       ? (effectiveRef.startsWith('#') ? effectiveRef : `#${effectiveRef}`)
       : effectiveRef
-    const existing = store.list().find(todo => todo.ref === normalizedRef)
-    if (existing) return `Todo already exists: **${existing.title}** (${existing.type}, ref: ${existing.ref})`
+    const duplicate = store.transaction(() => existingResult(store.findByRef(normalizedRef)))
+    if (duplicate) return duplicate
   }
 
   if (!effectiveRef) {
@@ -131,15 +168,7 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
       .slice(0, 3)
       .join('-')
     if (!slug) slug = `idea-${Date.now().toString(36).slice(-4)}`
-    // Deduplicate: append -2, -3... if slug already exists
-    const existing = store.list()
-    const existingRefs = new Set(existing.map(t => t.ref))
-    let candidate = slug
-    let counter = 2
-    while (existingRefs.has(candidate)) {
-      candidate = `${slug}-${counter++}`
-    }
-    finalRef = candidate
+    finalRef = slug
   }
 
   if (effectiveRef) {
@@ -171,78 +200,93 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
     }
   }
 
-  const item = store.add({ ref: finalRef, title, type })
-
-  // Create record file immediately
-  const records = new RecordFiles(getContribDir(owner, name))
-  records.createTodoRecord(finalRef ?? `idea-${Date.now().toString(36).slice(-4)}`, title, type, todayDate())
-
-  return `Added todo: **${item.title}** (${item.type}${item.ref ? `, ref: ${item.ref}` : ''})`
+  return store.transaction(() => {
+    if (!effectiveRef && finalRef) {
+      const slug = finalRef
+      let counter = 2
+      while (store.findByRef(finalRef)) finalRef = `${slug}-${counter++}`
+    }
+    else if (finalRef) {
+      const duplicate = existingResult(store.findByRef(finalRef))
+      if (duplicate) return duplicate
+    }
+    const item = store.add({ ref: finalRef, title, type })
+    records.createTodoRecord(finalRef ?? `idea-${Date.now().toString(36).slice(-4)}`, title, type, todayDate(), item.id)
+    return `Added todo: **${item.title}** (${item.type}${item.ref ? `, ref: ${item.ref}` : ''}) · Todo ID: \`${item.id}\``
+  })
 }
 
-export async function todoDelete(indexOrText: string, repo?: string): Promise<string> {
+export async function todoDelete(indexOrText: string, repo?: string, force = false): Promise<string> {
   const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
 
-  const resolved = store.resolveItem(indexOrText)
-  if (!resolved) {
-    throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
-  }
-
-  const deleted = store.delete(resolved.storeIndex)
-  if (!deleted) {
-    throw new Error(`Failed to delete todo at index ${resolved.storeIndex}.`)
-  }
-
-  // Delete associated record file
-  if (deleted.ref) {
-    const recordPath = records.resolveRefPath(deleted.ref)
-    if (recordPath && existsSync(recordPath)) {
-      unlinkSync(recordPath)
+  return store.transaction(() => {
+    let resolved = store.resolveItem(indexOrText)
+    if (!resolved) {
+      throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
     }
-  }
 
-  return `Deleted: ~~${deleted.title}~~${deleted.ref ? ` (${deleted.ref})` : ''}`
+    if (!resolved.item.id && resolved.item.ref && store.hasArchivedRef(resolved.item.ref)) {
+      const identified = store.ensureTodoId(resolved.storeIndex)
+      if (!identified) throw new Error(`Failed to assign a stable id to todo "${indexOrText}" before deletion.`)
+      resolved = { ...resolved, item: identified }
+    }
+
+    const deleted = store.delete(resolved.storeIndex, { force })
+    if (!deleted) {
+      throw new Error(`Failed to delete todo at index ${resolved.storeIndex}.`)
+    }
+
+    // Delete associated record file
+    if (deleted.ref) {
+      const recordPath = records.resolveOwnedRefPath(deleted.ref, deleted.id)
+      if (recordPath && existsSync(recordPath)) {
+        unlinkSync(recordPath)
+      }
+    }
+
+    return `Deleted: ~~${deleted.title}~~${deleted.ref ? ` (${deleted.ref})` : ''}`
+  })
 }
 
-export async function todoDone(indexOrText: string, repo?: string): Promise<string> {
+export async function todoDone(indexOrText: string, repo?: string, completion?: TodoCompletion): Promise<string> {
   const { owner, name } = await resolveRepo(repo)
-  const store = new TodoStore(getContribDir(owner, name))
+  const contribDir = getContribDir(owner, name)
+  const store = new TodoStore(contribDir)
+  const records = new RecordFiles(contribDir)
 
-  const resolved = store.resolveItem(indexOrText)
-  if (!resolved) {
-    throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
+  if (completion) {
+    const completed = await closeManagedWithReadback({
+      ...completion, directory: contribDir, todo_id: indexOrText, target: { kind: 'local' },
+    })
+    return `${completed.status === 'done' ? 'Done' : 'Stopped'}: ${completed.title} · ${completed.executions.at(-1)?.workflow?.closure?.mode} · ${'archived' in completed ? 'already archived' : 'not archived'} · Todo ID: \`${completed.id}\``
   }
+  return store.transaction(() => {
+    const resolved = store.resolveItemForArchival(indexOrText)
+    if (!resolved) {
+      throw new Error(`Todo not found: "${indexOrText}". Use todo_list to see available items.`)
+    }
 
-  const archived = store.archiveAndDelete(resolved.storeIndex)
-  if (!archived) {
-    throw new Error(`Failed to archive todo at index ${resolved.storeIndex}.`)
-  }
+    const identified = resolved.item.id ? resolved.item : store.ensureTodoId(resolved.storeIndex)
+    if (!identified?.id) throw new Error(`Failed to assign a stable id to todo "${indexOrText}" before archival.`)
+    if (identified.ref) {
+      records.ensureTodoRecord(
+        identified.ref,
+        identified.title,
+        identified.type,
+        todayDate(),
+        identified.id,
+        { adoptUnowned: !store.hasArchivedRef(identified.ref, identified.id) },
+      )
+    }
 
-  return `Done & archived: ~~${archived.title}~~${archived.ref ? ` (${archived.ref})` : ''}`
-}
+    const completed = store.completeTodo(resolved.storeIndex, 'done', 'Todo completed.')
+    if (!completed) {
+      throw new Error(`Failed to complete todo at index ${resolved.storeIndex}.`)
+    }
 
-export async function todoArchive(repo?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = new TodoStore(getContribDir(owner, name))
-  const allTodos = store.list()
-
-  const doneIndices = allTodos
-    .map((t, i) => t.status === 'done' ? i : -1)
-    .filter(i => i >= 0)
-
-  if (doneIndices.length === 0) {
-    return 'No done todos to archive.'
-  }
-
-  // Archive from end to preserve indices
-  let count = 0
-  for (const i of [...doneIndices].reverse()) {
-    const result = store.archiveAndDelete(i)
-    if (result) count++
-  }
-
-  return `Archived ${count} done todos to todos.archive.yaml`
+    return `Done: ~~${completed.title}~~${completed.ref ? ` (${completed.ref})` : ''} · ${'archived' in completed ? 'reconciled historical archival' : 'not archived'} · Todo ID: \`${completed.id}\``
+  })
 }

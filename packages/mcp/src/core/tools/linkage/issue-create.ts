@@ -26,29 +26,50 @@ export async function issueCreate(
     `Created **${owner}/${name}#${issue.number}**: ${issue.html_url}`,
   ]
 
-  // Link to upstream daily commit if provided
-  if (upstreamSha && upstreamRepo) {
-    const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-    const store = new UpstreamStore(contribDir)
-    const daily = store.getDaily(`${upOwner}/${upName}`)
-    const commit = daily.commits.find(c => c.sha === upstreamSha || c.sha.startsWith(upstreamSha))
-    if (commit) {
-      store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {
-        action: 'issue',
-        ref: `#${issue.number}`,
+  try {
+    // Link to upstream daily commit if provided
+    if (upstreamSha && upstreamRepo) {
+      const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
+      const store = new UpstreamStore(contribDir)
+      const daily = store.getDaily(`${upOwner}/${upName}`)
+      const commit = daily.commits.find(c => c.sha === upstreamSha || c.sha.startsWith(upstreamSha))
+      if (commit) {
+        store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {
+          action: 'issue',
+          ref: `#${issue.number}`,
+        })
+        results.push(`Linked upstream commit ${upstreamSha.slice(0, 7)} → #${issue.number}`)
+      }
+    }
+
+    // Auto-create todo
+    if (autoTodo !== false) {
+      const todoStore = new TodoStore(contribDir)
+      const type = labelList ? detectTypeFromLabels(labelList) : 'chore'
+      const todo = todoStore.transaction(() => {
+        const todo = todoStore.add({ ref: `#${issue.number}`, title, type })
+        const records = new RecordFiles(contribDir)
+        records.createTodoRecord(`#${issue.number}`, title, type, todayDate(), todo.id)
+        return todo
       })
-      results.push(`Linked upstream commit ${upstreamSha.slice(0, 7)} → #${issue.number}`)
+      results.push(`Created todo: #${issue.number} · Todo ID: \`${todo.id}\``)
     }
   }
-
-  // Auto-create todo
-  if (autoTodo !== false) {
-    const todoStore = new TodoStore(contribDir)
-    const type = labelList ? detectTypeFromLabels(labelList) : 'chore'
-    todoStore.add({ ref: `#${issue.number}`, title, type })
-    const records = new RecordFiles(contribDir)
-    records.createTodoRecord(`#${issue.number}`, title, type, todayDate())
-    results.push(`Created todo: #${issue.number}`)
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const recovery: string[] = []
+    if (autoTodo !== false) {
+      recovery.push(`todo_add(text=${JSON.stringify(title)}, ref="#${issue.number}", repo="${owner}/${name}")`)
+    }
+    if (upstreamSha && upstreamRepo) {
+      recovery.push(
+        `upstream_daily_act(upstream_repo="${upstreamRepo}", sha="${upstreamSha}", action="issue", ref="#${issue.number}", repo="${owner}/${name}")`,
+      )
+    }
+    throw new Error(
+      `GitHub issue ${owner}/${name}#${issue.number} was created successfully at ${issue.html_url}, but local contribbot reconciliation failed: ${message}. `
+      + `Do not create another issue.${recovery.length > 0 ? ` Recover with ${recovery.join(' and then ')}.` : ''}`,
+    )
   }
 
   return results.join('\n')

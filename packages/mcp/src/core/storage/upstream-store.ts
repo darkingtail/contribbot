@@ -41,9 +41,11 @@ interface RepoData {
 type UpstreamFile = Record<string, RepoData>
 
 export class UpstreamStore {
+  private baseDir: string
   private yamlPath: string
 
-  constructor(private baseDir: string) {
+  constructor(baseDir: string) {
+    this.baseDir = baseDir
     this.yamlPath = join(baseDir, 'upstream.yaml')
   }
 

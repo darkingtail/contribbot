@@ -81,4 +81,69 @@ describe('upstream confirmation', () => {
     expect(store.exists()).toBe(false)
   })
 
+  it('renders current execution phase and next for session recovery', async () => {
+    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    writeFileSync(join(dir, 'todos.yaml'), `todos:
+  - id: t-phase3
+    ref: phase3
+    title: Build Phase 3
+    type: feature
+    status: active
+    difficulty: medium
+    pr: 42
+    branch: feat/phase3
+    claimed_items: null
+    created: "2026-09-16"
+    updated: "2026-09-16"
+    executions:
+      - id: te-phase3
+        goal: Build the execution recovery slice
+        phase: execute
+        next: Add project_init recovery output
+        blocked_on: null
+        evidence: []
+        opened_at: "2026-09-16T08:00:00.000Z"
+        closed_at: null
+        outcome: null
+        outcome_note: ""
+`)
+
+    const result = await projectInit('owner/repo')
+    expect(result).toContain('## Active Todo Recovery')
+    expect(result).toContain('Build Phase 3')
+    expect(result).toContain('Phase: `execute`')
+    expect(result).toContain('Next: Add project_init recovery output')
+  })
+
+  it('makes active todos without an execution explicit', async () => {
+    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    writeFileSync(join(dir, 'todos.yaml'), `todos:
+  - ref: legacy-active
+    title: Legacy active todo
+    type: chore
+    status: active
+    difficulty: null
+    pr: null
+    branch: null
+    created: "2026-01-01"
+    updated: "2026-01-01"
+`)
+
+    const result = await projectInit('owner/repo')
+    expect(result).toContain('Legacy active todo')
+    expect(result).toContain('No open execution')
+  })
+
+  it.each(['idea', 'backlog', 'paused', 'done', 'cancelled'])('does not treat %s as active because it has a linked PR', async (status) => {
+    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    writeFileSync(join(dir, 'todos.yaml'), JSON.stringify({ todos: [{
+      ref: 'linked', title: 'Linked PR work', type: 'feature', status, pr: 42,
+      difficulty: null, branch: null, claimed_items: null, executions: [],
+      created: '2026-09-19', updated: '2026-09-19',
+    }] }))
+
+    const result = await projectInit('owner/repo')
+    expect(result).toContain('_No active todos._')
+    expect(result).not.toContain('Linked PR work')
+  })
 })

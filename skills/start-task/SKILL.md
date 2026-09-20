@@ -14,7 +14,7 @@ metadata:
 ## 前置
 
 - 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
-- 可选提供 `item`（todo 索引或关键词）。
+- 可选提供 `item`（Todo 列表全局编号、完整 ref、精确标题或标题关键词）。
 
 ## 步骤
 
@@ -30,7 +30,7 @@ metadata:
 
 ### 2. 选择 Todo
 
-- 如果用户指定了 `item`：按索引或 ref 匹配
+- 如果用户指定了 `item`：按列表全局编号、完整 ref、精确标题或标题关键词匹配；优先使用完整 ref
 - 如果未指定：根据优先级推荐（backlog > idea，有 ref 的优先）
 
 ### 3. 激活 Todo
@@ -50,11 +50,27 @@ metadata:
 
 工具会自动：
 - 更新 status 为 active
+- 创建或恢复该 Todo 当前唯一的执行记录
 - 拉取关联 issue 详情 + 评论总结
 - 评估难度
 - 记录分支名（不自动创建远程分支）
 
-activate 完成后，基于 issue 内容（body + 评论 + 标签）生成实现方案**大纲**，展示给用户：
+若该 Todo 已有 managed workflow，使用 `todo_context` / `todo_resume` 恢复精确方案、
+execution 和操作状态，转入 [版本化执行流程](../todo/references/execution.md)；
+本节后面的 legacy 大纲确认与 progress 步骤不再执行，不重新生成方案覆盖原确认。
+新任务要使用版本化执行时，先确认当前连接具有 `todo_plan`，读取宿主提供的
+本地 `contribbot:todo` Skill，按其“执行入口发现”核对执行助手；开发态使用该
+Skill 自带源码入口，不只查 PATH 或 uv。再按同一参考提出并确认方案，
+不继续下面的 legacy 计划步骤。
+验收按任务的实际结果选择命令检查、内容审阅或用户判断；不默认给每项任务
+添加“用户再看一遍测试结果”的人工项。确有体验或报告解读要求时保留人工验收，
+高风险独立审阅不因此省略；方案确认不等于结果验收或任务完成决定。
+`todo_update(note=...)`
+只写记录，不替代结构化计划确认或验收。
+
+以下大纲、note 和 progress 流程仅用于未选择版本化执行的 legacy 任务，
+不自动迁移历史记录。activate 完成后，基于 issue 内容（body + 评论 + 标签）
+生成实现方案**大纲**，展示给用户：
 
 ```
 ## 实现方案（草案）
@@ -73,7 +89,7 @@ activate 完成后，基于 issue 内容（body + 评论 + 标签）生成实现
 ```
 
 等待用户反馈：
-- **确认** → 调用 `todo_update(note=实现方案)` 写入文档，告知已写入 + 文档路径
+- **确认** → 调用 `todo_update(note=实现方案)` 写入文档，并调用 `todo_progress(phase=execute, next=第一个可执行步骤)` 更新恢复游标，告知已写入 + 文档路径
 - **调整** → 根据用户意见修改后再确认
 - **跳过** → 不写入，用户后续自己补充
 
@@ -97,6 +113,7 @@ activate 完成后，基于 issue 内容（body + 评论 + 标签）生成实现
 调用 `todo_detail`，参数：`repo`、`item`。
 
 返回实现记录 + PR review 状态（如有关联 PR）。
+同时返回当前执行的 Phase、Next、阻塞项、Evidence 和历史执行。
 
 ### 6. 总结
 

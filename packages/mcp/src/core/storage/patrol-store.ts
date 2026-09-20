@@ -29,7 +29,11 @@ export interface StoredPatrolRun {
 }
 
 export class PatrolStore {
-  constructor(private baseDir: string) {}
+  private baseDir: string
+
+  constructor(baseDir: string) {
+    this.baseDir = baseDir
+  }
 
   writeRun(input: PatrolRunInput): PatrolRunPaths {
     const runId = validatePathSegment(input.runId)

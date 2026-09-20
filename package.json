@@ -11,6 +11,9 @@
     "test": "pnpm -r test",
     "agent:build": "uv build --project packages/agent",
     "agent:test": "uv run --project packages/agent --group dev pytest",
-    "patrol": "uv run --project packages/agent contribbot patrol"
+    "patrol": "uv run --project packages/agent contribbot patrol",
+    "typecheck": "pnpm --filter contribbot-mcp typecheck",
+    "test:execution-smoke": "pnpm --filter contribbot-mcp test:execution-smoke",
+    "test:dev-exec-smoke": "node packages/mcp/scripts/execution-smoke.mjs --source-skill"
   }
 }

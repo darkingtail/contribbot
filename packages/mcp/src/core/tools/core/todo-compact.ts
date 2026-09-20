@@ -6,6 +6,7 @@ export async function todoCompact(
   before?: string,
   keep?: number,
   repo?: string,
+  force = false,
 ): Promise<string> {
   const { owner, name } = await resolveRepo(repo)
   const contribDir = getContribDir(owner, name)
@@ -23,17 +24,20 @@ export async function todoCompact(
     }
     const oldest = archived[0]?.archived ?? '—'
     const newest = archived[archived.length - 1]?.archived ?? '—'
+    const withExecutions = archived.filter(item => item.executions.length > 0).length
     return [
       `## Archive — ${owner}/${name}`,
       '',
-      `> ${archived.length} items · oldest: ${oldest} · newest: ${newest}`,
+      `> ${archived.length} items · ${withExecutions} with execution history · oldest: ${oldest} · newest: ${newest}`,
       '',
       'Use `before` (date) or `keep` (count) to compact:',
       '- `todo_compact(before="2025-01-01")` — remove entries before this date',
       '- `todo_compact(keep=50)` — keep only the latest 50 entries',
+      '',
+      'Removing entries with execution history requires explicit `force=true`.',
     ].join('\n')
   }
 
-  const result = store.compact({ before, keep })
+  const result = store.compact({ before, keep, force })
   return `Compacted archive for ${owner}/${name}: removed ${result.removed}, remaining ${result.remaining}.`
 }

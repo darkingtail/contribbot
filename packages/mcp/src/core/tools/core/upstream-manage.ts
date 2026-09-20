@@ -1,4 +1,3 @@
-import { parseRepo } from '../../clients/github.js'
 import { UpstreamStore } from '../../storage/upstream-store.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, validateEnum } from '../../enums.js'
@@ -95,7 +94,7 @@ export async function upstreamDetail(
 
   // Try reading record file first
   const records = new RecordFiles(contribDir)
-  const recordContent = records.readRecord(`${upstreamRepo}@${version}`)
+  const recordContent = records.readUpstreamRecord(`${upstreamRepo}@${version}`)
   if (recordContent) {
     return recordContent
   }

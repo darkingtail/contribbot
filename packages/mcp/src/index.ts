@@ -1,19 +1,23 @@
 // Enums
 export {
   TodoStatus, TodoType, TodoDifficulty,
+  TodoExecutionPhase, TodoExecutionOutcome, TodoEvidenceSource,
   UpstreamItemStatus, UpstreamVersionStatus,
   DailyCommitAction, RepoRole, PRType,
   KnowledgeProposalStatus, KnowledgeProposalAction, KnowledgeSourceType,
   TODO_STATUSES, TODO_TYPES, TODO_DIFFICULTIES,
+  TODO_EXECUTION_PHASES, TODO_EXECUTION_OUTCOMES, TODO_EVIDENCE_SOURCES,
   UPSTREAM_ITEM_STATUSES, DAILY_COMMIT_ACTIONS,
   KNOWLEDGE_PROPOSAL_STATUSES, KNOWLEDGE_PROPOSAL_ACTIONS, KNOWLEDGE_SOURCE_TYPES,
 } from './core/enums.js'
 
 // Core layer — contribbot 独有能力
 export { todoList, todoAdd, todoDone, todoDelete, todoArchive } from './core/tools/core/todos.js'
+export { todoRestore, todoReopen, todoCancel, todoArchiveSnapshot } from './core/tools/core/todo-lifecycle.js'
 export { todoActivate } from './core/tools/core/todo-activate.js'
 export { todoDetail } from './core/tools/core/todo-detail.js'
 export { todoUpdate } from './core/tools/core/todo-update.js'
+export { todoProgress } from './core/tools/core/todo-progress.js'
 export { upstreamSyncCheck, syncHistory } from './core/tools/core/upstream-sync-check.js'
 export { upstreamList, upstreamDetail, upstreamUpdate } from './core/tools/core/upstream-manage.js'
 export { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from './core/tools/core/upstream-daily.js'
@@ -71,6 +75,8 @@ export { PatrolStore } from './core/storage/patrol-store.js'
 export type { PatrolRunInput, PatrolRunPaths, StoredPatrolRun } from './core/storage/patrol-store.js'
 export { BOUNTY_RAILS, BOUNTY_STATUSES, BountyStore } from './core/storage/bounty-store.js'
 export type { BountyItem, BountyRail, BountySettlement, BountyStatus } from './core/storage/bounty-store.js'
+export { TodoStore, currentTodoExecution } from './core/storage/todo-store.js'
+export type { TodoItem, ArchivedTodoItem, TodoExecution, TodoEvidence, TodoExecutionProgress } from './core/storage/todo-store.js'
 
 // Utilities
 export { safeWriteFileSync } from './core/utils/fs.js'

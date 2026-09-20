@@ -66,7 +66,7 @@ async function readRepositoryGuidance(owner: string, name: string): Promise<Guid
 function readProjectKnowledge(repo: string): GuidanceDocument[] {
   return listAllKnowledge()
     .filter(entry => entry.repo === repo)
-    .map(entry => {
+    .map((entry): GuidanceDocument | null => {
       const content = readKnowledge(repo, entry.name)
       return content
         ? { source: 'knowledge' as const, path: `knowledge/${entry.name}`, content: truncate(content, MAX_FILE_CHARS) }

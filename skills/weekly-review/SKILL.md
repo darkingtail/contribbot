@@ -37,8 +37,13 @@ metadata:
 
 分析：
 - **完成**：status = done
-- **推进中**：status = active 或 pr_submitted
+- **推进中**：status = active
+- **待办/想法**：status = backlog / idea
+- **暂停**：status = paused，不计为完成
+- **取消**：status = cancelled，不计为完成
 - **卡住**：status = active 但长时间未更新
+
+PR 进度独立；需要时用 `todo_detail` 查看，不因提交或合并 PR 改变 Todo 状态。
 
 ### 3. 上游同步状态
 
@@ -63,7 +68,9 @@ metadata:
 
 ### 5. 归档 & 清理
 
-调用 `todo_archive`，参数：`repo`。
+调用 `todo_archive(repo)` 只预览。用户明确选择后传入所选 `todo_id` 与 `snapshot`
+组成的 `selections`，不默认归档全部、不扩大到确认后新增的完成项。
+不回复就保留；done / cancelled 均不自动归档。
 
 如果归档数据量较大（提示用户），可调用 `todo_compact` / `upstream_compact` 清理旧数据。
 
@@ -81,11 +88,15 @@ metadata:
 | Issues | {n} closed / {n} opened |
 
 ### Todo 进展
-| 状态 | 数量 | 详情 |
-|------|------|------|
-| 完成 | {n} | {列表} |
-| 推进中 | {n} | {列表} |
-| 卡住 | {n} | {列表 + 原因} |
+| 状态 | 数量 | 详情 | 备注 |
+|------|------|------|------|
+| 完成 | {n} | {列表} | done，未归档 |
+| 推进中 | {n} | {列表} | active，PR 进度独立 |
+| 待办 | {n} | {列表} | backlog |
+| 想法 | {n} | {列表} | idea |
+| 暂停 | {n} | {列表} | paused，不是完成 |
+| 取消 | {n} | {列表} | cancelled，未归档，不是完成 |
+| 卡住 | {n} | {列表 + 原因} | active 中的观察，不是独立状态 |
 
 ### 上游同步（如适用）
 | 追踪源 | 覆盖率 | Pending |
@@ -96,7 +107,7 @@ metadata:
 {n} 条 pending：{已采纳/已驳回/仍待定 概要}
 
 ### 归档
-已归档 {n} 条已完成 todo。
+展示已结束未归档数量；仅实际获批执行后报告归档成功、失败和未处理的条目。
 
 ### 下周建议
 - {基于当前状态的优先事项建议}

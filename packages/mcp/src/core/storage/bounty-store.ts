@@ -40,9 +40,11 @@ interface BountiesFile {
 }
 
 export class BountyStore {
+  private baseDir: string
   private yamlPath: string
 
-  constructor(private baseDir: string) {
+  constructor(baseDir: string) {
+    this.baseDir = baseDir
     this.yamlPath = join(baseDir, 'bounties.yaml')
   }
 

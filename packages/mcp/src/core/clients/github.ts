@@ -126,6 +126,7 @@ export interface GitHubIssue {
 
 export interface GitHubPull {
   number: number
+  body?: string | null
   title: string
   state: string
   merged: boolean
@@ -271,6 +272,19 @@ export async function getIssueTimeline(owner: string, repo: string, issueNumber:
 
 export async function getPull(owner: string, repo: string, pullNumber: number): Promise<GitHubPull> {
   return ghApi<GitHubPull>(`/repos/${owner}/${repo}/pulls/${pullNumber}`)
+}
+
+// Execution verification validates the response at its trust boundary, not via a TS cast.
+export async function getGitReference(owner: string, repo: string, ref: string): Promise<unknown> {
+  return ghApi(`/repos/${owner}/${repo}/git/ref/${encodeURIComponent(ref.replace(/^refs\//, ''))}`)
+}
+
+export async function getGitCommit(owner: string, repo: string, sha: string): Promise<unknown> {
+  return ghApi(`/repos/${owner}/${repo}/git/commits/${encodeURIComponent(sha)}`)
+}
+
+export async function getGitTree(owner: string, repo: string, sha: string): Promise<unknown> {
+  return ghApi(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(sha)}`, { recursive: '1' })
 }
 
 export async function getPullFiles(owner: string, repo: string, pullNumber: number): Promise<GitHubPullFile[]> {
