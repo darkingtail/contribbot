@@ -4,6 +4,8 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { TodoStore } from '../../storage/todo-store.js'
 import { UpstreamStore } from '../../storage/upstream-store.js'
 import { markdownTable } from '../../utils/format.js'
+import { RepoConfig } from '../../storage/repo-config.js'
+import type { ProjectStatus } from '../../enums.js'
 
 const RESERVED_RUNTIME_DIRS = new Set(['remediation', 'worktrees'])
 
@@ -21,7 +23,8 @@ function isTrackedProjectDir(dir: string): boolean {
     || ['knowledge', 'patrol', 'sync'].some(folder => existsSync(join(dir, folder)))
 }
 
-export function projectList(): string {
+export function projectList(status: ProjectStatus | 'all' = 'active'): string {
+  if (!['active', 'archived', 'all'].includes(status)) throw new Error('Invalid project status filter.')
   const contribRoot = join(homedir(), '.contribbot')
 
   if (!existsSync(contribRoot)) {
@@ -40,6 +43,7 @@ export function projectList(): string {
     upstreamPending: number
     upstreamTotal: number
     lastActive: string
+    status: ProjectStatus
   }
 
   const projects: ProjectInfo[] = []
@@ -54,10 +58,12 @@ export function projectList(): string {
     for (const repo of repos) {
       const repoDir = join(ownerDir, repo)
       const fullName = `${owner}/${repo}`
+      const projectStatus = new RepoConfig(repoDir).load()?.status ?? 'active'
+      if (status !== 'all' && status !== projectStatus) continue
 
       const todoStore = new TodoStore(repoDir)
       const todos = todoStore.list()
-      const todosOpen = todos.filter(t => t.status !== 'done').length
+      const todosOpen = todos.filter(t => !['done', 'cancelled'].includes(t.status)).length
       const todosDone = todos.filter(t => t.status === 'done').length
 
       const upstreamStore = new UpstreamStore(repoDir)
@@ -84,21 +90,23 @@ export function projectList(): string {
         // ignore
       }
 
-      projects.push({ fullName, todosOpen, todosDone, upstreamPending, upstreamTotal, lastActive })
+      projects.push({ fullName, todosOpen, todosDone, upstreamPending, upstreamTotal, lastActive, status: projectStatus })
     }
   }
 
   if (projects.length === 0) {
-    return '## Projects\n\n_No projects found._'
+    return `## Projects\n\n_No ${status === 'all' ? '' : `${status} `}projects found. Use project_list with status "all" to include archived projects._`
   }
 
-  const headers = ['Project', 'Todos (open/done)', 'Upstream (pending/total)', 'Last Active']
+  const headers = ['Project', 'Status', 'Todos (open/done)', 'Upstream (pending/total)', 'Last Active', 'Note']
   const rows = projects.map(p => [
     p.fullName,
+    p.status,
     `${p.todosOpen} / ${p.todosDone}`,
     p.upstreamTotal > 0 ? `${p.upstreamPending} / ${p.upstreamTotal}` : '—',
     p.lastActive,
+    p.status === 'archived' ? 'Archived; data retained, patrol blocked' : 'Active maintenance',
   ])
 
-  return `## Projects\n\n> ${projects.length} projects tracked\n\n${markdownTable(headers, rows)}`
+  return `## Projects\n\n> ${projects.length} projects tracked (filter: ${status})\n\n${markdownTable(headers, rows)}`
 }

@@ -33,6 +33,9 @@ OBSERVATION_TOOLS = (
     "knowledge_proposals",
 )
 
+class ArchivedProjectError(ValueError):
+    """The project must be explicitly restored before patrol can run."""
+
 
 class PatrolRunner:
     def __init__(self, mcp: ContribbotMcpClient, analyzer: Analyzer, max_investigation_rounds: int = 3) -> None:
@@ -53,6 +56,7 @@ class PatrolRunner:
         proposal_results: list[str] = []
 
         async with self.mcp:
+            await self._require_active(repo)
             run.status = "observing"
             observations = await self._collect_observations(repo, trace)
             try:
@@ -131,6 +135,7 @@ class PatrolRunner:
         confirm_action: Callable[[PatrolAction], bool] | None = None,
     ) -> PatrolResult:
         async with self.mcp:
+            await self._require_active(repo)
             stored = json.loads(await self.mcp.call_tool("patrol_run_get", {"repo": repo, "run_id": run_id}))
             run = PatrolRun.model_validate(stored["run"])
             if run.repo != repo or run.id != run_id:
@@ -158,6 +163,13 @@ class PatrolRunner:
             run=run, report=report, analysis=analysis, actions=actions,
             proposal_results=[], record_result=record_result,
         )
+
+    async def _require_active(self, repo: str) -> None:
+        state = json.loads(await self.mcp.call_tool("project_status", {"repo": repo}))
+        if state.get("status") == "archived":
+            raise ArchivedProjectError(f"Project {state.get('repo', repo)} is archived. Use project_restore first.")
+        if state.get("status") != "active":
+            raise ValueError("Unable to verify project lifecycle. Update/reconnect contribbot MCP before patrol.")
 
     async def _execute_actions(
         self,

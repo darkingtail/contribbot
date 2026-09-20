@@ -46,4 +46,18 @@ describe('projectList', () => {
     mkdirSync(join(home, '.contribbot', 'owner', 'knowledge-repo', 'knowledge'), { recursive: true })
     expect(projectList()).toContain('owner/knowledge-repo')
   })
+
+  it('counts paused work as open and excludes cancelled work independently of linked PRs', () => {
+    const project = join(home, '.contribbot', 'owner', 'repo')
+    mkdirSync(project, { recursive: true })
+    writeFileSync(join(project, 'todos.yaml'), JSON.stringify({ todos:
+      ['idea', 'backlog', 'active', 'paused', 'done', 'cancelled'].map(status => ({
+        ref: status, title: status, type: 'feature', status, pr: 42,
+        difficulty: null, branch: null, claimed_items: null, executions: [],
+        created: '2026-09-19', updated: '2026-09-19',
+      })),
+    }))
+
+    expect(projectList()).toContain('| owner/repo | active | 4 / 1 |')
+  })
 })

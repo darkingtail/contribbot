@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from contribbot_agent.models import PatrolAnalysis
-from contribbot_agent.patrol import OBSERVATION_TOOLS, PatrolRunner
+from contribbot_agent.patrol import ArchivedProjectError, OBSERVATION_TOOLS, PatrolRunner
 
 
 class FakeMcpClient:
@@ -21,6 +21,8 @@ class FakeMcpClient:
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         self.calls.append((name, arguments))
+        if name == "project_status":
+            return json.dumps({"repo": arguments["repo"], "status": "active"})
         if name == "patrol_record":
             assert json.loads(arguments["snapshot_json"])["repo"] == "owner/repo"
             assert json.loads(arguments["analysis_json"])["health"] == "attention"
@@ -37,6 +39,36 @@ class FakeMcpClient:
     async def read_knowledge(self, repo: str) -> dict[str, str]:
         assert repo == "owner/repo"
         return {"ci": "# CI\n\nUse pnpm."}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["run", "resume"])
+async def test_archived_project_blocks_before_observations_or_record_writes(operation: str) -> None:
+    class ArchivedMcp(FakeMcpClient):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+            self.calls.append((name, arguments))
+            assert name == "project_status"
+            return json.dumps({"repo": "owner/repo", "status": "archived"})
+
+    mcp = ArchivedMcp()
+    runner = PatrolRunner(mcp, FakeAnalyzer())
+    with pytest.raises(ArchivedProjectError, match="project_restore"):
+        if operation == "run":
+            await runner.run("owner/repo")
+        else:
+            await runner.resume("owner/repo", "old-run")
+    assert [name for name, _ in mcp.calls] == ["project_status"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_lifecycle_fails_closed() -> None:
+    class UnknownMcp(FakeMcpClient):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+            assert name == "project_status"
+            return '{"status":"unknown"}'
+
+    with pytest.raises(ValueError, match="lifecycle"):
+        await PatrolRunner(UnknownMcp(), FakeAnalyzer()).run("owner/repo")
 
 
 class FakeAnalyzer:
@@ -107,7 +139,7 @@ async def test_patrol_runs_the_closed_loop_and_records_audit_artifacts() -> None
     )
 
     names = [name for name, _ in mcp.calls]
-    assert names[0] == "repo_config"
+    assert names[:2] == ["project_status", "repo_config"]
     assert set(OBSERVATION_TOOLS).issubset(names)
     assert "knowledge_propose_update" in names
     assert names[-1] == "patrol_record"
@@ -228,6 +260,6 @@ async def test_resume_executes_a_previously_skipped_action_without_reanalysis() 
     )
 
     names = [name for name, _ in mcp.calls]
-    assert names == ["patrol_run_get", "todo_add", "todo_detail", "patrol_record"]
+    assert names == ["project_status", "patrol_run_get", "todo_add", "todo_detail", "patrol_record"]
     assert result.actions[0].status == "completed"
     assert result.run.id == "run-1"

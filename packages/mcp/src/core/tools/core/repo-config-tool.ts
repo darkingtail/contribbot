@@ -1,8 +1,8 @@
 import { ghApi, getCurrentUser, parseRepo } from '../../clients/github.js'
-import { RepoConfig } from '../../storage/repo-config.js'
+import { RepoConfig, upstreamStatus, upstreamStatusMarker } from '../../storage/repo-config.js'
 import type { RepoConfigData, RepoRole } from '../../storage/repo-config.js'
 import { getContribDir } from '../../utils/config.js'
-import { resolveToParent } from '../../utils/resolve-repo.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
 
 /**
  * Auto-detect repo config by querying GitHub API.
@@ -59,16 +59,17 @@ async function detectConfig(owner: string, name: string): Promise<RepoConfigData
  */
 export async function getOrInitConfig(repo?: string): Promise<{ config: RepoConfigData, owner: string, name: string }> {
   const parsed = parseRepo(repo)
-  const resolved = await resolveToParent(parsed.owner, parsed.name)
+  const resolved = await resolveRepo(repo)
   const { owner, name } = resolved
+  const requestedFork = owner !== parsed.owner || name !== parsed.name ? `${parsed.owner}/${parsed.name}` : null
   const configStore = new RepoConfig(getContribDir(owner, name))
 
   let config = configStore.load()
   if (!config) {
     config = await detectConfig(owner, name)
     // If we resolved from a fork, record the fork field
-    if (resolved.fork) {
-      config.fork = resolved.fork
+    if (requestedFork) {
+      config.fork = requestedFork
     }
     configStore.save(config)
   }
@@ -80,9 +81,13 @@ export async function getOrInitConfig(repo?: string): Promise<{ config: RepoConf
  * View or update repo config.
  */
 export async function repoConfig(repo?: string, upstream?: string): Promise<string> {
+  if (upstream !== undefined && upstream !== '' && !/^[\w][\w.-]*\/[\w][\w.-]*$/.test(upstream)) {
+    throw new Error('upstream must be owner/repo, or an empty string to explicitly confirm none.')
+  }
   const parsed = parseRepo(repo)
-  const resolved = await resolveToParent(parsed.owner, parsed.name)
+  const resolved = await resolveRepo(repo)
   const { owner, name } = resolved
+  const requestedFork = owner !== parsed.owner || name !== parsed.name ? `${parsed.owner}/${parsed.name}` : null
   const configStore = new RepoConfig(getContribDir(owner, name))
 
   // If setting upstream, update and return
@@ -90,11 +95,12 @@ export async function repoConfig(repo?: string, upstream?: string): Promise<stri
     let config = configStore.load()
     if (!config) {
       config = await detectConfig(owner, name)
-      if (resolved.fork) config.fork = resolved.fork
+      if (requestedFork) config.fork = requestedFork
     }
     config.upstream = upstream || null
+    config.upstream_confirmed = true
     configStore.save(config)
-    return `Updated **${owner}/${name}** upstream → \`${upstream || 'null'}\``
+    return `Updated **${owner}/${name}** upstream → \`${upstream || 'null'}\`` + `\nExternal upstream status: ${upstreamStatus(config)}\n${upstreamStatusMarker(config)}`
   }
 
   // View: auto-init if needed
@@ -105,17 +111,22 @@ export async function repoConfig(repo?: string, upstream?: string): Promise<stri
     '',
   ]
 
-  if (resolved.fork) {
-    lines.push(`> Resolved from fork \`${resolved.fork}\` → parent \`${owner}/${name}\``, '')
+  if (requestedFork) {
+    lines.push(`> Resolved from fork \`${requestedFork}\` → parent \`${owner}/${name}\``, '')
   }
 
   lines.push(
     '| Field | Value |',
     '|-------|-------|',
     `| role | \`${config.role}\` |`,
+    `| status | \`${config.status ?? 'active'}\` |`,
+    `| archived_at | ${config.archived_at ?? '—'} |`,
     `| org | ${config.org ? `\`${config.org}\`` : '—'} |`,
     `| fork | ${config.fork ? `[${config.fork}](https://github.com/${config.fork})` : '—'} |`,
     `| upstream | ${config.upstream ? `[${config.upstream}](https://github.com/${config.upstream})` : '—'} |`,
+    '',
+    upstreamStatusMarker(config),
+    `External upstream status: ${upstreamStatus(config)}${upstreamStatus(config) === 'pending' ? ' (未确认; null does not mean an explicit no)' : ''}`,
     '',
     `> Config path: \`~/.contribbot/${owner}/${name}/config.yaml\``,
   )

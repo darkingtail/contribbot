@@ -39,6 +39,8 @@ export async function repoInfo(repo?: string): Promise<string> {
   const lines = [
     `## ${repoData.full_name}`,
     '',
+    `[${repoData.full_name}](${repoData.html_url})`,
+    '',
     repoData.description ?? '_No description_',
     '',
     `| | |`,
