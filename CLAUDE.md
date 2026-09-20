@@ -85,16 +85,23 @@ pnpm test         # 运行所有测试
 
 | 工具 | 说明 |
 |------|------|
-| `todo_list` | 查看本地 todos（YAML），按 ref# 排序，分 Active/Backlog&Ideas/Done 表格 |
+| `todo_list` | 查看本地 todos（YAML），按 ref# 排序，分 Active/Backlog&Ideas/Paused/Done/Cancelled 表格 |
 | `todo_add` | 添加 todo，支持 `ref` 参数自动拉 issue label 识别类型 |
 | `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、检测已有 claim |
 | `todo_detail` | 查看实现记录，自动刷新 PR reviews（5 分钟缓存） |
-| `todo_update` | 更新状态 / 关联 PR / 追加笔记 |
-| `todo_done` | 标记完成 |
+| `todo_context` | 读取结构化 Todo 与执行；`todo.lifecycle_revision` 缺省为 0 |
+| `todo_update` | 状态仅可写 idea/backlog/active；追加笔记或关联 PR，关联不改变主状态 |
+| `todo_done` | 完成但不归档；managed 必须携带完整 completion |
+| `todo_cancel` | 取消未开工或非受管 Todo：repo、todo_id、expected_lifecycle_revision、decision；不创建执行、不归档 |
+| `todo_control` | 记录受管执行的 pause/cancel 请求；取消须以匹配 decision 的本地 stopped 安全收尾 |
 | `todo_claim` | 领取 issue 工作项：评论到 GitHub + 本地记录，自动升 active，模板可配置 |
 | `todo_delete` | 删除 todo |
-| `todo_archive` | 归档已完成的 todos |
+| `todo_archive` | 预览 done/cancelled；另行确认精确 ID 与快照后归档 |
 | `todo_compact` | 清理归档数据，按日期或条数 |
+
+Todo 仅接受 idea/backlog/active/paused/done/cancelled。旧 Todo 状态的读写均拒绝，
+不自动转换；上游条目的 pr_submitted 不受影响。取消版本从 todo_context 获取，
+使用 todo.lifecycle_revision，不是 workflow_revision。
 
 ### Issues & PRs
 
@@ -176,7 +183,7 @@ pnpm test         # 运行所有测试
 │   └── {upstream-owner}/{upstream-repo}/
 │       └── {version}.md
 ├── knowledge.proposals.yaml            # 知识演进提案索引（pending/applied/rejected）
-├── todos.archive.yaml                  # 已完成 todos 归档（done + not_planned）
+├── todos.archive.yaml                  # 显式归档的终态 todos（done + cancelled）
 ├── upstream.archive.yaml               # 已归档的上游 daily commits
 ├── templates/                          # 自定义模板（首次使用自动生成）
 │   ├── todo_record.md                  # todo 实现文档模板
@@ -185,8 +192,22 @@ pnpm test         # 运行所有测试
 └── sync/                               # 同步记录
 ```
 
+## 每日进度记录
+
+- 用户要求每天记录项目现状与进度，文档入口为 `docs/progress/README.md`，
+  按 Asia/Shanghai 日期维护 `docs/progress/YYYY-MM-DD.md`，同一天更新同一份文件。
+- 当天有实质推进、验证结果、阻塞变化或用户决定时及时补充，不能只留在对话里，
+  也不等每日定时检查才记录。无新增进展时如实注明，不编造工作或补造验收。
+- 固定区分前面（发现任务）、中间（执行任务）、后面（交付与沉淀）的当前状态，
+  同时记录今日变化、验证证据及限制、阻塞与待决事项、下一步和 Git/运行时/数据状态。
+- 区分已设计、已实现、已验证、待用户验收；历史测试注明日期和对应候选，
+  不冒充当天重跑。与旧文档或看板矛盾时核实依据并说明，不盲目照抄旧 Next。
+- 进度文档不是任务数据库或操作授权；记录本身不完成、取消或归档 Todo，
+  不自动提交、推送、清空数据、修改配置或开始新的产品开发。
+
 ## 设计规范
 
+- **提问先交代背景** — 向用户提出疑问或请求决策前，先讲清具体场景、已知事实与不确定点、为什么需要用户判断，以及不同选择会影响什么；不让用户在缺少背景时选择技术结论。
 - 所有列表/表格输出必须带**备注列**（提供上下文信息）
 - 工具间数据不共享状态，每次调用独立
 - repo 参数必须显式传 "owner/repo"，无默认值
@@ -194,4 +215,4 @@ pnpm test         # 运行所有测试
 - **模板文件化** — templates/ 目录，首次使用自动生成带注释的默认模板
 - **todo 即有文档** — todo_add 时立即创建实现文档
 - **用户确认优先** — activate 时 LLM 先出方案大纲，用户确认后再写入
-- **not_planned 自动归档** — 标记 not_planned 时自动移入 todos.archive.yaml
+- **结束与归档分开** — done / cancelled 保留未归档；todo_archive 默认预览，用户明确选择精确快照后才归档。恢复展示不等于重开，重开不等于开工。

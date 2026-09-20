@@ -81,7 +81,7 @@ Skills are guided workflows that orchestrate MCP tools. In Claude Code, trigger 
 | `contribbot:project-onboard` | New project setup — detect fork/upstream, init config, first sync      |
 | `contribbot:daily-sync`      | Daily check — sync fork, fetch upstream commits, skip noise, triage    |
 | `contribbot:start-task`      | Start working — pick todo, activate, LLM generates implementation plan |
-| `contribbot:todo`            | Todo lifecycle — add, activate, claim, update, done, archive, compact  |
+| `contribbot:todo`            | Todo lifecycle — add, activate, progress, claim, update, done, cancel, archive |
 | `contribbot:issue`           | Issue management — list, detail, create, close, comment                |
 | `contribbot:pr`              | PR management — list, summary, create, update, review, reply           |
 | `contribbot:pre-submit`      | Pre-merge check — PR review, CI status, security alerts                |
@@ -138,18 +138,21 @@ All data is local in `~/.contribbot/{owner}/{repo}/`:
 │                            #   fork: your fork repo or null
 │                            #   upstream: external upstream or null
 │
-├── todos.yaml               # Active todos
+├── todos.yaml               # Unarchived todos, including done and cancelled
+│                            #   id: stable Todo identity
 │                            #   ref: issue number (#123) or custom slug
 │                            #   title, type (bug/feature/docs/chore)
-│                            #   status: idea → backlog → active → pr_submitted → done | not_planned
+│                            #   status: idea|backlog|active|paused|done|cancelled
+│                            #   PR progress is independent; no automatic archival
 │                            #   difficulty: easy|medium|hard
 │                            #   pr, branch, claimed_items
+│                            #   executions: resumable Phase/Next/Evidence history
 │
 ├── todos/                   # Implementation records (one per todo)
 │   ├── 123.md               #   Created at todo_add, enriched at todo_activate
 │   └── playground.md        #   LLM generates implementation plan here
 │
-├── todos.archive.yaml       # Archived todos (done + not_planned)
+├── todos.archive.yaml       # Explicitly archived todos (done + cancelled)
 │                            #   Use todo_compact to clean old entries
 │
 ├── upstream.yaml            # Upstream tracking
@@ -206,6 +209,20 @@ Templates are auto-generated with documentation on first use. Edit them to custo
   - Variables: `{{items}}`, `{{user}}`, `{{repo}}`, `{{issue}}`
 
 ### Archive & Compact
+
+The current source accepts only the six Todo states listed above. Old Todo states
+`pr_submitted` and `not_planned` are rejected on reads and writes, without automatic
+conversion. Upstream item status `pr_submitted` is a separate domain and remains valid.
+
+Cancel unstarted or unmanaged work with `todo_cancel`, using its exact Todo ID,
+observed lifecycle revision and explicit user decision. Managed work requires
+`todo_control` with `command.kind=cancel`, followed by safe local `stopped` closure with the same
+decision. Neither path archives the Todo or changes GitHub.
+
+Completed and cancelled Todos remain visible until separately selected through
+`todo_archive`. Retry interrupted explicit archival with the original selections;
+old combined completion/archive recovery is no longer supported. These source
+capabilities do not imply runtime activation or authorization to migrate personal data.
 
 Archived data accumulates over time. Use `todo_compact` / `upstream_compact` to clean up — by date or count. See [docs/tools.md](docs/tools.md) for details.
 

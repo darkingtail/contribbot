@@ -5,6 +5,12 @@
 Reference Decision. The first patrol loop described here is now implemented in
 `packages/agent`. See [Repository Patrol Agent](patrol.md) for current behavior.
 
+This page records the earlier patrol scope, not a permanent ban on task-level
+agent collaboration. For the subsequent Todo execution workflow, see the
+[2026-09-17 research and design](../plans/2026-09-17-phase3-task-execution-design.md).
+That document compares pinned GitHub references and remains a design proposal,
+not an implemented feature.
+
 ## Goal
 
 Phase 3 should start with a small, auditable patrol loop, not a generic agent

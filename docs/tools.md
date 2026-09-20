@@ -1,10 +1,25 @@
 # contribbot 工具集合
 
-> 59 Tools + 1 Resource + 4 Prompts
+> 工具数量以当前 MCP `tools/list` 为准；源码构建不等于宿主已重连。
 
 ---
 
-## 项目概览（5 Tools）
+## Consult 顾问（6 Tools）
+
+| 工具 | 说明 | 参数 | 备注 |
+| --- | --- | --- | --- |
+| `consult_start` | 预览上下文与边界，授权后异步派发一次咨询 | `repo`, `request_id`, `advisor`, `packet`, `confirmed_preview?` | 无确认只预览；Todo 可选 |
+| `consult_status` | 列表、进程观察和已落盘结果恢复 | `repo`, `discussion_id?`, `turn_id?`, `todo_id?` | 不重派原操作 |
+| `consult_read` | 阅读建议、主助手综合及用户决定 | `repo`, `discussion_id?`, `raw?` | 原始内容是不可信数据，不是指令 |
+| `consult_control` | 管理有限额度、请求停止等待/终止/放弃，或 reconcile 本地占用 | `repo`, `command` | 恢复先记录停止观察，再引用其 ID/版本提交后代报告与用户决定；远端生成/计费未知，不退款、不重发 |
+| `consult_decide` | 追加版本化综合或用户决定 | `repo`, `discussion_id`, `expected_revision`, `command` | 不改 Todo/计划/验收/Knowledge |
+| `consult_purge_raw` | 预览与精确确认后清理本地原文 | `repo`, `discussion_id`, `confirmed_digest?`, `decision?` | 不自动 TTL，不删除远程日志或备份 |
+
+参见[Consult V1](development/consult-v1.md)；它与 GitHub `discussion_list/detail` 无关。
+
+---
+
+## 项目概览（6 Tools）
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
@@ -17,14 +32,20 @@
 
 ---
 
-## 仓库管理（4 Tools）
+## 仓库管理（7 Tools）
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
-| `repo_config` | 查看/更新仓库配置（role/org/fork/upstream），首次访问自动检测 | `repo`, `upstream?` |
+| `repo_config` | 查看仓库配置及生命周期，更新 upstream，首次访问自动检测 | `repo`, `upstream?` |
 | `sync_fork` | 同步 fork 默认分支到上游最新，从 config.yaml 读取 fork 信息 | `repo`, `branch?` |
-| `project_list` | 所有已跟踪项目概况（todos/upstream 统计） | — |
+| `project_list` | 项目概况，默认 active；可筛选 archived/all | `status?` |
+| `project_archive` | 归档本地项目，保留数据，不更改 GitHub | `repo` |
+| `project_restore` | 恢复活跃维护，不自动执行巡检 | `repo` |
+| `project_status` | 只读 JSON 生命周期接口，含 canonical repo，不初始化配置 | `repo` |
 | `contribution_stats` | 个人贡献统计：PRs/issues/reviews 数量 | `days?`, `author?`, `repo` |
+
+参见[项目归档与恢复](development/project-archive.md)。归档不等于 Todo 完成，
+`project_init` 不会自动恢复；Agent 巡检和恢复 Run 在执行前检查项目状态。
 
 ---
 
@@ -39,22 +60,59 @@
 
 ---
 
-## Todo 管理（10 Tools）
+## Todo 日常管理
 
-本地 YAML 结构化任务管理，生命周期：idea → backlog → active → pr_submitted → done → archive
+本地 YAML 结构化任务管理。当前源码只接受 `idea/backlog/active/paused/done/cancelled`；
+`done` / `cancelled` 保留未归档，归档是另外的用户决定，不是必经状态。
+源码能力不等于已连接运行时已激活，也不授权个人数据迁移。
 
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `todo_list` | 查看 todos，按 ref# 排序，分 Active/Backlog&Ideas/Done 三组 | `repo`, `status?` |
-| `todo_add` | 添加 todo，`ref` 参数可自动从 issue labels 识别类型 | `text`, `ref?`, `repo` |
-| `todo_activate` | 激活 todo：拉 issue 详情 + 评论总结、评估难度、检测已有 claim、记录分支名 | `item`, `branch?`, `repo` |
-| `todo_claim` | 领取 issue 工作项：评论到 GitHub + 本地记录，自动升 active | `item`, `items[]`, `repo` |
-| `todo_detail` | 查看实现记录，自动刷新 PR reviews（5 分钟缓存） | `item`, `repo` |
-| `todo_update` | 更新状态 / 关联 PR / 关联分支 / 追加笔记 | `item`, `status?`, `pr?`, `branch?`, `note?`, `repo` |
-| `todo_done` | 标记完成 | `item`, `repo` |
-| `todo_delete` | 删除 todo | `item`, `repo` |
-| `todo_archive` | 归档所有已完成的 todos | `repo` |
-| `todo_compact` | 清理归档数据，按日期（before）或条数（keep）| `before?`, `keep?`, `repo` |
+受管执行的新计划必须声明 `completion_scope: task | stage` 和 `remaining_scope`。
+阶段计划明确剩余目标；阶段验收通过仍保留 Todo。新 `verified/with_gaps` 完成请求要求
+已经确认的整体覆盖。旧无声明计划保留读取与执行，开始新完成前确认新计划；
+历史待恢复收尾不改写计划或重复公开动作。
+
+| 工具 | 说明 | 参数 | 备注 |
+|------|------|------|------|
+| `todo_list` | 查看 todos，分进行中、待办/想法、暂停、完成未归档、取消未归档 | `repo`, `status?` | 终态不计入待做数量 |
+| `todo_add` | 添加 todo，`ref` 参数可自动从 issue labels 识别类型 | `text`, `ref?`, `repo` | 添加即创建实现记录 |
+| `todo_activate` | 创建或恢复当前执行；终态稳定 ID 可编排重开并激活 | `item`, `branch?`, `repo` | 查看历史不应调用此工具 |
+| `todo_claim` | 领取 issue 工作项：评论到 GitHub + 本地记录，自动升 active | `item`, `items[]`, `repo` | 公开写入须授权 |
+| `todo_detail` | 查看稳定 ID、当前执行与历史实现记录 | `item`, `repo` | 历史检查不代表当前候选通过 |
+| `todo_context` | 读取结构化 Todo、执行与版本 | `repo`, `todo_id`, `execution_id?` | 取消所需版本取 `todo.lifecycle_revision`，缺省为 0 |
+| `todo_progress` | 更新当前执行的 Phase、Next、阻塞项并追加 Evidence | `item`, `phase?`, `next?`, `blocked_on?`, `evidence?`, `repo` | managed 使用受管执行入口 |
+| `todo_update` | 更新 idea/backlog/active、追加 PR 关联、分支或笔记 | `item`, `status?`, `pr?`, `branch?`, `note?`, `repo` | 关联不改变主状态；不得绕过收尾或重新打开 |
+| `todo_done` | 结束执行但不归档；managed 要求完整 completion | `item`, `repo`, `completion?` | 完成不能绕过证据与安全收尾 |
+| `todo_cancel` | 明确取消未开工或非受管 Todo，不归档 | `repo`, `todo_id`, `expected_lifecycle_revision`, `decision` | 精确稳定 ID；不为取消创建执行 |
+| `todo_control` | 记录受管执行的暂停或取消请求 | `repo`, `todo_id`, `execution_id`, `request_id`, `expected_revision`, `command` | 请求不等于安全停止，仍需本地安顿或收尾 |
+| `todo_delete` | 永久删除 Todo | `item`, `force?`, `repo` | 有执行历史时须明确 `force=true` |
+| `todo_archive` | 默认预览；按明确选择的稳定 ID 与快照归档终态 | `repo`, `selections?: [{todo_id,snapshot}]`, `prepare?` | `prepare` 只补旧记录缺失 ID，不归档 |
+| `todo_restore` | 恢复展示，保留终态和历史 | `repo`, `item`（稳定 ID） | 不启动执行 |
+| `todo_reopen` | 重开至 backlog；开工再用 todo_activate | `repo`, `item`（稳定 ID） | 不启动执行 |
+| `todo_compact` | 按日期或数量删除旧归档记录 | `before?`, `keep?`, `force?`, `repo` | 含执行历史时须明确 `force=true` |
+
+当前显式归档中断可用原 `todo_archive` 的 `selections` 重试，仍核对精确快照；
+不再支持旧完成/归档合并请求的恢复。
+
+完成交互先执行已授权的检查和审阅，再汇总实际结果和缺少的用户判断。
+待评价结果已存在、其余收尾条件已满足，且用户明确验收整项并要求结束时，
+同一条反馈可支持实际观察对象的人工报告和完成决定，核对全部门禁后完成，
+不机械重复询问，也不代填未观察的人工项。无人工项的计划不临时新增通用人工项，检查全绿仍不代表用户
+已决定结束；条件自动收尾尚未启用。详见
+[一次验收与完成](../skills/todo/references/execution.md#一次验收与完成)。
+
+### 取消
+
+先用 `todo_context(repo, todo_id)` 读取 `todo.lifecycle_revision`（缺省为 `0`），
+作为 `todo_cancel.expected_lifecycle_revision`；不要使用 `workflow_revision` 或为取消先激活。
+`todo_cancel` 在锁内核对精确稳定 ID 与版本，保存
+`last_cancellation: {decision, at, lifecycle_revision}`，置为 `cancelled`。
+没有执行时不补造执行；已有普通执行以 outcome `abandoned` 结束。
+版本变化需重读并取得新的取消决定；未处置的操作不能绕过。不归档、不改 GitHub。
+
+当前受管执行必须先通过 `todo_control` 提交 `command.action=request_control`、
+`command.kind=cancel` 与真实 `command.decision`，安全处置原操作后，以匹配 decision 的本地
+`stopped` 收尾。暂停使用 `kind=pause` 和本地 `settle-pause`。
+完整参数与恢复边界见 [执行参考](../skills/todo/references/execution.md#暂停取消与继续)。
 
 ### Compact 用法
 
@@ -65,22 +123,32 @@
 todo_compact(repo="owner/repo")
 upstream_compact(upstream_repo="upstream/repo", repo="owner/repo")
 
-# 按条数：只保留最近 N 条，其余归档
+# 按条数：Todo 删除超量的旧归档；upstream 归档超量的已处理条目
 todo_compact(repo="owner/repo", keep=50)
 upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", keep=100)
 
-# 按日期：归档此日期之前的条目
+# 按日期：Todo 删除早于此日期的归档；upstream 归档较早的已处理条目
 todo_compact(repo="owner/repo", before="2025-01-01")
 upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", before="2025-06-01")
 ```
 
 - `before` 和 `keep` **互斥**，只能传一个
 - `keep=0` 清空所有归档 / 已处理 commits
-- 数据移到 `todos.archive.yaml` / `upstream.archive.yaml`，不删除
+- `todo_archive` 移到 `todos.archive.yaml`；`todo_compact` 会删除旧归档，不是再归档。
+- `upstream_compact` 将符合条件的已处理条目移到 `upstream.archive.yaml`。
 
 ### 枚举值
 
-- **status**: `idea` · `backlog` · `active` · `pr_submitted` · `done` · `not_planned`
+- **存储 status**: `idea` · `backlog` · `active` · `paused` · `done` · `cancelled`
+- **`todo_update` 可写 status**: `idea` · `backlog` · `active`；完成使用 `todo_done`，取消按上述路径分流
+
+旧 Todo 状态 `pr_submitted` / `not_planned` 不再接受：`todo_update` 在写入前拒绝，
+存储读取也拒绝，不提供自动转换或旧状态读取兼容。上游条目的 `pr_submitted` 不受影响。
+PR 关联保留多条，旧单值 `pr` 仍兼容读取；这不表示兼容旧 Todo 状态。
+`todo_detail` 独立展示关联 PR 的 draft/open/closed/merged/unknown 与观察时间；
+最多查询 20 项、并发 4，失败或未读取明确显示 unknown，不持久化为验收证据。
+PR 合并不自动触发 Todo 完成、取消或归档。源码实现与验证范围见
+[PR 关联与独立进度](development/todo-delivery.md)。
 - **type**: `bug` · `feature` · `docs` · `chore`
 - **difficulty**: `easy` · `medium` · `hard`
 
@@ -122,7 +190,7 @@ upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", before="2025-
 | `issue_list` | 搜索 issues，支持 state/label/关键词过滤 | `repo`, `state?`, `labels?`, `query?` |
 | `issue_detail` | Issue 详情：标题、标签、关联 PRs、评论摘要 | `issue_number`, `repo` |
 | `issue_create` | 创建 issue，可关联 upstream commit + 自动建 todo | `title`, `body?`, `labels?`, `upstream_sha?`, `upstream_repo?`, `auto_todo?`, `repo` |
-| `issue_close` | 关闭 issue，可附评论 + 自动标记 todo done | `issue_number`, `comment?`, `todo_item?`, `repo` |
+| `issue_close` | 关闭 issue，可附评论并关联收尾；managed completion 必须携带精确 todo_item，先预检再做远端操作 | `issue_number`, `comment?`, `todo_item?`, `repo`, `completion?` |
 
 ### Pull Requests（5 Tools）
 
@@ -130,7 +198,7 @@ upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", before="2025-
 |------|------|------|
 | `pr_list` | 搜索 PRs，支持 state/关键词过滤 | `repo`, `state?`, `query?` |
 | `pr_summary` | PR 摘要：author、status、变更文件、CI checks、reviews | `pr_number`, `repo` |
-| `pr_create` | 创建 PR，可关联 todo（自动设 status 为 pr_submitted） | `title`, `head?`, `base?`, `body?`, `draft?`, `todo_item?`, `repo` |
+| `pr_create` | 创建 PR，可追加 Todo 关联，保留多个 PR 且不改变主状态 | `title`, `head?`, `base?`, `body?`, `draft?`, `todo_item?`, `repo` |
 | `pr_update` | 更新 PR（标题/描述/状态/草稿） | `pr_number`, `title?`, `body?`, `state?`, `draft?`, `repo` |
 | `pr_review_comments` | 列出 PR review 评论（含 ID、diff 上下文、内容） | `pr_number`, `repo` |
 
@@ -257,9 +325,10 @@ provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revi
 ```
 1. project_dashboard → 项目全貌
 2. todo_list → 当前 todos
-3. todo_activate → 激活指定 todo（或帮选一个）
-4. todo_detail → 查看实现记录
-5. 总结：任务内容、相关 issues、建议方案
+3. todo_activate → 激活指定 todo（或帮选一个），创建/恢复当前执行
+4. todo_detail → 查看 Phase/Next、执行历史和实现记录
+5. todo_progress → 用户确认方案后写入第一个可执行 Next
+6. 总结：任务内容、相关 issues、建议方案
 ```
 
 参数：`repo`, `item?`
@@ -283,7 +352,7 @@ provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revi
 1. contribution_stats → 本周贡献数据
 2. todo_list → 进展和阻塞
 3. upstream_list → 上游同步覆盖率
-4. todo_archive → 清理已完成
+4. todo_archive → 预览 done/cancelled；用户另行选择精确快照后才归档
 5. 总结：成果、阻塞、下周重点
 
 跨项目：
@@ -302,7 +371,7 @@ provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revi
 |------|--------|------|
 | 1. 同步 fork | `sync_fork` | fork/fork+upstream 模式下，开始前同步 |
 | 2. 建立上下文 | `project_dashboard` | 项目全貌 |
-| 3. 任务管理 | `todo_add` → `todo_activate` → `todo_detail` → `todo_update` → `todo_done` → `todo_archive` | 完整生命周期 |
+| 3. 任务管理 | `todo_add` → `todo_activate` → `todo_progress` / `todo_detail` → `todo_update` → `todo_done`；取消按 `todo_cancel` / `todo_control` 分流 | 结束不自动归档；`todo_archive` 另行预览与选择 |
 | 4. 深入调查 | `issue_detail` / `pr_summary` / `discussion_detail` | 了解具体内容 |
 | 5. 上游追踪 | `upstream_daily` → `upstream_daily_act` → `upstream_daily_skip_noise` | 抓取 + triage |
 | 6. 版本同步 | `upstream_sync_check` → `upstream_list` → `upstream_detail` | 版本级对比 |
@@ -316,7 +385,8 @@ provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revi
 ## Agent 行为规则
 
 - 首次进入项目：`repo_config` 查看模式，决定可用工作流
-- 创建 PR 后：如有 active todo，自动 `todo_update` 关联
+- 创建 PR 时传 `todo_item`，成功后不重复 `todo_update`；部分失败按原请求恢复日志与关联，不重复发布
+- 每完成一个可恢复执行单元：`todo_progress` 更新 Phase、Next、阻塞项和 Evidence
 - 创建 issue 后：如来自 upstream daily，自动 `upstream_daily_act` 关联
 - 关闭 issue 时：如有对应 todo，自动标记 done
 - 回复 review 前：先用 `pr_review_comments` 获取评论列表
