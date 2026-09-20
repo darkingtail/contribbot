@@ -33,7 +33,7 @@ async function readYaml(file, fallback = {}) {
   try { return YAML.parse(await fs.readFile(file, 'utf8')) ?? fallback } catch { return fallback }
 }
 
-async function listProjects() {
+async function listProjects(status = 'active') {
   const owners = await fs.readdir(dataDir, { withFileTypes: true }).catch(() => [])
   const projects = []
   for (const owner of owners.filter(item => item.isDirectory() && !['remediation', 'worktrees'].includes(item.name))) {
@@ -42,6 +42,8 @@ async function listProjects() {
       const dir = path.join(dataDir, owner.name, repo.name)
       if (!await isTrackedProjectDir(dir)) continue
       const config = await readYaml(path.join(dir, 'config.yaml'))
+      const projectStatus = config.status ?? 'active'
+      if (status !== 'all' && projectStatus !== status) continue
       const todos = await readYaml(path.join(dir, 'todos.yaml'), { todos: [] })
       const latest = await readYaml(path.join(dir, 'patrol', 'latest.json'), {})
       const runId = latest.run_id
@@ -52,13 +54,15 @@ async function listProjects() {
       const items = Array.isArray(todos.todos) ? todos.todos : []
       projects.push({
         repo: `${owner.name}/${repo.name}`,
-        config: { role: config.role ?? null, fork: config.fork ?? null, upstream: config.upstream ?? null },
+        config: { role: config.role ?? null, fork: config.fork ?? null, upstream: config.upstream ?? null, status: projectStatus, archived_at: config.archived_at ?? null },
         todos: {
           total: items.length,
           active: items.filter(item => item.status === 'active').length,
           backlog: items.filter(item => ['backlog', 'idea'].includes(item.status)).length,
-          done: items.filter(item => ['done', 'not_planned'].includes(item.status)).length,
-          items: items.slice(0, 8),
+          done: items.filter(item => item.status === 'done').length,
+          paused: items.filter(item => item.status === 'paused').length,
+          cancelled: items.filter(item => item.status === 'cancelled').length,
+          items,
         },
         patrol: {
           runId: runId ?? null,
@@ -80,7 +84,14 @@ function sendJson(res, value) {
 
 async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`)
-  if (url.pathname === '/api/projects') return sendJson(res, { projects: await listProjects(), generatedAt: new Date().toISOString() })
+  if (url.pathname === '/api/projects') {
+    const status = url.searchParams.get('status') || 'active'
+    if (!['active', 'archived', 'all'].includes(status)) {
+      res.writeHead(400, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ error: 'Invalid project status filter' }))
+    }
+    return sendJson(res, { projects: await listProjects(status), generatedAt: new Date().toISOString() })
+  }
   const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1)
   const file = path.resolve(publicDir, requested)
   if (!file.startsWith(path.resolve(publicDir))) {
@@ -96,6 +107,7 @@ async function handler(req, res) {
   }
 }
 
-http.createServer(handler).listen(port, '127.0.0.1', () => {
-  console.log(`contribbot web http://127.0.0.1:${port}`)
+const server = http.createServer(handler)
+server.listen(port, '127.0.0.1', () => {
+  console.log(`contribbot web http://127.0.0.1:${server.address().port}`)
 })
