@@ -9,6 +9,7 @@ import { resolveRepo } from '../../utils/resolve-repo.js'
 import { todayDate } from '../../utils/format.js'
 import { formatTodoPullLinks, todoPulls } from '../../storage/todo-pulls.js'
 import { formatTodoPullProgress, observeTodoPulls } from './todo-pr-progress.js'
+import { formatConsultations } from '../../consult/projection.js'
 
 function formatTodoBasicInfo(todo: TodoItem, owner: string, name: string): string {
   const lines: string[] = [
@@ -143,6 +144,7 @@ export async function todoDetail(item: string, repo?: string): Promise<string> {
   const observedPulls = await observeTodoPulls(todoPulls(selected, `${owner}/${name}`))
   let todo = readCurrent()
   const pullProgress = () => `\n\n${formatTodoPullProgress(todo, `${owner}/${name}`, observedPulls)}`
+    + (todo.id ? formatConsultations(contribDir, todo.id) : '')
 
   let projection = store.recordProjection(todo)
   const projectionNote = () => projection.status === 'not_applicable' ? ''

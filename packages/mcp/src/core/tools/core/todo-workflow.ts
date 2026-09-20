@@ -2,6 +2,7 @@ import { applyHostCommand, executionContext } from '../../execution/local.js'
 import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
 import { TodoStore } from '../../storage/todo-store.js'
+import { todoConsultations } from '../../consult/projection.js'
 
 export async function todoContext(repo: string, todoId: string, executionId?: string, repairDocument = false) {
   const canonical = await resolveRepo(repo)
@@ -13,6 +14,7 @@ export async function todoContext(repo: string, todoId: string, executionId?: st
     ...(repaired ? executionContext(directory, todoId, executionId) : context),
     ...(repaired ? { document_projection: repaired } : {}),
     repo: `${canonical.owner}/${canonical.name}`,
+    consultations: todoConsultations(directory, todoId),
   }
 }
 
