@@ -2,11 +2,17 @@
 
 ## Setup
 
+Prerequisites: Node.js, pnpm, and uv. The Agent requires Python 3.11 or newer.
+
 ```bash
 git clone https://github.com/darkingtail/contribbot.git
 cd contribbot
-pnpm install
+pnpm deps:install
 ```
+
+`pnpm deps:install` installs all workspace Node dependencies and synchronizes the Agent's
+Python environment, including development/test dependencies. It does not start
+services or change Codex configuration. For Node-only development, use `pnpm install`.
 
 ## Development
 
@@ -16,6 +22,9 @@ For source-based MCP, Skills, Agent, and Web UI debugging, see
 ```bash
 pnpm build        # Build MCP server
 pnpm dev          # Run MCP server with tsx (debug)
+pnpm dev:setup    # Link local MCP source and Skills into Codex (backs up old copies)
+pnpm dev:check    # Check source links without changing configuration
+pnpm dev:remove   # Remove this checkout's dev registration; verify before cleaning config backups
 pnpm test         # Run tests
 ```
 
@@ -61,6 +70,7 @@ contribbot/
 - **Tools don't make qualitative judgments** — subtask identification, branch naming, noise filtering are LLM responsibilities
 - **Templates are files** — `templates/` directory, auto-generated on first use with documented variables
 - **Todo = record** — `todo_add` creates implementation doc immediately
+- **Todo is the aggregate** — structured `TodoExecution[]` in `todos.yaml` stores resumable Phase/Next/Evidence; `todos/*.md` remains prose
 - **User confirmation** — `todo_activate` generates plan draft, user confirms before writing
 
 ### Data Flow
@@ -81,7 +91,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 feat: add upstream_compact tool
-fix: archive preserves not_planned status
+fix: archive preserves cancelled status
 refactor: rename skill_write to knowledge_write
 docs: update README with compact usage
 test: add compact unit tests
@@ -93,9 +103,17 @@ chore: bump version to 0.0.2
 ```bash
 pnpm test                    # Run all tests
 pnpm --filter contribbot-mcp test   # Run MCP package tests only
+pnpm test:execution-smoke     # Build and exercise the isolated Todo execution flow
 ```
 
 Tests cover storage layer (TodoStore, UpstreamStore, RecordFiles, RepoConfig) and utility functions. Tool-level integration tests run via MCP protocol against `darkingtail/contribbot-test` repo.
+
+The execution smoke test uses temporary Git repositories, isolated storage and real
+MCP/CLI subprocesses, without contacting GitHub or changing personal contribbot data.
+See [Local Task Execution Validation](docs/development/task-execution-local.md) for
+the verified behaviors and the capabilities that are still incomplete.
+See [Todo Six-State Change](docs/development/todo-six-state.md) for the current
+breaking lifecycle contract, explicit cancellation and its regression results.
 
 ## Publishing
 
