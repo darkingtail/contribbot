@@ -8,10 +8,12 @@
 
 | 工具 | 说明 | 参数 | 备注 |
 | --- | --- | --- | --- |
-| `consult_start` | 预览上下文与边界，授权后异步派发一次咨询 | `repo`, `request_id`, `advisor`, `packet`, `confirmed_preview?` | 无确认只预览；Todo 可选 |
-| `consult_status` | 列表、进程观察和已落盘结果恢复 | `repo`, `discussion_id?`, `turn_id?`, `todo_id?` | 不重派原操作 |
+| `consult_prepare` | 使用 Runner 已检查的 binding 构造材料预览 | `repo`, `request_id`, `binding`, `packet`, `scope` | 只读材料，不探测、不启动 |
+| `consult_request` | 复核精确 preview、授权并登记一个待执行 Turn | `repo`, `request_id`, `binding`, `packet`, `confirmed_preview`, `authorization` | 只登记，不启动；随后用 `contribbot-run consult start` |
+| `consult_start` | 旧入口迁移提示 | 旧参数 | 固定返回 unsupported，不探测、不写入、不启动 |
+| `consult_status` / `consult_read` | 读取讨论、Turn 和结果 | `repo`, `discussion_id?`, `turn_id?` | 严格只读；恢复使用 Runner 显式命令 |
 | `consult_read` | 阅读建议、主助手综合及用户决定 | `repo`, `discussion_id?`, `raw?` | 原始内容是不可信数据，不是指令 |
-| `consult_control` | 管理有限额度、请求停止等待/终止/放弃，或 reconcile 本地占用 | `repo`, `command` | 恢复先记录停止观察，再引用其 ID/版本提交后代报告与用户决定；远端生成/计费未知，不退款、不重发 |
+| `consult_control` | 管理有限额度、请求停止等待/终止/放弃 | `repo`, `command` | 未 claim/dispatch 的 reservation 只有用户显式 abandon 才释放；已启动操作走 Runner observe/reconcile；远端生成/计费未知，不退款、不重发 |
 | `consult_decide` | 追加版本化综合或用户决定 | `repo`, `discussion_id`, `expected_revision`, `command` | 不改 Todo/计划/验收/Knowledge |
 | `consult_purge_raw` | 预览与精确确认后清理本地原文 | `repo`, `discussion_id`, `confirmed_digest?`, `decision?` | 不自动 TTL，不删除远程日志或备份 |
 

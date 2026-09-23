@@ -523,3 +523,11 @@ Claude round 166 的本地异常恢复边界已获用户“按此实现”确认
 
 实现边界、调用流程和验证入口见 [Consult V1](../development/consult-v1.md)，
 实际验证进度以 [当日日报](../progress/2026-09-20.md) 为准。
+
+## 后续分层草案（2026-09-21）
+
+用户随后确认 MCP 不负责启动 Agent，由主助手触发 contribbot 统一入口并按需执行，
+第一版不设常驻服务。新的包边界、Consult 工具调整和迁移验收见
+[Agent Runtime 分层拆分与 Consult 调整方案](2026-09-21-agent-runtime-separation.md)。
+该方案经 Claude round-169 评审，完整接口与实施批次仍待用户确认；
+不能将本节理解为旧实现已迁移，也不改写上述 9 月 20 日实现和验证事实。

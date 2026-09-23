@@ -41,7 +41,8 @@ pnpm test:dev-setup        # 隔离临时目录中的安装与恢复测试
 脚本只管理本机 Codex 的 contribbot 开发配置：
 
 - MCP：`$CODEX_HOME/config.toml`，未设置时为 `~/.codex/config.toml`。
-  `contribbot` 改为当前 Node 的绝对路径 + 仓库内 tsx + TypeScript 入口，启用该服务。
+  `contribbot` 改为当前 Node 的绝对路径 + 仓库内 `scripts/dev-mcp.mjs`，启用该服务。
+  该入口在同一进程内注册 tsx、显式 tsconfig 和 workspace 源码解析，不回退旧 dist。
   保留原有 env、超时、其他 MCP 和模型等配置值。
 - 仓库覆盖：如果本 contribbot 仓库的 `.codex/config.toml` 已定义 `contribbot`，
   同步更新其启动路径，避免旧 `dist` 配置覆盖全局设置；没有该条目时不新增。
@@ -52,6 +53,10 @@ pnpm test:dev-setup        # 隔离临时目录中的安装与恢复测试
 - 本地执行助手：随 `contribbot-todo/scripts/contribbot-exec.mjs` 链接可用，
   根据脚本真实路径定位源码，不依赖当前工作目录。setup 写配置前实际运行
   `check --schema` 探测启动，失败则不改配置和链接；`--dry-run` 不启动探测。
+- 顾问 Runner：随 `contribbot-consult/scripts/contribbot-run.mjs` 链接可用，
+  同样通过脚本真实路径发现源码，setup/check 运行 `--schema`，不调用模型。
+- MCP 启动检查：执行精确配置命令并发送 `initialize`，校验 JSON-RPC 输出；
+  使用合成认证标记避免 GitHub 登录检查，不调用工具、不联网，不代表真实认证已通过。
 - 旧副本：检查上述目录和 `$CODEX_HOME/skills`，仅备份并移出 frontmatter
   `name` 与源码相同的 contribbot Skills，避免重复发现；无关 Skills 原样保留。
 - `.mcp.json` 保持发布版本配置，不改 Claude Code、其他宿主或 contribbot 项目数据。
@@ -62,8 +67,9 @@ pnpm test:dev-setup        # 隔离临时目录中的安装与恢复测试
 
 **源码直连不等于已有进程热重载。** MCP 源码改动后需重新连接 MCP 或重启 Codex；
 Skill 没有显示更新时也重启 Codex。正在进行的会话可能仍保留旧上下文。
-`dev:check` 分别报告磁盘配置/链接与源码执行助手启动结果；
-后者有界执行 `check --schema` 并解析结果，不创建 Todo、不运行任务验收命令。
+`dev:check` 分别报告磁盘配置/链接、Todo/Runner 源码执行助手与 MCP 启动结果；
+探测有界执行 `check --schema`、`--schema` 和 `initialize` 并解析结果，
+不创建 Todo、不运行任务验收命令。
 它不证明当前 MCP 会话已刷新、业务验收通过，也不验证 GitHub 登录。
 它不遍历其他仓库、父目录或 profile 的配置。其他目录若仍加载旧版本，在该目录执行
 `codex mcp get contribbot` 查看最终生效的启动路径，检查是否有更高优先级的覆盖。
@@ -184,8 +190,7 @@ pnpm test:data-reset       # 仅在隔离临时 HOME 中测试
   "contribbot": {
     "command": "node",
     "args": [
-      "D:/dev/darkingtail/contribbot/packages/mcp/node_modules/tsx/dist/cli.mjs",
-      "D:/dev/darkingtail/contribbot/packages/mcp/src/mcp/index.ts"
+      "D:/dev/darkingtail/contribbot/scripts/dev-mcp.mjs"
     ]
   }
 }
@@ -200,8 +205,7 @@ pnpm test:data-reset       # 仅在隔离临时 HOME 中测试
 [mcp_servers.contribbot]
 command = "node"
 args = [
-  "D:/dev/darkingtail/contribbot/packages/mcp/node_modules/tsx/dist/cli.mjs",
-  "D:/dev/darkingtail/contribbot/packages/mcp/src/mcp/index.ts"
+  "D:/dev/darkingtail/contribbot/scripts/dev-mcp.mjs"
 ]
 ```
 
@@ -220,7 +224,8 @@ pnpm install
 pnpm dev
 ```
 
-修改 `packages/mcp/src/**` 后，重启 AI 会话或 MCP 连接，使宿主重新加载源码。
+修改 MCP/Core 源码后，重启 AI 会话或 MCP 连接，使宿主重新加载源码。
+移除脚本仍识别此前精确的两参数/三参数 tsx 配置，不删除未知组合或其他 checkout。
 
 ## 本地执行助手
 
@@ -253,6 +258,17 @@ pnpm test:dev-exec-smoke
 启动探测通过不等于完整业务验证，也不证明正在运行的 MCP 已加载同一源码。
 
 ## 本地 Skills
+
+### 顾问执行入口
+
+```powershell
+node "<已加载的 contribbot-consult Skill 绝对目录>/scripts/contribbot-run.mjs" --schema
+```
+
+MCP 的 `consult_prepare`/`consult_request` 只准备和登记，Runner 才运行指定 Turn。
+它加载 Core 与 Agent Runtime 的源码；worker 也使用对应的源码条件。
+调用、观察和恢复见 [Consult V1](consult-v1.md)。这不要求全局安装 Runner，
+也不会因一次 `dev:setup` 自动授权顾问、激活在途请求或启动常驻服务。
 
 开发态 Skills 位于：
 
