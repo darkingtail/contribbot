@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { projectInit } from './project-init.js'
@@ -145,5 +145,26 @@ describe('upstream confirmation', () => {
     const result = await projectInit('owner/repo')
     expect(result).toContain('_No active todos._')
     expect(result).not.toContain('Linked PR work')
+  })
+
+  it('keeps a healthy target init working when another tracked project has invalid Todo data', async () => {
+    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    const sibling = join(home, '.contribbot', 'other', 'broken')
+    mkdirSync(sibling, { recursive: true })
+    writeFileSync(join(sibling, 'config.yaml'), 'role: read\norg: null\nfork: null\nupstream: null\nupstream_confirmed: true\n', 'utf-8')
+    writeFileSync(join(sibling, 'todos.yaml'), 'todos:\n  - ref: old\n    title: Legacy state\n    type: chore\n    status: pr_submitted\n', 'utf-8')
+
+    const result = await projectInit('owner/repo')
+
+    expect(result).toContain('# Contribbot Context — owner/repo')
+    expect(result).toContain('other/broken')
+    expect(result).toContain('unknown / unknown')
+  })
+
+  it('still rejects when the current init target has invalid Todo data', async () => {
+    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    writeFileSync(join(dir, 'todos.yaml'), 'todos:\n  - ref: old\n    title: Legacy state\n    type: chore\n    status: pr_submitted\n', 'utf-8')
+
+    await expect(projectInit('owner/repo')).rejects.toThrow('Unsupported Todo status')
   })
 })

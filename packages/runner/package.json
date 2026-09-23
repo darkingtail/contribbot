@@ -1,0 +1,40 @@
+{
+  "name": "contribbot-runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "description": "contribbot deterministic execution runner boundary",
+  "bin": {
+    "contribbot-run": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "contribbot-source": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./src/consult-worker.ts",
+      "contribbot-source": "./src/consult-worker.ts",
+      "default": "./dist/consult-worker.js"
+    }
+  },
+  "dependencies": {
+    "contribbot-agent-runtime": "workspace:*",
+    "contribbot-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "tsx": "^4.21.0",
+    "vitest": "^4.0.18"
+  },
+  "scripts": {
+    "dev": "node --conditions=contribbot-source --import tsx src/cli.ts",
+    "build": "node ../../scripts/compile-package.mjs --package runner --mode build",
+    "typecheck": "node ../../scripts/compile-package.mjs --package runner --mode typecheck",
+    "test": "pnpm --filter contribbot-platform build && pnpm --filter contribbot-core build && pnpm --filter contribbot-agent-runtime build && pnpm build && node --test test/smoke.test.mjs && vitest run"
+  }
+}

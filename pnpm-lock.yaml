@@ -15,11 +15,43 @@ importers:
         specifier: ^2.8.2
         version: 2.8.2
 
+  packages/agent-runtime:
+    dependencies:
+      contribbot-platform:
+        specifier: workspace:*
+        version: link:../platform
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.4.0
+
+  packages/core:
+    dependencies:
+      contribbot-platform:
+        specifier: workspace:*
+        version: link:../platform
+      yaml:
+        specifier: ^2.8.2
+        version: 2.8.2
+      zod:
+        specifier: ^3.25.67
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.4.0
+
   packages/mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.27.1(zod@3.25.76)
+      contribbot-core:
+        specifier: workspace:*
+        version: link:../core
+      contribbot-platform:
+        specifier: workspace:*
+        version: link:../platform
       ofetch:
         specifier: ^1.4.1
         version: 1.5.1
@@ -45,6 +77,31 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@25.4.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/platform:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.4.0
+
+  packages/runner:
+    dependencies:
+      contribbot-agent-runtime:
+        specifier: workspace:*
+        version: link:../agent-runtime
+      contribbot-core:
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.4.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       vitest:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@25.4.0)(tsx@4.21.0)(yaml@2.8.2)

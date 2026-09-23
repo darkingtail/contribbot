@@ -1,0 +1,26 @@
+{
+  "name": "contribbot-agent-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "contribbot external agent provider, process and transport runtime",
+  "dependencies": {
+    "contribbot-platform": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0"
+  },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "contribbot-source": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/compile-package.mjs --package agent-runtime --mode build",
+    "typecheck": "node ../../scripts/compile-package.mjs --package agent-runtime --mode typecheck",
+    "test": "pnpm --filter contribbot-platform build && pnpm build && node --test test/*.test.mjs"
+  }
+}

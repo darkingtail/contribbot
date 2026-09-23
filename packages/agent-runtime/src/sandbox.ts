@@ -1,16 +1,23 @@
+import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { advisorEnvironment } from './binding.js'
-import { digest } from './contracts.js'
-import type { Binding } from './contracts.js'
+import { advisorEnvironment } from './environment.js'
 
 const execute = promisify(execFile)
 
+export interface ReadonlyProbeBinding {
+  executable: string
+  executable_digest: string
+}
+
+const digest = (value: unknown): string =>
+  createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')
+
 /** An offline OS write probe. It does not contact a model or inspect user documents. */
-export async function probeCodexReadonly(binding: Binding) {
+export async function probeCodexReadonly(binding: ReadonlyProbeBinding) {
   const root = mkdtempSync(join(tmpdir(), 'contribbot-readonly-'))
   const inside = join(root, 'inside.txt')
   const outside = `${root}-outside.txt`
@@ -46,17 +53,12 @@ export async function probeCodexReadonly(binding: Binding) {
     reason = verified ? 'Three attempted writes denied on this machine.' : 'Sandbox did not demonstrably deny all three writes.'
   }
   catch (error) {
-    // Never publish raw CLI errors: they can contain auth or installation details.
     reason = `Readonly probe unavailable (${error && typeof error === 'object' && 'code' in error ? String(error.code) : 'probe_error'}).`
   }
   finally {
-    // Only our freshly-created probe directory and exact adjacent file are removed.
     rmSync(root, { force: true, recursive: true })
     rmSync(outside, { force: true })
   }
-  const record = {
-    verified, reason, platform: process.platform, hostname: hostname(),
-    executable_digest: binding.executable_digest,
-  }
+  const record = { verified, reason, platform: process.platform, hostname: hostname(), executable_digest: binding.executable_digest }
   return { ...record, digest: digest(record) }
 }

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { createRequire } from 'node:module'
+import { createRequire, register as registerModule } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export function resolveSourceExecution(launcher = fileURLToPath(import.meta.url)) {
@@ -17,7 +17,8 @@ export function resolveSourceExecution(launcher = fileURLToPath(import.meta.url)
   }
   const entry = path.join(repo, 'packages/mcp/src/cli/execution.ts')
   const tsconfig = path.join(repo, 'packages/mcp/tsconfig.json')
-  for (const [label, file] of [['source entry', entry], ['source tsconfig', tsconfig]]) {
+  const sourceHook = path.join(repo, 'scripts/source-condition.mjs')
+  for (const [label, file] of [['source entry', entry], ['source tsconfig', tsconfig], ['source resolver', sourceHook]]) {
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
       throw new Error(`Missing execution ${label}: ${file}. Restore the current checkout; dist is never used.`)
     }
@@ -30,13 +31,14 @@ export function resolveSourceExecution(launcher = fileURLToPath(import.meta.url)
   catch {
     throw new Error(`Execution helper dependencies unavailable in ${repo}. Run pnpm install in that checkout. No dist, PATH or network fallback was executed.`)
   }
-  return { mode: 'source', repo, launcher: realLauncher, entry, tsconfig, api }
+  return { mode: 'source', repo, launcher: realLauncher, entry, tsconfig, api, sourceHook }
 }
 
 async function main() {
   try {
     const runtime = resolveSourceExecution()
     // Keep the same process, cwd, stdin and literal arguments as the execution CLI.
+    registerModule(pathToFileURL(runtime.sourceHook))
     const { register } = await import(pathToFileURL(runtime.api).href)
     register({ tsconfig: runtime.tsconfig })
     process.argv[1] = runtime.entry

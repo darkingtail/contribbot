@@ -6,7 +6,6 @@ export default defineConfig({
     'src/mcp/index.ts',
     'src/cli/execution.ts',
     'src/cli/check-supervisor.ts',
-    'src/cli/consult-supervisor.ts',
   ],
   format: 'esm',
   dts: true,

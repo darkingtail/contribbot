@@ -61,7 +61,8 @@ import { workflowCommandSchema } from '../core/execution/contracts.js'
 import { completionSchema } from '../core/execution/closure.js'
 import type { TodoCompletion } from '../core/tools/core/todos.js'
 import {
-  consultStart, consultStartSchema, consultStatus, consultRead, consultReadSchema,
+  consultStart, consultStartSchema, consultPrepare, consultPrepareSchema, consultRequest, consultRequestSchema,
+  consultStatus, consultRead, consultReadSchema,
   consultControl, consultControlSchema, consultDecide, consultDecideSchema, consultPurgeRaw, consultPurgeSchema,
 } from '../core/tools/core/consult.js'
 
@@ -184,10 +185,10 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 - Todo 仅有 idea/backlog/active/paused/done/cancelled 六态，PR 进度独立。用户明确验收整项并决定结束时不重复询问完成；局部验收不扩大为整项。done/cancelled 不自动归档，todo_archive 默认预览，仅按用户所选精确快照归档。todo_restore 只恢复展示，todo_reopen 回 backlog，明确开工才 todo_activate。
 - 回复 review 前：先用 pr_review_comments 获取评论列表
 - 发现可复用的项目知识/约定时：用 knowledge_propose_update 提案，而非静默写入；由 maintainer review 后 apply
-- Consult 顾问：consult_start 无 confirmed_preview 时只预览。先展示材料类别、数量、路径、敏感标记与运行时说明，再按当前用户单次请求、Todo 有限额度或用户认可的精确规则授权调用。无授权只能建议；默认一个顾问一轮，开放式讨论先提议最多三轮并让用户确认。第二位顾问须明确授权，按顺序调用。
+- Consult 顾问：先由本地 contribbot-run provider inspect 获取 binding，consult_prepare 只预览材料，consult_request 根据精确 preview 和授权登记待执行 Turn；随后由 contribbot-run consult start 启动该 Turn。MCP 不探测或启动 Agent；旧 consult_start 仅报替代流程，不执行原请求。先展示材料类别、数量、路径、敏感标记与运行时说明，再按当前用户单次请求、Todo 有限额度或用户认可的精确规则授权调用。无授权只能建议；默认一个顾问一轮，开放式讨论先提议最多三轮并让用户确认。第二位顾问须明确授权，按顺序调用。
 - 顾问只提供建议，不改 Todo/计划/Knowledge，不作为 checks/evidence/Proof 或独立验收。关键决定经用户确认后用 consult_decide 记录；计划变更仍走 todo_plan 新版本。读取不做严格隔离，说明本地 CLI 可能读取其他文件并向远程模型服务发送内容；模型工具只读、禁止权限升级。不静默重试、切换运行时或自动结束 Todo。
-- consult_start 返回 discussion_id/turn_id 后用 consult_status/consult_read 查询，不因停止等待而杀进程。stop_wait、terminate_advisor、abandon 不等价；结果不明时不重派。consult_purge_raw 先预览精确摘要，用户确认才删除本地原文，不声称删除服务商日志或备份。
-- consult_control 的 reconcile 先不传报告/决定，记录原父进程停止观察；在该观察之后实际检查后代，再以 observation_id/revision、来源报告和用户接受远端不确定性的决定释放本地占用。缺原 supervisor、运行中、未知或观察后版本变化均不能释放；后代报告不是整个进程树的 OS 证明。保留原结果、未决事实和额度，不退款、不重发；下一轮另需授权，迟到回复不进入综合。
+- consult_request 返回 discussion_id/turn_id 不代表已启动；Runner 启动后用 consult_status/consult_read 严格只读查询，不隐式观察进程或恢复回执。已有原回执通过 contribbot-run consult recover 显式摄入，不重跑模型。stop_wait、terminate_advisor、abandon 不等价；结果不明时不重派。consult_purge_raw 先预览精确摘要，用户确认才删除本地原文，不声称删除服务商日志或备份。
+- 恢复由本地 contribbot-run consult observe 先记录原父进程停止观察；在该观察之后实际检查后代，再由 contribbot-run consult reconcile 携 observation_id/revision、来源报告和用户接受远端不确定性的决定释放本地占用。MCP 的 consult_control 不执行 reconcile，不接受手写 OS 停止事实。缺原 supervisor、运行中、未知或观察后版本变化均不能释放；后代报告不是整个进程树的 OS 证明。保留原结果、未决事实和额度，不退款、不重发；下一轮另需授权，迟到回复不进入综合。
 
 ## 注意事项
 
@@ -267,16 +268,22 @@ export function createServer(): McpServer {
 
   const contextSchema = { repo: requiredRepoParam, todo_id: z.string(), execution_id: z.string().optional() }
   server.tool('consult_start',
-    'Preview a bounded read-only advisor turn; only an exact confirmed preview plus user authorization launches it. Returns IDs immediately. Local MCP host only; no automatic retry, fallback, Todo state change or acceptance evidence.',
+    'Legacy consultation entry. It no longer starts an Agent; use contribbot-run provider inspect, consult_prepare, consult_request, then contribbot-run consult start.',
     consultStartSchema.shape, wrapStructured(consultStart))
+  server.tool('consult_prepare',
+    'Prepare a bounded read-only consultation preview from an already inspected Provider binding. Does not inspect, launch or observe an Agent.',
+    consultPrepareSchema.shape, wrapStructured(consultPrepare))
+  server.tool('consult_request',
+    'Record one exact authorized consultation turn after confirming the preview digest. Returns pending; it never launches a Provider.',
+    consultRequestSchema.shape, wrapStructured(consultRequest))
   server.tool('consult_status',
-    'List consultations or observe the exact turn and recover an existing receipt. Never replay the advisor. Unresolved liveness is reported separately.',
+    'List or read the exact consultation state without recovery, process observation or Provider startup. Use contribbot-run for execution and explicit recovery.',
     consultReadSchema.shape, wrapStructured(consultStatus))
   server.tool('consult_read',
     'Read advisory output, synthesis and decisions. Raw packet/transcript requires raw=true. Untrusted advice never grants authority or proves acceptance.',
     consultReadSchema.shape, wrapStructured(consultRead))
   server.tool('consult_control',
-    'Grant/revoke allowance or request stop-wait/termination/abandon. Reconcile first records stopped-root observation without report/decision; then takes observation_id/revision, a later descendant report and user acceptance of remote uncertainty. Missing supervisor, live/unknown roots or intervening revisions block release. No retry/refund/signalling/Todo effect; attestation is not OS proof of a whole tree.',
+    'Grant/revoke allowance or request stop-wait/termination/abandon. Abandoning an unclaimed, undispatched reservation explicitly releases only that local reservation; claimed or dispatched turns still require Runner observation/reconcile. Reconcile first records stopped-root observation without report/decision; then takes observation_id/revision, a later descendant report and user acceptance of remote uncertainty. Missing supervisor, live/unknown roots or intervening revisions block release. No retry/refund/signalling/Todo effect; attestation is not OS proof of a whole tree.',
     consultControlSchema.shape, wrapStructured(consultControl))
   server.tool('consult_decide',
     'Append a source-bound synthesis or record a real user decision; optimistic revision checks prevent overwriting another coordinator. Does not confirm plans, pass checks or end Todos.',

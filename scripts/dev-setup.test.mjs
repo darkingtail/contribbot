@@ -32,13 +32,19 @@ function fixture(t) {
   skill(path.join(repo, 'skills/todo'), 'contribbot:todo')
   write(path.join(repo, 'skills/todo/scripts/contribbot-exec.mjs'),
     fs.readFileSync(fileURLToPath(new URL('../skills/todo/scripts/contribbot-exec.mjs', import.meta.url)), 'utf8'))
+  write(path.join(repo, 'scripts/source-condition.mjs'), '')
+  write(path.join(repo, 'scripts/dev-mcp.mjs'), '')
+  write(path.join(repo, 'packages/runner/src/cli.ts'), '')
+  write(path.join(repo, 'packages/runner/tsconfig.json'), '{}')
+  skill(path.join(repo, 'skills/consult'), 'contribbot:consult')
+  write(path.join(repo, 'skills/consult/scripts/contribbot-run.mjs'), '')
   const configPath = path.join(codexHome, 'config.toml')
   write(configPath, '# original comment\nmodel = "example"\n[mcp_servers.other]\ncommand = "keep"\n[mcp_servers.contribbot]\ncommand = "npx"\nargs = ["contribbot-mcp"]\nstartup_timeout_sec = 40\n[mcp_servers.contribbot.env]\nEXAMPLE = "preserve"\n')
   const destination = path.join(home, '.agents/skills/contribbot-init')
   const legacy = path.join(codexHome, 'skills/init')
   // Remove junctions explicitly so cleanup cannot traverse repository targets.
   t.after(() => {
-    for (const dir of [destination, legacy, path.join(home, '.agents/skills/contribbot-todo')]) {
+    for (const dir of [destination, legacy, path.join(home, '.agents/skills/contribbot-todo'), path.join(home, '.agents/skills/contribbot-consult')]) {
       if (fs.existsSync(dir) && fs.lstatSync(dir).isSymbolicLink()) fs.unlinkSync(dir)
     }
     assert.ok(root.startsWith(path.join(os.tmpdir(), 'contribbot-dev-')))
@@ -68,7 +74,7 @@ test('plan is read-only; setup preserves settings, backs up copies and is idempo
   assert.equal(config.mcp_servers.contribbot.env.EXAMPLE, 'preserve')
   assert.equal(config.mcp_servers.contribbot.startup_timeout_sec, 40)
   assert.equal(config.mcp_servers.contribbot.command, process.execPath)
-  assert.ok(config.mcp_servers.contribbot.args[1].endsWith(path.join('src', 'mcp', 'index.ts')))
+  assert.deepEqual(config.mcp_servers.contribbot.args, [path.join(f.repo, 'scripts/dev-mcp.mjs')])
   f.write(path.join(f.source, 'SKILL.md'), 'edited live')
   assert.equal(fs.readFileSync(path.join(f.destination, 'SKILL.md'), 'utf8'), 'edited live')
   f.skill(f.source)
@@ -101,7 +107,7 @@ test('malformed TOML and missing dependencies fail without moving skills', t => 
   assert.throws(() => planSetup(f))
   assert.ok(fs.existsSync(f.legacy))
   f.write(f.configPath, '')
-  fs.unlinkSync(path.join(f.repo, 'packages/mcp/node_modules/tsx/dist/cli.mjs'))
+  fs.unlinkSync(path.join(f.repo, 'packages/mcp/node_modules/tsx/package.json'))
   assert.throws(() => planSetup(f), /pnpm install/)
 })
 
@@ -171,7 +177,7 @@ test('CODEX_HOME from the environment changes config and legacy location, not us
     process.env.CODEX_HOME = f.codexHome
     const plan = planSetup({ repo: f.repo, home: f.home })
     assert.equal(plan.configPath, f.configPath)
-    assert.equal(plan.skills[0].destination, f.destination)
+    assert.equal(plan.skills.find(skill => skill.name === 'contribbot:init').destination, f.destination)
   }
   finally {
     if (previous === undefined) delete process.env.CODEX_HOME
@@ -188,7 +194,7 @@ test('updates an existing repository MCP override, preserving local settings and
   const config = parse(fs.readFileSync(local, 'utf8'))
   assert.equal(config.model, 'local')
   assert.equal(config.mcp_servers.contribbot.tool_timeout_sec, 90)
-  assert.equal(config.mcp_servers.contribbot.args[1], path.join(f.repo, 'packages/mcp/src/mcp/index.ts'))
+  assert.deepEqual(config.mcp_servers.contribbot.args, [path.join(f.repo, 'scripts/dev-mcp.mjs')])
   const backup = backups.find(file => file.startsWith(path.join(f.repo, '.codex')))
   assert.equal(fs.readFileSync(backup, 'utf8'), before)
   assert.equal(planSetup(f).changed, false)
@@ -271,6 +277,27 @@ test('verified removal cleans only its own config backups, preserving setup back
   assert.equal(planRemove(f).changed, false)
 })
 
+test('remove recognizes only the exact previous tsx config shapes owned by this checkout', t => {
+  const f = fixture(t)
+  const paths = [
+    path.join(f.repo, 'packages/mcp/node_modules/tsx/dist/cli.mjs'),
+    path.join(f.repo, 'packages/mcp/src/mcp/index.ts'),
+  ]
+  const config = args => f.write(f.configPath, `[mcp_servers.contribbot]\ncommand="node"\nargs=${JSON.stringify(args)}\n`)
+  for (const args of [paths, ['--conditions=contribbot-source', ...paths]]) {
+    config(args)
+    assert.equal(planRemove(f).configs.length, 1)
+    applySetup(planRemove(f))
+    assert.equal(parse(fs.readFileSync(f.configPath, 'utf8')).mcp_servers?.contribbot, undefined)
+  }
+  for (const args of [[...paths, '--other'], [paths[0], '--conditions=contribbot-source', paths[1]],
+    ['--conditions=contribbot-source', path.join(f.repo, 'scripts/dev-mcp.mjs')]]) {
+    config(args)
+    assert.equal(planRemove(f).configs.length, 0)
+    assert.equal(planRemove(f).warnings.length, 1)
+  }
+})
+
 test('remove preserves MCP and skills belonging to another installation', t => {
   const f = fixture(t)
   f.skill(f.destination, 'contribbot:init')
@@ -289,7 +316,7 @@ test('remove still works when dependencies and a source skill have been deleted'
   fs.unlinkSync(path.join(f.source, 'SKILL.md'))
   fs.rmdirSync(f.source)
   const plan = planRemove(f)
-  assert.equal(plan.removals.length, 2)
+  assert.equal(plan.removals.length, 3)
   applySetup(plan)
   assert.equal(planRemove(f).changed, false)
 })

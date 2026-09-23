@@ -8,7 +8,7 @@
     "deps:install": "pnpm install && uv sync --project packages/agent --group dev",
     "build": "pnpm -r build",
     "dev": "pnpm --filter contribbot-mcp dev",
-    "typecheck": "pnpm --filter contribbot-mcp typecheck",
+    "typecheck": "pnpm --filter contribbot-mcp --filter contribbot-core --filter contribbot-runner --filter contribbot-agent-runtime --filter contribbot-platform typecheck",
     "dev:setup": "node scripts/dev-setup.mjs",
     "dev:remove": "node scripts/dev-setup.mjs --remove",
     "dev:check": "node scripts/dev-setup.mjs --check",
@@ -18,7 +18,8 @@
     "test:execution-smoke": "pnpm --filter contribbot-mcp test:execution-smoke",
     "test:dev-exec-smoke": "node packages/mcp/scripts/execution-smoke.mjs --source-skill",
     "web": "pnpm --filter contribbot-web dev",
-    "test": "pnpm test:dev-setup && pnpm test:data-reset && pnpm -r test",
+    "test:boundaries": "node --test scripts/package-boundaries.test.mjs",
+    "test": "pnpm test:boundaries && pnpm test:dev-setup && pnpm test:data-reset && pnpm -r --workspace-concurrency=1 test",
     "agent:build": "uv build --project packages/agent",
     "agent:test": "uv run --project packages/agent --group dev pytest",
     "patrol": "uv run --project packages/agent contribbot patrol"

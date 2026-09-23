@@ -1,25 +1,8 @@
-import { z } from 'zod'
-
-export const todoPullSchema = z.object({
-  repo: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/)
-    .refine(value => !['.', '..'].includes(value.split('/')[1]!)),
-  number: z.number().int().positive().safe(),
-}).strict()
-
-export type TodoPull = z.infer<typeof todoPullSchema>
+import { normalizeTodoPulls, pullIdentity, todoPullSchema } from 'contribbot-core/todo/pulls'
+import type { TodoPull } from 'contribbot-core/todo/pulls'
+export { normalizeTodoPulls, pullIdentity, todoPullSchema } from 'contribbot-core/todo/pulls'
+export type { TodoPull } from 'contribbot-core/todo/pulls'
 type PullCarrier = { pr: number | null; pull_requests?: TodoPull[] }
-
-export function pullIdentity(pull: TodoPull): string {
-  return `${pull.repo.toLowerCase()}#${pull.number}`
-}
-
-export function normalizeTodoPulls(value: unknown): TodoPull[] {
-  const unique = new Map<string, TodoPull>()
-  for (const pull of z.array(todoPullSchema).parse(value)) {
-    unique.set(pullIdentity(pull), { ...pull, repo: pull.repo.toLowerCase() })
-  }
-  return [...unique.values()]
-}
 
 // Legacy scalar PRs belong to the explicit canonical project, never its fork.
 export function todoPulls(todo: PullCarrier, repo: string): TodoPull[] {

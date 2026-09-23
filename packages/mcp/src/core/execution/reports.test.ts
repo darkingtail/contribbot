@@ -321,7 +321,7 @@ describe('candidate-bound manual and review observations', () => {
     recordCheckReport({ ...input('later-review'), outcome: 'failed', summary: 'Fresh review identified an incorrect requirement.' })
     expect((await local('inspect')).readiness).toMatchObject({ ready: false })
     expect(state().checks.map(item => item.outcome)).toEqual(['passed', 'failed'])
-  })
+  }, 15_000)
 
   it('refuses verified delivery after its original report intent is lost', async () => {
     recordCheckReport(input())

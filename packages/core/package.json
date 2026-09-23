@@ -1,0 +1,53 @@
+{
+  "name": "contribbot-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "contribbot shared domain core boundary",
+  "dependencies": {
+    "contribbot-platform": "workspace:*",
+    "yaml": "^2.8.2",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0"
+  },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "contribbot-source": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./execution/contracts": {
+      "types": "./src/execution/contracts.ts",
+      "contribbot-source": "./src/execution/contracts.ts",
+      "default": "./dist/execution/contracts.js"
+    },
+    "./execution/workflow": {
+      "types": "./src/execution/workflow.ts",
+      "contribbot-source": "./src/execution/workflow.ts",
+      "default": "./dist/execution/workflow.js"
+    },
+    "./todo/records": {
+      "types": "./src/todo/records.ts",
+      "contribbot-source": "./src/todo/records.ts",
+      "default": "./dist/todo/records.js"
+    },
+    "./todo/enums": {
+      "types": "./src/todo/enums.ts",
+      "contribbot-source": "./src/todo/enums.ts",
+      "default": "./dist/todo/enums.js"
+    },
+    "./todo/pulls": {
+      "types": "./src/todo/pulls.ts",
+      "contribbot-source": "./src/todo/pulls.ts",
+      "default": "./dist/todo/pulls.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/compile-package.mjs --package core --mode build",
+    "typecheck": "node ../../scripts/compile-package.mjs --package core --mode typecheck",
+    "test": "pnpm build && node --test test/smoke.test.mjs test/packet.test.mjs"
+  }
+}

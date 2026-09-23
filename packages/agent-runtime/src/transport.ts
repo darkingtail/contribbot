@@ -1,11 +1,10 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
-import { MAX_OUTPUT_BYTES } from './contracts.js'
-import type { TurnResult } from './contracts.js'
-import type { RuntimeProtocolBinding } from './binding.js'
-import { describeProcessAsync } from '../execution/processes.js'
-import type { ProcessHandle } from '../execution/contracts.js'
+import { describeProcessAsync } from './process.js'
+import type { ProcessHandle } from './process.js'
+
+export const MAX_OUTPUT_BYTES = 1024 * 1024
 
 export interface LaunchPlan {
   executable: string
@@ -13,20 +12,49 @@ export interface LaunchPlan {
   cwd: string
   env: NodeJS.ProcessEnv
 }
+
+export interface RuntimeOutcome {
+  outcome: 'returned' | 'failed' | 'cancelled'
+  text: string | null
+  stdout: string
+  stderr: string
+  exit_code: number | null
+  signal: string | null
+  integrity: 'ok' | 'truncated'
+  reason: string | null
+  unresolved: string[]
+}
+
+export interface RuntimeProtocolBinding {
+  protocol: string
+  terminal(stdout: string): boolean
+  decode(stdout: string, exitCode: number | null): Pick<RuntimeOutcome, 'text' | 'outcome' | 'reason'>
+}
+
 export interface TurnControl {
   shouldTerminate(): boolean
   onProcess(handle: ProcessHandle): void
   dispatch?(start: () => ChildProcessWithoutNullStreams): ChildProcessWithoutNullStreams
 }
+
 export interface AgentEvent {
   type: 'message.final' | 'error' | 'process.started' | 'process.exited'
   text?: string
   pid?: number
 }
+
 /** Future PTY/stdio drivers normalize into this outcome, not pipe-specific stream semantics. */
 export interface SessionTransport {
   transportId: string
-  run(plan: LaunchPlan, input: string, binding: RuntimeProtocolBinding, control: TurnControl): Promise<TurnResult>
+  run(plan: LaunchPlan, input: string, binding: RuntimeProtocolBinding, control: TurnControl): Promise<RuntimeOutcome>
+}
+
+function redactOutput(text: string, env: NodeJS.ProcessEnv): string {
+  const secretValues = Object.entries(env).filter(([key, value]) => value && /(?:KEY|TOKEN|SECRET)/i.test(key))
+    .map(([, value]) => value!).filter(value => value.length >= 8)
+  return secretValues.reduce((value, secret) => value.split(secret).join('[REDACTED]'), text)
+    .replace(/\b(?:sk-[a-zA-Z0-9_*-]{4,}|gh[pousr]_[a-zA-Z0-9*]{8,}|github_pat_[a-zA-Z0-9_*]{8,})/g, '[REDACTED]')
+    .replace(/\bBearer\s+[a-zA-Z0-9._~+/*=-]{8,}/gi, 'Bearer [REDACTED]')
 }
 
 export const pipeTransport: SessionTransport = {
@@ -43,11 +71,6 @@ export const pipeTransport: SessionTransport = {
         if (isError) stderr += errDecoder.write(selected)
         else stdout += outDecoder.write(selected)
       }
-      const secretValues = Object.entries(plan.env).filter(([key, value]) => value && /(?:KEY|TOKEN|SECRET)/i.test(key))
-        .map(([, value]) => value!).filter(value => value.length >= 8)
-      const redact = (text: string) => secretValues.reduce((value, secret) => value.split(secret).join('[REDACTED]'), text)
-        .replace(/\b(?:sk-[a-zA-Z0-9_*-]{4,}|gh[pousr]_[a-zA-Z0-9*]{8,}|github_pat_[a-zA-Z0-9_*]{8,})/g, '[REDACTED]')
-        .replace(/\bBearer\s+[a-zA-Z0-9._~+/*=-]{8,}/gi, 'Bearer [REDACTED]')
       const start = () => spawn(plan.executable, plan.argv, {
         cwd: plan.cwd, env: plan.env, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
       })
@@ -61,7 +84,6 @@ export const pipeTransport: SessionTransport = {
         spawned = true
         const spawnedAt = Date.now()
         handlePromise = describeProcessAsync(child.pid!).then(handle => {
-          // Do not mistake a reused PID for a short-lived original child.
           if (child.exitCode !== null || child.signalCode !== null || (handle.started_at && handle.started_at > spawnedAt + 1000)) {
             handle.started_at = null
           }
@@ -81,8 +103,8 @@ export const pipeTransport: SessionTransport = {
       child.once('close', async (code, signal) => {
         clearInterval(timer)
         await handlePromise
-        stdout = redact(stdout + outDecoder.end())
-        stderr = redact(stderr + errDecoder.end())
+        stdout = redactOutput(stdout + outDecoder.end(), plan.env)
+        stderr = redactOutput(stderr + errDecoder.end(), plan.env)
         let terminal = false
         try { terminal = binding.terminal(stdout) }
         catch { /* Malformed output cannot establish terminal protocol state. */ }

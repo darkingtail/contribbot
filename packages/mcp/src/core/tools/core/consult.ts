@@ -1,14 +1,11 @@
 import { z } from 'zod'
 import { getContribDir } from '../../utils/config.js'
 import {
-  authorizationSchema, decisionSchema, digest, digestSchema, grantSpecSchema, idSchema,
+  authorizationSchema, bindingSchema, decisionSchema, digest, digestSchema, grantSpecSchema, idSchema,
   occupiesLocal, packetInputSchema, purposeSchema, reconcileInputSchema, runtimeInputSchema, scopeSchema, textSchema,
 } from '../../consult/contracts.js'
-import { ConsultStore } from '../../consult/store.js'
+import { createConsultStore } from '../../consult/composition.js'
 import { buildPacket, scopeAllows } from '../../consult/packet.js'
-import { inspectBinding } from '../../consult/binding.js'
-import { failedResult, launchConsultSupervisor } from '../../consult/runner.js'
-import { observeProcess } from '../../execution/processes.js'
 
 export const consultRepoSchema = z.string().regex(/^[\w][\w.-]*\/[\w][\w.-]*$/)
 export const consultStartSchema = z.object({
@@ -19,6 +16,18 @@ export const consultStartSchema = z.object({
   scope: scopeSchema.default({ categories: ['question', 'context', 'history', 'tracked'], paths: ['.'] }),
   authorization: authorizationSchema.default({ denied: false }),
   confirmed_preview: digestSchema.optional(),
+}).strict()
+const consultPrepareFields = {
+  repo: consultRepoSchema, request_id: idSchema, discussion_id: idSchema.optional(),
+  todo_id: idSchema.optional(), purpose: purposeSchema.default('design'),
+  mode: z.enum(['fresh', 'rehydrate']).default('rehydrate'), binding: bindingSchema,
+  packet: packetInputSchema,
+  scope: scopeSchema.default({ categories: ['question', 'context', 'history', 'tracked'], paths: ['.'] }),
+} as const
+export const consultPrepareSchema = z.object(consultPrepareFields).strict()
+export const consultRequestSchema = consultPrepareSchema.extend({
+  authorization: authorizationSchema.default({ denied: false }),
+  confirmed_preview: digestSchema,
 }).strict()
 export const consultReadSchema = z.object({
   repo: consultRepoSchema, discussion_id: idSchema.optional(), todo_id: idSchema.optional(),
@@ -64,62 +73,88 @@ export const consultPurgeSchema = z.object({
 
 export function consultStore(repo: string) {
   const [owner, name] = consultRepoSchema.parse(repo).split('/')
-  return new ConsultStore(getContribDir(owner!, name!))
+  return createConsultStore(getContribDir(owner!, name!))
 }
 
-export async function consultStart(raw: unknown) {
-  const input = consultStartSchema.parse(raw)
+type ConsultPrepareInput = z.infer<typeof consultPrepareSchema>
+
+function requestDigestInput(input: z.infer<typeof consultRequestSchema>) {
+  return {
+    repo: input.repo, request_id: input.request_id, discussion_id: input.discussion_id ?? null,
+    todo_id: input.todo_id ?? null, purpose: input.purpose, mode: input.mode,
+    binding: input.binding, packet: input.packet, scope: input.scope, authorization: input.authorization,
+  }
+}
+
+function buildConsultPreview(input: ConsultPrepareInput) {
   const store = consultStore(input.repo)
   const discussionId = input.discussion_id ?? `discussion-${digest(input.request_id).slice(0, 32)}`
   const existing = store.read().discussions.find(item => item.id === discussionId)
   const todoId = input.todo_id ?? existing?.todo_id ?? null
-  if (input.authorization.denied) throw new Error('Consultation explicitly denied.')
-  const startDigest = digest(input)
-  const previous = store.read().discussions.flatMap(discussion => discussion.turns.map(turn => ({ discussion, turn })))
-    .find(item => item.turn.request_id === input.request_id)
-  if (previous) {
-    if (!input.confirmed_preview || previous.turn.start_digest !== startDigest) {
-      throw new Error('Request id already has different content. Read the original turn instead of retrying with changed inputs.')
-    }
-    return {
-      schema_version: 1, discussion_id: previous.discussion.id, turn_id: previous.turn.id, replayed: true,
-      status_tool: 'consult_status', read_tool: 'consult_read',
-      notes: 'Original reservation returned without re-reading changed materials or dispatching another advisor.',
-    }
-  }
-  const history = input.mode === 'rehydrate' && existing ? store.history(discussionId, input.advisor.runtime) : []
+  const history = input.mode === 'rehydrate' && existing ? store.history(discussionId, input.binding.runtime) : []
   const packet = buildPacket(input.packet, history)
   if (!scopeAllows(input.scope, packet)) throw new Error('Selected material expands context scope. Disclose and explicitly authorize its categories/paths.')
-  const binding = await inspectBinding(input.advisor)
   const todo = store.todoSnapshot(todoId)
   const descriptor = {
     discussion_id: discussionId, todo_id: todoId, todo, purpose: input.purpose, mode: input.mode,
     packet_digest: packet.digest, manifest: packet.manifest, omitted: packet.omitted,
-    binding, scope: input.scope,
+    binding: input.binding, scope: input.scope,
   }
   const preview = {
     ...descriptor, digest: digest(descriptor), material_count: packet.manifest.length,
-    notes: 'Preview only until confirmed_preview is supplied. Show paths, categories, limitations and disclosure before dispatch. Runs on the MCP host, not an arbitrary remote workspace.',
+    notes: 'Preview only. Provider inspection happens in contribbot-run; MCP validates the supplied binding and records no process execution.',
   }
-  if (!input.confirmed_preview) return { schema_version: 1, preview, dispatched: false }
+  return { store, discussionId, todoId, todo, packet, preview }
+}
+
+export async function consultPrepare(raw: unknown) {
+  const input = consultPrepareSchema.parse(raw)
+  const { preview } = buildConsultPreview(input)
+  return { schema_version: 1, preview, dispatched: false }
+}
+
+export async function consultRequest(raw: unknown) {
+  const input = consultRequestSchema.parse(raw)
+  if (input.authorization.denied) throw new Error('Consultation explicitly denied.')
+  const { store, discussionId, todoId, todo, packet, preview } = buildConsultPreview(input)
+  const startDigest = digest(requestDigestInput(input))
+  const previous = store.read().discussions.flatMap(discussion => discussion.turns.map(turn => ({ discussion, turn })))
+    .find(item => item.turn.request_id === input.request_id)
+  if (previous) {
+    if (previous.turn.start_digest !== startDigest) {
+      throw new Error('Request id already has different content. Read the original turn instead of retrying with changed inputs.')
+    }
+    return {
+      schema_version: 1, discussion_id: previous.discussion.id, turn_id: previous.turn.id, replayed: true,
+      status: 'pending', status_tool: 'consult_status', read_tool: 'consult_read',
+      notes: 'Original reservation returned without starting another Provider. Start the exact turn with contribbot-run.',
+    }
+  }
   if (input.confirmed_preview !== preview.digest) throw new Error('Consult preview changed. Re-read material/disclosure and confirm its current digest.')
   const reserved = store.reserve({
     request_id: input.request_id, discussion_id: discussionId, todo_id: todoId, purpose: input.purpose,
-    expected_todo: todo,
-    mode: input.mode, packet, binding, authorization: input.authorization, start_digest: startDigest,
+    expected_todo: todo, mode: input.mode, packet, binding: input.binding,
+    authorization: input.authorization, start_digest: startDigest,
   })
-  if (!reserved.replayed) {
-    try { await launchConsultSupervisor(store.directory, discussionId, reserved.turn.id) }
-    catch {
-      // No retry: a startup error is recorded against the original reserved turn.
-      store.settle(discussionId, reserved.turn.id, failedResult('Supervisor could not start. No automatic retry; inspect this turn.'))
-    }
-  }
   return {
     schema_version: 1, discussion_id: discussionId, turn_id: reserved.turn.id,
-    replayed: reserved.replayed,
+    replayed: reserved.replayed, status: 'pending',
     status_tool: 'consult_status', read_tool: 'consult_read',
-    notes: 'Observe this exact turn. Do not infer completion from launch, retry, or switch advisor silently.',
+    runner: {
+      command: 'contribbot-run',
+      args: ['consult', 'start', '--directory', store.directory, '--discussion', discussionId, '--turn', reserved.turn.id],
+    },
+    notes: 'Reserved only. MCP did not inspect, launch or retry a Provider; start this exact turn through the Runner.',
+  }
+}
+
+/** Legacy name retained only to explain the explicit prepare/request/run replacement. */
+export async function consultStart(raw: unknown) {
+  consultStartSchema.parse(raw)
+  return {
+    schema_version: 1, unsupported: true,
+    replacement: { prepare_tool: 'consult_prepare', request_tool: 'consult_request', runner: 'contribbot-run consult start' },
+    notes: 'consult_start no longer starts an Agent. Inspect the Provider with contribbot-run, call consult_prepare, confirm its digest, call consult_request, then start that exact turn with the Runner.',
   }
 }
 
@@ -132,31 +167,21 @@ export async function consultStatus(raw: unknown) {
       notes: 'Event history, not new permission. Current policy/Todo validity is checked before each dispatch.',
     }))
   if (!input.discussion_id) return { schema_version: 1, discussions: store.list(input.todo_id), grants: grants() }
-  let discussion = store.get(input.discussion_id)
-  // A completed receipt can be recovered after a writer crash without invoking the advisor again.
-  for (const turn of discussion.turns) {
-    if (!turn.output_digest && !turn.raw_purged) {
-      const result = store.readResult(turn)
-      if (result) store.settle(discussion.id, turn.id, result)
-    }
-  }
-  discussion = store.get(input.discussion_id)
+  const discussion = store.get(input.discussion_id)
   return {
     schema_version: 1, discussion_id: discussion.id, revision: discussion.revision,
     status: discussion.status, todo_id: discussion.todo_id,
     grants: grants().filter(grant => (grant.spec.todo_id ?? null) === discussion.todo_id),
     turns: discussion.turns.filter(turn => !input.turn_id || turn.id === input.turn_id).map(turn => {
-      const observation = occupiesLocal(turn) && turn.supervisor ? observeProcess(turn.supervisor) : null
       return {
         ...turn,
         local_occupancy: occupiesLocal(turn) ? 'held' : 'released',
-        process_observation: observation,
-        lifecycle: observation && observation.state !== 'running' && !turn.output_digest ? 'reconciling' : turn.lifecycle,
+        process_observation: null,
         notes: turn.reconciliations.length
           ? 'Local occupancy released by explicit decision and operator attestation, not OS proof of the entire tree. Remote generation/billing remains unverified; no refund, retry or acceptance.'
           : turn.raw_purged ? 'Raw content was explicitly purged.' : turn.late
           ? 'Late/historical advisory output; excluded from synthesis.'
-          : 'Advisory only. Status observation never starts another process.',
+          : 'Advisory only. Status is strictly read-only; use the Runner for execution, observation or recovery.',
       }
     }),
   }
@@ -199,20 +224,7 @@ export async function consultControl(raw: unknown) {
   }
   if (command.action === 'revoke') return { schema_version: 1, grant: store.revoke(command.grant_id, command.decision) }
   if (command.action === 'reconcile') {
-    const { action: _action, discussion_id, turn_id, ...request } = command
-    if (!request.observation_id) {
-      if (request.report || request.decision || request.accept_remote_uncertainty !== undefined) {
-        throw new Error('Prepare a stopped-root observation before inspecting descendants or submitting a release decision.')
-      }
-      return {
-        schema_version: 1, release_observation: store.observeRelease(discussion_id, turn_id, request.expected_revision),
-        notes: 'Observation only; occupancy retained. Inspect descendants after this event, then confirm its id/revision with a sourced report and explicit user acceptance of remote uncertainty.',
-      }
-    }
-    return {
-      schema_version: 1, turn: store.reconcile(discussion_id, turn_id, reconcileInputSchema.parse(request)),
-      notes: 'Only local occupancy released. Original outcome, unresolved facts and allowance retained. Remote generation/billing unknown; a subsequent turn must pass its own preview and authorization checks. No process signalled or Todo changed.',
-    }
+    throw new Error('Process observation and reconciliation moved to contribbot-run; MCP records control intent but does not inspect OS processes.')
   }
   return {
     schema_version: 1, turn: store.control(command.discussion_id, command.turn_id, command.control, command.decision),

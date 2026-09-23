@@ -1,0 +1,33 @@
+{
+  "workspace": "C:/legacy-repo",
+  "head": null,
+  "manifest": [
+    {
+      "category": "question",
+      "path": null,
+      "source": "current-question",
+      "sha256": "6ed5781c19160236433c217eefafa1a85f0dcb1205c73c1074c8f85ebdad492c",
+      "bytes": 11,
+      "notes": []
+    },
+    {
+      "category": "context",
+      "path": null,
+      "source": "decision:d1",
+      "sha256": "9935a1fe2fad6455fce15587bac7d4ab89c4e2329bb740b3ae5e7999cf8e0fd6",
+      "bytes": 29,
+      "notes": []
+    },
+    {
+      "category": "history",
+      "path": null,
+      "source": "history:h1",
+      "sha256": "83e3003f224a8bdef4ef86e41f94e2f89a3e942a993aa0ace62c5b30fff3f11d",
+      "bytes": 15,
+      "notes": []
+    }
+  ],
+  "body": "{\"category\":\"question\",\"path\":null,\"source\":\"current-question\",\"text\":\"Review this\"}\n{\"category\":\"context\",\"path\":null,\"source\":\"decision:d1\",\"text\":\"Use the shared Core boundary.\"}\n{\"category\":\"history\",\"path\":null,\"source\":\"history:h1\",\"text\":\"Historical note\"}",
+  "digest": "9004b4f00bf6ecb53b80783ac33100d160cbdf0fed65e1171fe2661f7f49358b",
+  "omitted": []
+}

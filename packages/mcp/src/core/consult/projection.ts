@@ -1,10 +1,10 @@
-import { ConsultStore } from './store.js'
+import { createConsultStore } from './composition.js'
 
 /** Advisory corruption must not prevent unrelated task work or masquerade as task evidence. */
 export function todoConsultations(directory: string, todoId: string) {
   try {
     return {
-      status: 'available' as const, discussions: new ConsultStore(directory).list(todoId),
+      status: 'available' as const, discussions: createConsultStore(directory).list(todoId),
       notes: 'Advice only. Read details with consult_read; no task state or acceptance is implied.',
     }
   }

@@ -67,22 +67,33 @@ export function planSetup({
   const skillRoot = path.join(path.resolve(home), '.agents', 'skills')
   const legacyRoot = path.join(codexHome, 'skills')
   const configPath = path.join(codexHome, 'config.toml')
-  const args = [
-    path.join(repo, 'packages', 'mcp', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+  const args = [path.join(repo, 'scripts/dev-mcp.mjs')]
+  const sourceFiles = [
+    ...args,
+    path.join(repo, 'packages', 'mcp', 'node_modules', 'tsx', 'package.json'),
     path.join(repo, 'packages', 'mcp', 'src', 'mcp', 'index.ts'),
   ]
-  for (const file of args) {
+  for (const file of sourceFiles) {
     if (!stat(file)?.isFile()) throw new Error(`Missing ${file}. Run pnpm install first.`)
   }
   const launcher = path.join(repo, 'skills/todo/scripts/contribbot-exec.mjs')
   const entry = path.join(repo, 'packages/mcp/src/cli/execution.ts')
   // Do not import the helper here: removal must work even if its source is missing.
-  for (const file of [launcher, entry, path.join(repo, 'packages/mcp/tsconfig.json')]) {
+  for (const file of [launcher, entry, path.join(repo, 'packages/mcp/tsconfig.json'), path.join(repo, 'scripts/source-condition.mjs')]) {
     if (!stat(file)?.isFile()) throw new Error(`Missing execution helper file: ${file}. Restore the current source checkout.`)
   }
   const execution = {
     mode: 'source', launcher, entry,
     installed: path.join(skillRoot, 'contribbot-todo/scripts/contribbot-exec.mjs'),
+  }
+  const runner = {
+    mode: 'source',
+    launcher: path.join(repo, 'skills/consult/scripts/contribbot-run.mjs'),
+    entry: path.join(repo, 'packages/runner/src/cli.ts'),
+    installed: path.join(skillRoot, 'contribbot-consult/scripts/contribbot-run.mjs'),
+  }
+  for (const file of [runner.launcher, runner.entry, path.join(repo, 'packages/runner/tsconfig.json')]) {
+    if (!stat(file)?.isFile()) throw new Error(`Missing Runner helper file: ${file}. Restore the current source checkout.`)
   }
   // Validate semantic preservation before touching the user's configuration.
   const globalConfig = prepareConfig(configPath, args)
@@ -155,11 +166,38 @@ export function planSetup({
     if (config.skills) warnings.push(`Existing [skills] settings in ${file} are preserved; check for disabled or separately registered contribbot skills.`)
   }
   return {
-    repo, codexHome, configPath, before, after, configChanged, skills, configs, execution,
+    repo, codexHome, configPath, before, after, configChanged, skills, configs, execution, runner,
+    mcp: { command: process.execPath, args },
     moves: [...moves], links, warnings,
     snapshots: new Map([...moves].map(directory => [directory, skillSnapshot(directory)])),
     changed: configs.some(item => item.configChanged) || moves.size > 0 || links.length > 0,
   }
+}
+
+export function probeMcp(mcp, { cwd = process.cwd(), timeout = 15_000, env = process.env } = {}) {
+  const child = spawnSync(mcp.command, mcp.args, {
+    cwd, windowsHide: true, shell: false, encoding: 'utf8', timeout, maxBuffer: 1024 * 1024,
+    env: { ...env, GITHUB_TOKEN: 'contribbot-startup-probe-no-network', CONTRIBBOT_QUIET: '1' },
+    input: JSON.stringify({
+      jsonrpc: '2.0', id: 'dev-setup', method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'contribbot-dev-check', version: '1' } },
+    }) + '\n',
+  })
+  if (child.error || child.signal || child.status !== 0) {
+    throw new Error(`MCP startup failed: ${child.error?.message || child.stderr || `exit ${child.status}, signal ${child.signal}`}`)
+  }
+  let messages
+  try {
+    if (!child.stdout.startsWith('{')) throw new Error('Unexpected stdout before JSON-RPC.')
+    messages = child.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line))
+  }
+  catch { throw new Error('MCP returned invalid JSON-RPC startup output.') }
+  const response = messages.find(message => message.id === 'dev-setup')
+  if (response?.jsonrpc !== '2.0' || response.error || response.result?.serverInfo?.name !== 'contribbot'
+    || typeof response.result.protocolVersion !== 'string' || !response.result.capabilities?.tools) {
+    throw new Error('MCP returned an incompatible initialize response.')
+  }
+  return response.result
 }
 
 export function probeExecution(execution, { cwd = process.cwd(), timeout = 15_000 } = {}) {
@@ -177,6 +215,25 @@ export function probeExecution(execution, { cwd = process.cwd(), timeout = 15_00
     || schema['x-contribbot']?.validation !== 'structure-only'
     || !schema.required?.includes('acceptance_id')) {
     throw new Error('Execution helper returned an incompatible check schema.')
+  }
+  return schema
+}
+
+export function probeRunner(runner, { cwd = process.cwd(), timeout = 15_000 } = {}) {
+  const child = spawnSync(process.execPath, [runner.launcher, '--schema'], {
+    cwd, windowsHide: true, shell: false, encoding: 'utf8',
+    input: '', timeout, maxBuffer: 1024 * 1024,
+  })
+  if (child.error || child.signal || child.status !== 0) {
+    throw new Error(`Runner helper startup failed: ${child.error?.message || child.stderr || child.stdout || `exit ${child.status}, signal ${child.signal}`}`)
+  }
+  let schema
+  try { schema = JSON.parse(child.stdout) }
+  catch { throw new Error('Runner helper returned invalid discovery JSON.') }
+  if (schema.schema_version !== 1 || schema.kind !== 'contribbot-runner'
+    || !['provider inspect', 'consult start', 'consult recover', 'consult observe', 'consult reconcile']
+      .every(command => schema.commands?.includes(command))) {
+    throw new Error('Runner helper returned an incompatible discovery schema.')
   }
   return schema
 }
@@ -201,9 +258,13 @@ export function planRemove({
     const config = parse(before)
     const entry = config.mcp_servers?.contribbot
     if (!entry) continue
-    if (entry.url || !Array.isArray(entry.args) || entry.args.length !== 2
-      || !entry.args.every((arg, index) => typeof arg === 'string' && path.isAbsolute(arg)
-        && path.resolve(arg) === expectedArgs[index])) {
+    const paths = entry.args?.[0] === '--conditions=contribbot-source' ? entry.args.slice(1) : entry.args
+    const ownsPaths = expected => Array.isArray(paths) && paths.length === expected.length
+      && paths.every((arg, index) => typeof arg === 'string' && path.isAbsolute(arg)
+        && path.resolve(arg) === expected[index])
+    const bootstrap = Array.isArray(entry.args) && entry.args.length === 1
+      && ownsPaths([path.join(repo, 'scripts/dev-mcp.mjs')])
+    if (entry.url || (!bootstrap && !ownsPaths(expectedArgs))) {
       warnings.push(`Preserved MCP not pointing to this checkout: ${configPath}`)
       continue
     }
@@ -381,12 +442,17 @@ function main() {
   for (const { destination } of plan.removals || []) console.log(`Unlink skill: ${destination}`)
   for (const warning of plan.warnings) console.warn(`Warning: ${warning}`)
   if (plan.execution) console.log(`Execution helper: SOURCE ${plan.execution.installed} -> ${plan.execution.entry}`)
+  if (plan.runner) console.log(`Runner helper: SOURCE ${plan.runner.installed} -> ${plan.runner.entry}`)
   if (!removing && !flags.includes('--dry-run')) {
     probeExecution(plan.execution)
+    probeRunner(plan.runner)
+    probeMcp(plan.mcp)
     console.log('Execution helper: startup/schema OK (not task acceptance or live MCP freshness).')
+    console.log('Runner helper: startup/schema OK (not an advisor invocation or task acceptance).')
+    console.log('MCP: source initialize OK (no GitHub auth verification, network request or runtime activation).')
   }
   if (flags.includes('--check')) {
-    console.log(plan.changed ? 'Out of date. Run pnpm dev:setup.' : 'MCP/Skill paths point to source; source execution helper starts successfully.')
+    console.log(plan.changed ? 'Out of date. Run pnpm dev:setup.' : 'MCP/Skill paths point to source; Todo and Runner source helpers start successfully.')
     process.exitCode = plan.changed ? 1 : 0
     return
   }

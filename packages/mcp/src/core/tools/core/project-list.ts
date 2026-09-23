@@ -18,6 +18,12 @@ const PROJECT_MARKERS = [
   'upstream.archive.yaml',
 ]
 
+const TODO_READ_ERROR_NOTE = 'Todo data unreadable (todos.yaml); use todo_list for this project to inspect the error.'
+
+function formatTodoCounts(open: number | null, done: number | null): string {
+  return `${open === null ? 'unknown' : open} / ${done === null ? 'unknown' : done}`
+}
+
 function isTrackedProjectDir(dir: string): boolean {
   return PROJECT_MARKERS.some(marker => existsSync(join(dir, marker)))
     || ['knowledge', 'patrol', 'sync'].some(folder => existsSync(join(dir, folder)))
@@ -38,12 +44,13 @@ export function projectList(status: ProjectStatus | 'all' = 'active'): string {
 
   interface ProjectInfo {
     fullName: string
-    todosOpen: number
-    todosDone: number
+    todosOpen: number | null
+    todosDone: number | null
     upstreamPending: number
     upstreamTotal: number
     lastActive: string
     status: ProjectStatus
+    todoReadError: boolean
   }
 
   const projects: ProjectInfo[] = []
@@ -62,9 +69,17 @@ export function projectList(status: ProjectStatus | 'all' = 'active'): string {
       if (status !== 'all' && status !== projectStatus) continue
 
       const todoStore = new TodoStore(repoDir)
-      const todos = todoStore.list()
-      const todosOpen = todos.filter(t => !['done', 'cancelled'].includes(t.status)).length
-      const todosDone = todos.filter(t => t.status === 'done').length
+      let todosOpen: number | null = null
+      let todosDone: number | null = null
+      let todoReadError = false
+      try {
+        const todos = todoStore.list()
+        todosOpen = todos.filter(t => !['done', 'cancelled'].includes(t.status)).length
+        todosDone = todos.filter(t => t.status === 'done').length
+      }
+      catch {
+        todoReadError = true
+      }
 
       const upstreamStore = new UpstreamStore(repoDir)
       const upstreamRepos = upstreamStore.listRepos()
@@ -90,7 +105,7 @@ export function projectList(status: ProjectStatus | 'all' = 'active'): string {
         // ignore
       }
 
-      projects.push({ fullName, todosOpen, todosDone, upstreamPending, upstreamTotal, lastActive, status: projectStatus })
+      projects.push({ fullName, todosOpen, todosDone, upstreamPending, upstreamTotal, lastActive, status: projectStatus, todoReadError })
     }
   }
 
@@ -102,10 +117,13 @@ export function projectList(status: ProjectStatus | 'all' = 'active'): string {
   const rows = projects.map(p => [
     p.fullName,
     p.status,
-    `${p.todosOpen} / ${p.todosDone}`,
+    formatTodoCounts(p.todosOpen, p.todosDone),
     p.upstreamTotal > 0 ? `${p.upstreamPending} / ${p.upstreamTotal}` : '—',
     p.lastActive,
-    p.status === 'archived' ? 'Archived; data retained, patrol blocked' : 'Active maintenance',
+    [
+      p.status === 'archived' ? 'Archived; data retained, patrol blocked' : 'Active maintenance',
+      ...(p.todoReadError ? [TODO_READ_ERROR_NOTE] : []),
+    ].join('; '),
   ])
 
   return `## Projects\n\n> ${projects.length} projects tracked (filter: ${status})\n\n${markdownTable(headers, rows)}`

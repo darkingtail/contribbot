@@ -27,8 +27,12 @@ export { projectInit } from './core/tools/core/project-init.js'
 export { projectArchive, projectRestore, projectStatus } from './core/tools/core/project-lifecycle.js'
 export { ProjectStatus, PROJECT_STATUSES } from './core/enums.js'
 export { projectGuidance } from './core/tools/core/project-guidance.js'
-export { consultStart, consultStatus, consultRead, consultControl, consultDecide, consultPurgeRaw } from './core/tools/core/consult.js'
+export {
+  consultStart, consultPrepare, consultRequest, consultStatus, consultRead,
+  consultControl, consultDecide, consultPurgeRaw,
+} from './core/tools/core/consult.js'
 export { ConsultStore } from './core/consult/store.js'
+export { createConsultStore } from './core/consult/composition.js'
 export { contributionStats } from './core/tools/core/contribution-stats.js'
 export { todoClaim } from './core/tools/core/todo-claim.js'
 export { todoCompact } from './core/tools/core/todo-compact.js'

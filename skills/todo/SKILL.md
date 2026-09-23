@@ -50,7 +50,7 @@ execution ID、方案和恢复建议，再读 [执行闭环](references/executio
 | 删除任务 | delete | `todo_delete` | 明确确认破坏性操作 |
 | 归档 | archive | `todo_archive` | 预览后明确选定快照 |
 | 清理归档 | compact | `todo_compact` | 与归档不同，会删除历史 |
-| 请求顾问意见 | consult | `consult_start/status/read/decide` | 读取相邻 `consult/SKILL.md`；建议不算验收，不自动变更任务 |
+| 请求顾问意见 | consult | `consult_prepare/request/status/read/decide` + Runner | 读取相邻 `consult/SKILL.md`；建议不算验收，不自动变更任务 |
 
 ---
 

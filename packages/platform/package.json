@@ -1,0 +1,27 @@
+{
+  "name": "contribbot-platform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared local process identity and observation, without agent or domain behavior",
+  "devDependencies": {
+    "@types/node": "^25.3.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "contribbot-source": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "contribbot-source": "./src/types.ts",
+      "default": "./dist/types.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/compile-package.mjs --package platform --mode build",
+    "typecheck": "node ../../scripts/compile-package.mjs --package platform --mode typecheck",
+    "test": "pnpm build && node --test test/process.test.mjs"
+  }
+}

@@ -21,13 +21,15 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "dev": "tsx src/mcp/index.ts",
+    "dev": "node ../../scripts/dev-mcp.mjs",
     "typecheck": "tsc --noEmit",
     "test:execution-smoke": "pnpm build && node scripts/execution-smoke.mjs",
     "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "contribbot-core": "workspace:*",
+    "contribbot-platform": "workspace:*",
     "ofetch": "^1.4.1",
     "yaml": "^2.8.2",
     "zod": "^3.25.67",

@@ -5,11 +5,16 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { parse, stringify } from 'yaml'
-import { ConsultStore } from './store.js'
+import { createConsultStorePorts } from './composition.js'
+import { ConsultStore as BaseConsultStore } from './store.js'
 import { digest, reconcileInputSchema } from './contracts.js'
 import type { GrantSpec, TurnResult } from './contracts.js'
 import { TodoStore } from '../storage/todo-store.js'
 import * as processes from '../execution/processes.js'
+
+class ConsultStore extends BaseConsultStore {
+  constructor(directory: string) { super(directory, createConsultStorePorts(directory)) }
+}
 
 let directory: string
 beforeEach(() => { directory = mkdtempSync(join(tmpdir(), 'consult-store-')) })
@@ -123,6 +128,48 @@ it('rechecks authorization under the spawn lock after slow preparation and claim
   store.claim('discussion-1', second.turn.id, handle())
   expect(store.dispatch('discussion-1', second.turn.id, () => 'spawned')).toBe('spawned')
   expect(() => store.dispatch('discussion-1', second.turn.id, () => 'again')).toThrow(/already/)
+})
+
+it('rejects an async dispatch callback before invoking it or persisting dispatch intent', async () => {
+  const store = new ConsultStore(directory)
+  const first = store.reserve(request(directory))
+  store.claim('discussion-1', first.turn.id, handle())
+  const before = store.get('discussion-1')
+  const events: string[] = []
+
+  const asynchronousStart = (async () => {
+    events.push('entered')
+    await Promise.resolve()
+    events.push('continued')
+  }) as unknown as () => void
+  if (false) {
+    // @ts-expect-error Consult dispatch callbacks must not return PromiseLike values.
+    store.dispatch('discussion-1', first.turn.id, async () => undefined)
+  }
+  expect(() => store.dispatch('discussion-1', first.turn.id, asynchronousStart)).toThrow(/synchronous|promise|thenable/i)
+
+  await Promise.resolve()
+  const after = store.get('discussion-1')
+  expect(events).toEqual([])
+  expect(after.revision).toBe(before.revision)
+  expect(after.turns[0]!.dispatch_started_at).toBeNull()
+})
+
+it('records the residual contract when a synchronous callback returns a hidden Promise', async () => {
+  const store = new ConsultStore(directory)
+  const first = store.reserve(request(directory))
+  store.claim('discussion-1', first.turn.id, handle())
+  const events: string[] = []
+  const hiddenPromise = (() => {
+    events.push('entered')
+    return Promise.resolve().then(() => { events.push('continued') })
+  }) as unknown as () => void
+
+  expect(() => store.dispatch('discussion-1', first.turn.id, hiddenPromise)).toThrow(/promise|thenable/i)
+  await Promise.resolve()
+  const turn = store.get('discussion-1').turns[0]!
+  expect(events).toEqual(['entered', 'continued'])
+  expect(turn.dispatch_started_at).not.toBeNull()
 })
 
 it('persists grant expiry when a policy changes, even though dispatch is rejected', () => {

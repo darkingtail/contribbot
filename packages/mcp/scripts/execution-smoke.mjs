@@ -5,7 +5,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
+import { createRequire, register as registerModule } from 'node:module'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -13,6 +13,7 @@ const flags = process.argv.slice(2)
 if (flags.length > 1 || flags.some(flag => flag !== '--source-skill')) throw new Error('Usage: execution-smoke.mjs [--source-skill]')
 const sourceSkill = flags.includes('--source-skill')
 if (sourceSkill) {
+  registerModule(new URL('../../../scripts/source-condition.mjs', import.meta.url))
   const { register } = await import(pathToFileURL(createRequire(import.meta.url).resolve('tsx/esm/api')).href)
   register({ tsconfig: fileURLToPath(new URL('../tsconfig.json', import.meta.url)) })
 }
@@ -32,8 +33,7 @@ const cliPath = sourceSkill
   ? join(home, '.agents/skills/contribbot-todo/scripts/contribbot-exec.mjs')
   : fileURLToPath(new URL('../dist/cli/execution.js', import.meta.url))
 const serverArgs = sourceSkill
-  ? ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
-      fileURLToPath(new URL('../src/mcp/index.ts', import.meta.url))]
+  ? [fileURLToPath(new URL('../../../scripts/dev-mcp.mjs', import.meta.url))]
   : [fileURLToPath(new URL('../dist/mcp/index.js', import.meta.url))]
 const env = {
   ...process.env, HOME: home, USERPROFILE: home, GH_CONFIG_DIR: join(home, 'gh'),
@@ -65,7 +65,7 @@ try {
     const developmentRepo = join(home, 'development checkout')
     mkdirSync(developmentRepo)
     writeFileSync(join(developmentRepo, 'package.json'), readFileSync(join(actualRepo, 'package.json')))
-    for (const name of ['packages', 'skills']) {
+    for (const name of ['packages', 'skills', 'scripts']) {
       const link = join(developmentRepo, name)
       symlinkSync(join(actualRepo, name), link, process.platform === 'win32' ? 'junction' : 'dir')
       sourceLinks.push(link)
