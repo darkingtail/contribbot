@@ -14,6 +14,11 @@ function readItems(path: string, label: string): TodoItem[] {
   return todos
 }
 
+/** Complete, read-only list; normalization and ID checks match the Todo store. */
+export function readTodoItems(directory: string): TodoItem[] {
+  return readItems(join(directory, 'todos.yaml'), 'todos.yaml')
+}
+
 function project(todo: TodoItem): TodoReadModel | null {
   if (!todo.id) return null
   const execution = currentTodoExecution(todo)
@@ -36,7 +41,7 @@ function project(todo: TodoItem): TodoReadModel | null {
 /** Read-only projection of the existing Todo YAML; it never writes or creates the data root. */
 export function readTodoModel(directory: string, todoId: string): TodoReadModel | null {
   requireNonEmpty(todoId, 'Todo id')
-  const todo = readItems(join(directory, 'todos.yaml'), 'todos.yaml').find(item => item.id === todoId)
+  const todo = readTodoItems(directory).find(item => item.id === todoId)
   if (todo) return project(todo)
   const canonicalArchive = join(directory, 'todos.archive.yaml')
   const archived = readItems(existsSync(canonicalArchive) ? canonicalArchive : join(directory, 'archive.yaml'), 'todos.archive.yaml')

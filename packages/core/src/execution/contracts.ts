@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import type { ProcessHandle as PlatformProcessHandle } from 'contribbot-platform/types'
+import { repositoryRefSchema } from '../repository/ref.js'
 
 const text = z.string().trim().min(1).max(16_384)
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/)
 const digest = z.string().regex(/^[a-f0-9]{64}$/)
 const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1)
 const timestamp = z.string().datetime()
-const repository = z.string().regex(/^[\w][\w.-]*\/[\w][\w.-]*$/)
 const branchName = z.string().min(1).max(1024).refine(value =>
   !/[\x00-\x20\x7f~^:?*[\]\\]/.test(value) && !value.includes('..') && !value.includes('@{')
   && value.split('/').every(part => part !== '' && !part.startsWith('.') && !part.endsWith('.') && !part.endsWith('.lock')),
@@ -70,12 +70,12 @@ const deliverableSchema = z.object({
       scope: z.array(scopePathSchema).min(1).max(1000),
     }).strict(),
     z.object({
-      kind: z.literal('remote_ref'), repo: repository,
+      kind: z.literal('remote_ref'), repo: repositoryRefSchema,
       ref: branchName.refine(value => value.startsWith('refs/heads/'), 'Remote ref delivery requires refs/heads/<branch>.'),
       scope: z.array(scopePathSchema).min(1).max(1000),
     }).strict(),
     z.object({
-      kind: z.literal('remote_pull'), repo: repository, number: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      kind: z.literal('remote_pull'), repo: repositoryRefSchema, number: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
       base: branchName, endpoint: z.enum(['submitted', 'merged']), allow_draft: z.boolean(),
       scope: z.array(scopePathSchema).min(1).max(1000),
     }).strict(),
@@ -107,7 +107,7 @@ export const candidateReferenceSchema = z.object({
 }).strict()
 
 export const workspaceBindingSchema = z.object({
-  repo: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  repo: repositoryRefSchema,
   root: text, git_dir: text, common_dir: text, baseline: digest,
   machine: processHandleSchema.shape.machine.optional(),
 }).strict()
@@ -177,7 +177,7 @@ export const closureIntentSchema = z.object({
   target: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('local') }).strict(),
     z.object({
-      kind: z.literal('issue'), repo: text, issue_number: z.number().int().positive(), comment_digest: digest.optional(),
+      kind: z.literal('issue'), repo: repositoryRefSchema, issue_number: z.number().int().positive(), comment_digest: digest.optional(),
     }).strict(),
   ]),
 }).strict()

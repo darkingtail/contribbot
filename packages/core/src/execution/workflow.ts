@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
+import { sameRepository } from '../repository/ref.js'
 import {
   candidateReferenceSchema, workflowPlanInputSchema, workflowRequestSchema, workflowSchema,
 } from './contracts.js'
@@ -453,11 +454,11 @@ function apply(state: WorkflowState, command: WorkflowCommand, now: string): voi
       if (command.action === 'relocate_attempt') {
         if (!previous || previous.id !== state.attempt_id || command.relocation.from_attempt !== previous.id
           || command.relocation.plan_digest !== plan.digest || previous.plan_id !== plan.id
-          || previous.owner !== command.owner || previous.workspace.repo !== command.workspace.repo || !command.workspace.machine) {
+          || previous.owner !== command.owner || !sameRepository(previous.workspace.repo, command.workspace.repo) || !command.workspace.machine) {
           throw new Error('Relocation requires the exact settled attempt, original owner, confirmed plan digest and canonical repository.')
         }
       }
-      else if (previous && (previous.workspace.repo !== command.workspace.repo || previous.workspace.root !== command.workspace.root
+      else if (previous && (!sameRepository(previous.workspace.repo, command.workspace.repo) || previous.workspace.root !== command.workspace.root
         || previous.workspace.git_dir !== command.workspace.git_dir || previous.workspace.common_dir !== command.workspace.common_dir
         || !isDeepStrictEqual(previous.workspace.machine, command.workspace.machine))) {
         throw new Error('Changing workspace or machine requires explicit local relocation; normal bind cannot transfer ownership.')
@@ -501,7 +502,7 @@ function apply(state: WorkflowState, command: WorkflowCommand, now: string): voi
       const { attempt } = current(state)
       if (command.actor !== attempt.owner) throw new Error('Only the accountable owner can prepare delegation.')
       if (command.workspace.root === attempt.workspace.root || command.workspace.git_dir === attempt.workspace.git_dir
-        || command.workspace.common_dir !== attempt.workspace.common_dir || command.workspace.repo !== attempt.workspace.repo) {
+        || command.workspace.common_dir !== attempt.workspace.common_dir || !sameRepository(command.workspace.repo, attempt.workspace.repo)) {
         throw new Error('Delegation requires a distinct linked worktree for the same repository.')
       }
       if (state.operations.some(item => item.delegation?.token === command.token)) throw new Error('Delegation token is already reserved.')
@@ -775,7 +776,7 @@ export function normalizeWorkflow(input: unknown): WorkflowState {
     if (attempt.relocation) {
       const earlier = state.attempts.slice(0, state.attempts.indexOf(attempt)).at(-1)
       if (!earlier || earlier.id !== attempt.relocation.from_attempt || earlier.plan_id !== attempt.plan_id
-        || earlier.owner !== attempt.owner || earlier.workspace.repo !== attempt.workspace.repo || !attempt.workspace.machine
+        || earlier.owner !== attempt.owner || !sameRepository(earlier.workspace.repo, attempt.workspace.repo) || !attempt.workspace.machine
         || state.plans.find(plan => plan.id === attempt.plan_id)?.digest !== attempt.relocation.plan_digest) {
         throw new Error('Invalid relocation ancestry or confirmation.')
       }
@@ -835,7 +836,7 @@ export function normalizeWorkflow(input: unknown): WorkflowState {
       const workspace = state.attempts.find(attempt => attempt.id === operation.attempt_id)!.workspace
       if (!operation.delegated || operation.kind !== 'write' || delegation.workspace.root === workspace.root
         || delegation.workspace.git_dir === workspace.git_dir || delegation.workspace.common_dir !== workspace.common_dir
-        || delegation.workspace.repo !== workspace.repo
+        || !sameRepository(delegation.workspace.repo, workspace.repo)
         || (delegation.host === null) !== (delegation.attachment === null)
         || (delegation.host && operation.actor !== `${delegation.host.provider}:${delegation.host.task_id}`)
         || (delegation.observation && !delegation.host)

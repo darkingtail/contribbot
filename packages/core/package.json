@@ -29,6 +29,31 @@
       "contribbot-source": "./src/execution/workflow.ts",
       "default": "./dist/execution/workflow.js"
     },
+    "./repository/ref": {
+      "types": "./src/repository/ref.ts",
+      "contribbot-source": "./src/repository/ref.ts",
+      "default": "./dist/repository/ref.js"
+    },
+    "./repository/config": {
+      "types": "./src/repository/config.ts",
+      "contribbot-source": "./src/repository/config.ts",
+      "default": "./dist/repository/config.js"
+    },
+    "./repository/projects": {
+      "types": "./src/repository/projects.ts",
+      "contribbot-source": "./src/repository/projects.ts",
+      "default": "./dist/repository/projects.js"
+    },
+    "./storage/paths": {
+      "types": "./src/storage/paths.ts",
+      "contribbot-source": "./src/storage/paths.ts",
+      "default": "./dist/storage/paths.js"
+    },
+    "./todo/file-read": {
+      "types": "./src/todo/file-read.ts",
+      "contribbot-source": "./src/todo/file-read.ts",
+      "default": "./dist/todo/file-read.js"
+    },
     "./todo/records": {
       "types": "./src/todo/records.ts",
       "contribbot-source": "./src/todo/records.ts",
@@ -48,6 +73,6 @@
   "scripts": {
     "build": "node ../../scripts/compile-package.mjs --package core --mode build",
     "typecheck": "node ../../scripts/compile-package.mjs --package core --mode typecheck",
-    "test": "pnpm build && node --test test/smoke.test.mjs test/packet.test.mjs"
+    "test": "pnpm build && node --test test/*.test.mjs"
   }
 }

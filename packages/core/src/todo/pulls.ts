@@ -1,21 +1,21 @@
 import { z } from 'zod'
+import { repositoryIdentityKey, repositoryRefSchema } from '../repository/ref.js'
 
 export const todoPullSchema = z.object({
-  repo: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/)
-    .refine(value => !['.', '..'].includes(value.split('/')[1]!)),
+  repo: repositoryRefSchema,
   number: z.number().int().positive().safe(),
 }).strict()
 
 export type TodoPull = z.infer<typeof todoPullSchema>
 
 export function pullIdentity(pull: TodoPull): string {
-  return `${pull.repo.toLowerCase()}#${pull.number}`
+  return JSON.stringify([repositoryIdentityKey(pull.repo), pull.number])
 }
 
 export function normalizeTodoPulls(value: unknown): TodoPull[] {
   const unique = new Map<string, TodoPull>()
   for (const pull of z.array(todoPullSchema).parse(value)) {
-    unique.set(pullIdentity(pull), { ...pull, repo: pull.repo.toLowerCase() })
+    unique.set(pullIdentity(pull), pull)
   }
   return [...unique.values()]
 }
