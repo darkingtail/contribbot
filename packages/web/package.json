@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.mjs",
-    "test": "node --test server.test.mjs"
+    "dev": "pnpm --filter contribbot-core build && node server.mjs",
+    "test": "pnpm --filter contribbot-core build && node --test *.test.mjs"
   },
   "dependencies": {
+    "contribbot-core": "workspace:*",
     "yaml": "^2.8.2"
   }
 }

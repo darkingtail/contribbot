@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -12,7 +12,14 @@ import type { ConsultRunnerDependencies, ConsultRuntimeHooks } from './orchestra
 import { executableDigest, pipeTransport } from 'contribbot-agent-runtime'
 
 let directory: string
-beforeEach(() => { directory = mkdtempSync(join(tmpdir(), 'consult-runner-')) })
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'consult-runner-'))
+  writeFileSync(join(directory, 'config.yaml'), JSON.stringify({
+    schema_version: 3,
+    repository: { platform: 'github', instance: 'https://github.com', path: 'fixture/runner' },
+    lifecycle: { status: 'active' }, parent: { status: 'unknown' }, tracking: { status: 'pending' },
+  }))
+})
 afterEach(() => { rmSync(directory, { recursive: true, force: true }) })
 
 const decision = { source: 'fixture:user', statement: 'Run the selected test advisor once.' }

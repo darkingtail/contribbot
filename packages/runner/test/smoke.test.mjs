@@ -31,6 +31,14 @@ function binding(executable, executableDigestValue = digest('runner-fixture'), r
   }
 }
 
+function initializeProject(directory) {
+  writeFileSync(join(directory, 'config.yaml'), JSON.stringify({
+    schema_version: 3,
+    repository: { platform: 'github', instance: 'https://github.com', path: 'fixture/runner' },
+    lifecycle: { status: 'active' }, parent: { status: 'unknown' }, tracking: { status: 'pending' },
+  }))
+}
+
 function reserve(store, id = 'runner-turn') {
   return store.reserve({
     request_id: `${id}-request`, discussion_id: `${id}-discussion`, purpose: 'design', mode: 'fresh',
@@ -134,10 +142,33 @@ test('CLI discovery is read-only and malformed arguments always return JSON', as
 test('start rejects a missing exact turn without launching an untracked worker', async () => {
   const home = mkdtempSync(join(tmpdir(), 'contribbot-runner-missing-'))
   try {
+    initializeProject(home)
     const result = await runNode([cli, 'consult', 'start', '--directory', home, '--discussion', 'missing', '--turn', 'missing'])
     assert.equal(result.code, 1)
     assert.match(JSON.parse(result.stdout).error.message, /not found/i)
     assert.equal(existsSync(join(home, 'consult')), false)
+  }
+  finally { rmSync(home, { recursive: true, force: true }) }
+})
+
+test('source and dist CLIs reject invalid project configs before dispatch without writes', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'contribbot-runner-config-'))
+  try {
+    for (const command of [[cli], ['--conditions=contribbot-source', '--import', tsx, sourceCli]]) {
+      const args = ['consult', 'start', '--directory', home, '--discussion', 'missing', '--turn', 'missing']
+      if (existsSync(join(home, 'config.yaml'))) rmSync(join(home, 'config.yaml'))
+      const missing = await runNode([...command, ...args])
+      assert.equal(missing.code, 1)
+      assert.match(JSON.parse(missing.stdout).error.message, /not initialized/)
+      assert.equal(existsSync(join(home, 'consult')), false)
+      const content = '{"schema_version":2,"repository":"fixture/runner"}'
+      writeFileSync(join(home, 'config.yaml'), content)
+      const invalid = await runNode([...command, ...args])
+      assert.equal(invalid.code, 1)
+      assert.match(JSON.parse(invalid.stdout).error.message, /Invalid schema v3/)
+      assert.equal(readFileSync(join(home, 'config.yaml'), 'utf8'), content)
+      assert.equal(existsSync(join(home, 'consult')), false)
+    }
   }
   finally { rmSync(home, { recursive: true, force: true }) }
 })
@@ -148,6 +179,7 @@ test('CLI observes actual processes and reconciles only a fresh explicit operato
   const closed = once(child, 'close')
   await once(child, 'spawn')
   try {
+    initializeProject(home)
     const store = createConsultStore(home)
     const reserved = reserve(store)
     const handle = await describeProcessAsync(child.pid)
@@ -211,6 +243,7 @@ test('CLI observes actual processes and reconciles only a fresh explicit operato
 test('dist Runner executes one injected turn and does not redispatch a settled turn', async () => {
   const home = mkdtempSync(join(tmpdir(), 'contribbot-runner-package-'))
   try {
+    initializeProject(home)
     const store = createConsultStore(home)
     const reserved = reserve(store)
     const runner = await import('../dist/index.js')
@@ -259,6 +292,7 @@ test('source and dist CLIs launch detached workers and settle a bounded provider
         writeFileSync(join(home, 'tsconfig.json'), '{broken foreign project config')
         env.TSX_TSCONFIG_PATH = join(home, 'tsconfig.json')
       }
+      initializeProject(home)
       const store = createConsultStore(home)
       const body = `${label} worker fixture`
       const reserved = store.reserve({

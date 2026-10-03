@@ -74,4 +74,14 @@ h1 { margin: 5px 0 0; font-size: 26px; letter-spacing: -.02em; }
 .fact span:first-child { color: var(--muted); }
 .fact span:last-child { text-align: right; overflow-wrap: anywhere; }
 .empty, .loading { padding: 45px 0; color: var(--muted); text-align: center; }
+.diagnostics { border-left: 3px solid var(--amber); padding: 8px 16px; margin-bottom: 24px; overflow-wrap: anywhere; }
+.diagnostics h2 { font-size: 15px; margin: 0 0 8px; }
+.diagnostics p { font-size: 12px; line-height: 1.5; margin: 8px 0; }
+.project-card p, .detail-meta, .report, .todo-title, .todo-meta { overflow-wrap: anywhere; }
+.project-title { flex-wrap: wrap; }
+.project-title h3 { flex: 1 1 100%; }
+.section-head { flex-wrap: wrap; gap: 8px; }
+.fact { min-width: 0; }
+.fact span:last-child { min-width: 0; }
+@media (max-width: 480px) { .project-grid { grid-template-columns: minmax(0, 1fr); } .topbar { gap: 12px; flex-wrap: wrap; } .detail-head { flex-wrap: wrap; } }
 @media (max-width: 800px) { .shell { grid-template-columns: 1fr; } .sidebar { padding: 14px 18px; } .sidebar .eyebrow, .sidebar-foot { display: none; } nav { display: flex; margin-top: 14px; } .nav-item { flex: 1; } .topbar { padding: 20px 24px; } .content { padding: 24px; } .summary-grid { grid-template-columns: repeat(2, 1fr); } .detail-grid { grid-template-columns: 1fr; } }
