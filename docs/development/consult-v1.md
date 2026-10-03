@@ -26,7 +26,8 @@ Consult 是当前主助手向另一位 Agent 获取建议的能力，不是 Agen
 | 解除异常占用 | `contribbot-run consult observe/reconcile` | 本机观察、来源报告、精确版本和用户授权；仅解除本地占用 |
 | 清理原文 | `consult_purge_raw` | 精确确认后删除本地原文，不自动清理 |
 
-每次显式传 `repo=owner/repo`。MCP 在其所在机器执行，`workspace` 必须是该机器上的目录，
+每次显式传 `repo: {platform, instance, path}` 完整仓库对象，不传 `owner/repo`
+字符串，也没有隐式项目绑定。MCP 在其所在机器执行，`workspace` 必须是该机器上的目录，
 不能把远程 MCP 路径当作本机路径。`todo_context` / `todo_detail` 只读显示关联咨询摘要；
 咨询数据损坏不应阻塞 Todo 本身。
 
@@ -145,7 +146,10 @@ Codex 目前只有离线写保护探针和协议测试通过，真实模型鉴�
 MCP 只提供领域工具，Runner 负责单轮执行编排与 supervisor，
 Agent Runtime 负责 Provider binding、能力探针和 transport。
 通用 OS 进程观察在 Platform 叶包共享，Core 只依赖其结构类型和注入端口。
-记录位于 `~/.contribbot/{owner}/{repo}/consult/`，不占用执行证据目录。
+记录位于 `~/.contribbot/projects/v1/<repositoryDigest>/consult/`，不占用执行证据目录。
+MCP 和 Runner 均复用 `packages/core/src/repository/config.ts` 的严格配置读取；
+项目未初始化、配置损坏或 digest 与仓库身份不符时拒绝进入 Consult，
+不会自动新建或转换配置。合法项目仍允许无 Todo 的独立咨询。
 读写用 Node API，跨进程锁沿用 Todo 锁，避免咨询派发与 Todo 暂停互相错过。
 
 开发态入口见 `skills/consult/scripts/contribbot-run.mjs`，从源码 Skill 的真实位置发现 checkout，

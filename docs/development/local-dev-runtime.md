@@ -303,19 +303,19 @@ uv run --project D:/dev/darkingtail/contribbot/packages/agent contribbot init
 
 `init` 会：
 
-1. 从当前 Git 仓库的 `origin` 推导 `owner/repo`；
-2. 调用 MCP 的 `project_init` 工具；
+1. 从当前 Git 仓库的 `origin` 识别 `{platform, instance, path}` 完整仓库身份；
+2. 显式传该对象调用 MCP 的 `project_init` 工具，不从展示文字推断身份；
 3. 初始化或读取 `config.yaml`；
-4. 解析 fork 项目的 canonical parent；
+4. 保持当前仓库作为项目主体，parent 仅是关系事实，不重定向项目；
 5. 输出当前项目、活动 Todo 的 Phase/Next 恢复上下文和全局已跟踪项目；
 6. 不执行 Patrol，不创建 Todo，不写 Knowledge，不修改 GitHub。
 
-针对 fork 仓库，数据目录以 parent 为准。例如：
+针对 fork 仓库，数据目录仍以请求仓库的完整身份为准。例如：
 
 ```text
-请求仓库：darkingtail/antdv-next
-canonical：antdv-next/antdv-next
-数据目录：~/.contribbot/antdv-next/antdv-next/
+请求仓库：{platform: github, instance: "https://github.com", path: darkingtail/antdv-next}
+项目主体：请求仓库本身；parent 关系另行核实，不改变归属
+数据目录：~/.contribbot/projects/v1/<请求仓库的 repositoryDigest>/
 ```
 
 初始化后再执行只读巡检：
@@ -348,6 +348,10 @@ http://127.0.0.1:4173
 ```
 
 当前 Web UI 是 report-only，只展示项目、Todo 和 Patrol 报告，不执行 GitHub 写操作。
+`pnpm web` 会先构建 Core 共享读取层，再启动 HTTP 服务。
+它只扫描 `projects/v1/<repositoryDigest>`，复用严格 v3 配置校验，不回退旧
+owner/repo 目录，也不初始化、修复或转换数据。同名跨实例项目用 digest
+选择；损坏配置和不可读 Todo/巡检有明确诊断，未知计数不当成 0。
 
 ## 验证与限制
 
@@ -358,7 +362,8 @@ http://127.0.0.1:4173
   `codex mcp get contribbot` 已确认仓库覆盖配置最终使用 TypeScript 源码入口。
   这不等于当前已打开会话的工具目录已刷新；仍需重连或重启宿主。
 - Agent 测试使用独立的 `--basetemp`，避免本机默认 pytest 临时目录的权限问题。
-- Web UI 此前验证过 HTTP/API 和真实项目数据；尚无浏览器交互自动化验收。
+- 2026-10-02 的 Web v3 HTTP/API、桌面及手机尺寸浏览器交互检查已通过，
+  使用合成临时 HOME；不代表用户实际数据验收或完整 schema 升级完成。
 - 开发安装命令会修改本机 Codex 配置并链接全局 Skills，但不实现自动进程热重载。
 - CLI `init` 输出上下文，不会修改其他 AI 会话，也不会永久设置默认 repo。
 - 本地数据仍是真实的 `~/.contribbot` 数据；初始化可能创建配置，巡检会写本地审计文件。

@@ -73,20 +73,22 @@ pnpm test:execution-smoke
 node packages/mcp/dist/cli/execution.js --help
 node packages/mcp/dist/cli/execution.js check --help
 node packages/mcp/dist/cli/execution.js apply --schema
-node packages/mcp/dist/cli/execution.js context --repo owner/repo --request request.json --data-root /absolute/isolated-data
+node packages/mcp/dist/cli/execution.js context --request request.json --data-root /absolute/isolated-data
 ```
 
 每个动作的 `--help` 说明用途和输入，`--schema` 输出 `request.json` 的 JSON Schema。
-二者无需 repo、已初始化任务或请求文件，从任意目录查询也不会创建任务数据，
+二者无需仓库身份、已初始化任务或请求文件，从任意目录查询也不会创建任务数据，
 即使附带损坏的 `--request` 文件也不会读取它。查询其他目录里的构建入口时使用其绝对路径。
-字段来自实际运行时 Zod schema，顶层 repo、数据目录和 action 由 CLI 提供；
+字段来自实际运行时 Zod schema；请求 JSON 顶层必填完整
+`repo: { "platform": "github", "instance": "https://github.com", "path": "owner/repo" }`。
+`--data-root` 和 action 由 CLI 提供；不再接受 `--repo owner/repo`。
 `apply` 只显示公开宿主动作，不展示内部检查完成、归档等状态转换。
 schema 的 `x-contribbot.validation=structure-only` 明确表示**只描述输入结构**：
 跨字段约束、当前流程状态、真实文件/证据及用户授权仍由运行时和宿主核对。
 结构合法不等于请求一定可执行，更不等于任务已完成。
 
-Windows 使用本机绝对路径。`data-root` 是包含 `owner/repo/` 的数据根，
-不是项目数据目录本身；开发验证始终显式指定隔离目录。
+Windows 使用本机绝对路径。`data-root` 是包含 `projects/v1/<repository-digest>/`
+的 contribbot 数据根，不是某个项目数据目录本身；开发验证始终显式指定隔离目录。
 请求文件为 JSON，传 `--request -` 可从 stdin 读取。请求与响应使用稳定
 `todo_id`、`execution_id`；变更额外使用唯一请求 ID 和预期版本。
 context/resume 的 `workflow_revision` 是下一次变更所用的版本；
@@ -229,6 +231,11 @@ pnpm --filter contribbot-mcp exec vitest run src/core/tools/linkage/issue-close.
 
 ```json
 {
+  "repo": {
+    "platform": "github",
+    "instance": "https://github.com",
+    "path": "owner/repo"
+  },
   "todo_id": "t-...",
   "execution_id": "te-...",
   "request_id": "relocate-1",
@@ -261,7 +268,7 @@ pnpm --filter contribbot-mcp exec vitest run src/core/tools/linkage/issue-close.
 ```
 
 ```sh
-node packages/mcp/dist/cli/execution.js observe --repo owner/repo --request observe.json --data-root /absolute/isolated-data
+node packages/mcp/dist/cli/execution.js observe --request observe.json --data-root /absolute/isolated-data
 ```
 
 结果分别报告原助手、独立执行进程（supervisor）和直属命令的 PID、机器、
@@ -288,7 +295,9 @@ pnpm --filter contribbot-mcp exec vitest run src/core/execution/checks.test.ts s
 
 测试实际启动并中断隔离进程，确认请求方退出后原检查仍能保存结果，且只运行一次；
 也确认 supervisor 被终止而分离后代存活时，不会重复派工或启动第二个 writer，
-并在测试后通知自有进程退出。另用受控的慢查询验证超时仍能阻止命令越时写文件。
+并在测试后通知自有进程退出。另用受控的 pending 查询和 process 回执发布验证，
+超时请求会及时发起终止，且查询或发布不会阻塞停止动作；终止窗口内仍可能发生
+迟到副作用，不能据此宣称工作区已经静止。
 这些结果不等于拥有完整进程树隔离或自动接管能力。
 
 ## 显式对账与继续

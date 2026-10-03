@@ -1,5 +1,11 @@
 # Init external upstream confirmation
 
+> Historical design note (pre-schema v3). The `upstream`, `upstream_confirmed`,
+> `--upstream`, and `owner/repo` interfaces below are not the current contract.
+> For current project identity and tracking configuration, see
+> [Project config.yaml schema v3](../plans/2026-09-29-project-config-contract.md).
+> Do not use this page as implementation or migration guidance.
+
 Initialization does not infer an external upstream from a repository name or fork parent.
 
 | Stored configuration | Derived status | Note |

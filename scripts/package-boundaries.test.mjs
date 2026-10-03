@@ -18,7 +18,7 @@ const packages = new Map(readdirSync(resolve(root, 'packages'), { withFileTypes:
 function sources(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const path = resolve(directory, entry.name)
-    if (entry.name === '__fixtures__') return []
+    if (['__fixtures__', 'test', 'node_modules', 'dist'].includes(entry.name)) return []
     if (entry.isDirectory()) return sources(path)
     return /\.(?:ts|mjs|js)$/.test(entry.name) && !/\.test\./.test(entry.name) ? [path] : []
   })
@@ -55,8 +55,8 @@ function graph(fromSources) {
   return new Map([...packages].map(([name, { directory, manifest }]) => {
     const edges = new Set(Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.devDependencies })
       .filter(dependency => packages.has(dependency)))
-    if (fromSources && name !== 'contribbot-web') {
-      for (const file of sources(resolve(directory, 'src'))) {
+    if (fromSources) {
+      for (const file of sources(name === 'contribbot-web' ? directory : resolve(directory, 'src'))) {
         for (const specifier of imports(readFileSync(file, 'utf8'), file)) {
           const target = packageForImport(specifier, file)
           if (target && target !== name) edges.add(target)
@@ -96,6 +96,7 @@ for (const [name, forbidden] of [
   ['contribbot-core', ['contribbot-mcp', 'contribbot-runner', 'contribbot-agent-runtime']],
   ['contribbot-agent-runtime', ['contribbot-mcp', 'contribbot-core', 'contribbot-runner']],
   ['contribbot-runner', ['contribbot-mcp']],
+  ['contribbot-web', ['contribbot-mcp', 'contribbot-runner', 'contribbot-agent-runtime']],
   ['contribbot-platform', ['contribbot-mcp', 'contribbot-core', 'contribbot-runner', 'contribbot-agent-runtime']],
 ]) {
   test(`${name} obeys the approved transitive manifest and source boundaries`, () => {
@@ -105,6 +106,21 @@ for (const [name, forbidden] of [
     }
   })
 }
+
+test('Web uses only explicit Core read subpaths', () => {
+  const { directory } = packages.get('contribbot-web')
+  const allowed = new Set([
+    'contribbot-core/repository/ref', 'contribbot-core/repository/projects',
+    'contribbot-core/todo/file-read', 'contribbot-core/storage/paths',
+  ])
+  for (const file of sources(directory)) {
+    for (const specifier of imports(readFileSync(file, 'utf8'), file)) {
+      if (packageForImport(specifier, file) === 'contribbot-core') {
+        assert.ok(allowed.has(specifier), `${file}: ${specifier}`)
+      }
+    }
+  }
+})
 
 test('Core imports platform structural types, never the OS implementation', () => {
   for (const file of sources(resolve(root, 'packages/core/src'))) {

@@ -2,6 +2,53 @@
 
 > 工具数量以当前 MCP `tools/list` 为准；源码构建不等于宿主已重连。
 
+仓库范围工具的 `repo` 必须显式传完整 `{platform, instance, path}`，
+没有默认项目或 MCP 隐式绑定。追踪来源参数 `upstream_repo` 同样使用
+完整对象；展示名称、仓库 URL 和 `owner/repo` 简写不是 MCP 入参。
+五键配置及平台能力边界见 [schema v3 契约](plans/2026-09-29-project-config-contract.md)。
+
+### GitLab 首次只读初始化
+
+`project_init` 首次创建 GitLab 项目前执行一次 GET：
+`<instance>/api/v4/projects/<编码后的 path>`，返回的 `path_with_namespace`
+必须与请求路径精确一致。成功仅保存五键配置的
+`lifecycle.active / parent.unknown / tracking.pending`，不推断 fork、权限、
+追踪选择或 Todo。失败不创建数据；已有合法配置（含 archived）离线读取，
+不重新鉴权，也不恢复归档。损坏配置或孤立数据在请求前拒绝。
+
+私有凭据由可信启动环境提供，不是项目配置字段或 MCP 参数。
+`CONTRIBBOT_GITLAB_CREDENTIAL_BINDINGS` 是 JSON 数组，例如：
+
+```json
+[
+  {
+    "instance": "https://code.example.test:8443/gitlab",
+    "token_env_name": "TEAM_GITLAB_TOKEN"
+  }
+]
+```
+
+该例只展示非秘密绑定，不包含或要求在对话中提供 token。
+指定变量的值由可信凭据配置方提供；绑定本身不授予访问权限。
+
+| 边界 | 行为 | 备注 |
+| --- | --- | --- |
+| 绑定格式 | 每项恰好 `instance`、`token_env_name` 两键 | 变量名仅接受字母、数字、下划线，不能以数字开头 |
+| 实例匹配 | 规范化 HTTPS 主机、端口、部署前缀后精确相等 | 不同端口、前缀或协议不会共享 token；重复实例或大小写别名变量拒绝 |
+| 读取时机 | 启动只捕获非秘密绑定字符串，首次 GitLab 核验才校验及读匹配变量 | 运行中不能重绑实例，匹配 token 值可以轮换 |
+| 没有绑定 | 单次匿名 GET | 不读取 `GITLAB_TOKEN`、`GLAB_TOKEN`、`CI_JOB_TOKEN` 或 glab 登录态 |
+| 匹配但缺 token | 请求前报错 | 不降级到匿名或自动重试 |
+| 网络 | 不跟随重定向、忽略 cookie，30 秒 HTTP 传输超时 | 不是 Consult 模型硬截止；HTTP 实例仅可匿名访问，不发送凭据 |
+| 错误 | 返回脱敏的新错误 | 不回显响应正文、token 或原始 cause |
+
+MCP 启动不再强制 GitHub 登录；GitHub 认证仍在实际平台调用时处理，
+该变化不是远端权限放宽。当前 GitLab 验证只使用假 token 和模拟响应；
+带凭据的真实 `project_init` 实现入口已有模拟集成测试，覆盖首次创建、
+离线重复进入、缺凭据拒绝、302/401 无重试及不同实例不转发 token。
+真实部署、带凭据的跨 stdio 初始化及慢响应体仍有验证缺口，响应体未设字节上限。
+初始化适配不扩展 GitLab 的 `repo_info`、Issue/MR、parent 或追踪抓取能力；
+不能为查证一个 tracking 候选而调用它的 `project_init` 创建新项目。
+
 ---
 
 ## Consult 顾问（6 Tools）
@@ -34,17 +81,29 @@
 
 ---
 
-## 仓库管理（7 Tools）
+## 仓库管理（8 Tools）
 
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `repo_config` | 查看仓库配置及生命周期，更新 upstream，首次访问自动检测 | `repo`, `upstream?` |
-| `sync_fork` | 同步 fork 默认分支到上游最新，从 config.yaml 读取 fork 信息 | `repo`, `branch?` |
-| `project_list` | 项目概况，默认 active；可筛选 archived/all | `status?` |
-| `project_archive` | 归档本地项目，保留数据，不更改 GitHub | `repo` |
-| `project_restore` | 恢复活跃维护，不自动执行巡检 | `repo` |
-| `project_status` | 只读 JSON 生命周期接口，含 canonical repo，不初始化配置 | `repo` |
-| `contribution_stats` | 个人贡献统计：PRs/issues/reviews 数量 | `days?`, `author?`, `repo` |
+| 工具 | 说明 | 参数 | 备注 |
+| --- | --- | --- | --- |
+| `repo_config` | 查看五键配置，或保存明确的追踪选择 | `repo`, `tracking?` | 非空完整身份数组表示 configured，`""` 表示 none；省略只读，不初始化 |
+| `parent_refresh` | 显式核实直接 parent，成功才更新本地快照与关系核实时间 | `repo` | 当前仅 GitHub.com；不初始化、同步代码、改 tracking、生命周期或 Todo；归档不恢复 |
+| `sync_fork` | 核实已记录的直接 parent 和权限后，同步主体 fork 的指定或默认分支 | `repo`, `branch?` | 当前仅 GitHub.com；parent unknown 时拒绝，不猜来源 |
+| `project_list` | 项目概况，默认 active；可筛选 archived/all | `status?` | 返回完整身份与 digest，损坏配置单独诊断 |
+| `project_archive` | 归档本地项目，保留数据，不更改 GitHub | `repo` | 需明确用户决定 |
+| `project_restore` | 恢复活跃维护，不自动执行巡检 | `repo` | 不改变 Todo 状态 |
+| `project_status` | 只读 JSON 生命周期接口，含完整 repository，不初始化配置 | `repo` | 不能从显示名称反解身份 |
+| `contribution_stats` | 个人贡献统计：PRs/issues/reviews 数量 | `days?`, `author?`, `repo` | 远端支持范围不由配置扩展 |
+
+`project_init` 首次保存 parent unknown，`repo_config` 查看不会联网刷新。
+`parent_refresh` 仅在用户明确要求核实关系时调用，不是初始化或同步的自动步骤。
+响应含 `structuredContent: {schema_version: 1, repository, status, parent}`，
+附可读 Markdown；配置仍为 schema v3，不添加持久字段。
+
+| 结果 | 含义 | 备注 |
+| --- | --- | --- |
+| `refreshed` | 可靠响应确认直接 parent，或明确确认不是 fork | 更新 `parent` 与 `relation_verified_at`，不改变管理主体 |
+| `unavailable` | 请求成功但关系证据不足 | 返回旧 parent 快照与旧时间，文字明确 not reverified；不等于无 parent |
+| MCP 错误 | 请求失败、身份不符、自引用、并发冲突、配置错误或入口不支持 | 不覆盖配置，不返回伪造的刷新成功；不自动重试 |
 
 参见[项目归档与恢复](development/project-archive.md)。归档不等于 Todo 完成，
 `project_init` 不会自动恢复；Agent 巡检和恢复 Run 在执行前检查项目状态。
@@ -122,16 +181,16 @@
 
 ```bash
 # 查看归档统计（不传参数）
-todo_compact(repo="owner/repo")
-upstream_compact(upstream_repo="upstream/repo", repo="owner/repo")
+todo_compact(repo={platform:"github", instance:"https://github.com", path:"darkingtail/repo"})
+upstream_compact(upstream_repo={platform:"github", instance:"https://github.com", path:"team/source"}, repo={platform:"github", instance:"https://github.com", path:"darkingtail/repo"})
 
 # 按条数：Todo 删除超量的旧归档；upstream 归档超量的已处理条目
-todo_compact(repo="owner/repo", keep=50)
-upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", keep=100)
+todo_compact(repo={platform:"github", instance:"https://github.com", path:"darkingtail/repo"}, keep=50)
+upstream_compact(upstream_repo={platform:"github", instance:"https://github.com", path:"team/source"}, repo={platform:"github", instance:"https://github.com", path:"darkingtail/repo"}, keep=100)
 
 # 按日期：Todo 删除早于此日期的归档；upstream 归档较早的已处理条目
-todo_compact(repo="owner/repo", before="2025-01-01")
-upstream_compact(upstream_repo="upstream/repo", repo="owner/repo", before="2025-06-01")
+todo_compact(repo={platform:"github", instance:"https://github.com", path:"darkingtail/repo"}, before="2025-01-01")
+upstream_compact(upstream_repo={platform:"github", instance:"https://github.com", path:"team/source"}, repo={platform:"github", instance:"https://github.com", path:"darkingtail/repo"}, before="2025-06-01")
 ```
 
 - `before` 和 `keep` **互斥**，只能传一个
@@ -158,7 +217,7 @@ PR 合并不自动触发 Todo 完成、取消或归档。源码实现与验证�
 
 ## Bounty 协调（7 Tools）
 
-为 GitHub 原生开源协作流程增加可选悬赏协调能力。bounty 数据本地存储在 `~/.contribbot/{owner}/{repo}/bounties.yaml`，不托管资金，不替代 GitHub issue / PR / review。
+为 GitHub 原生开源协作流程增加可选悬赏协调能力。bounty 数据本地存储在 `~/.contribbot/projects/v1/<digest>/bounties.yaml`，不托管资金，不替代 GitHub issue / PR / review。
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
@@ -224,13 +283,13 @@ PR 合并不自动触发 Todo 完成、取消或归档。源码实现与验证�
 
 ## 上游追踪（9 Tools）
 
-支持 fork source 和外部 upstream，共用 upstream.yaml，追踪源由 repo key 区分。无 release 的仓库自动 fallback 到 tags。
+支持 parent 来源和外部 tracking 来源。追踪记录的来源键由完整 `{platform, instance, path}` 身份生成；当前远端抓取仅支持 GitHub.com。无 release 的仓库自动 fallback 到 tags。
 
 ### 版本同步（4 Tools）
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
-| `upstream_sync_check` | 对比上游 release 变更与目标仓库同步状态，按 feat/fix 分组 | `upstream_repo`, `repo`, `version?`, `target_branch?`, `save?` |
+| `upstream_sync_check` | 对比上游 release 与目标仓库，按 feat/fix 分组；保存时按来源、版本、目标分支隔离到 `sync/releases/v1/` | `upstream_repo`, `repo`, `version?`, `target_branch?`, `save?` |
 | `upstream_list` | 版本同步总览 + 每日 commits 摘要 | `repo`, `upstream_repo?` |
 | `upstream_detail` | 查看某版本同步详情或实现记录 | `upstream_repo`, `version`, `repo` |
 | `upstream_update` | 更新同步条目：状态 / 关联 PR / 难度 | `upstream_repo`, `version`, `item_index`, `status?`, `pr?`, `difficulty?`, `repo` |
@@ -248,7 +307,27 @@ PR 合并不自动触发 Todo 完成、取消或归档。源码实现与验证�
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
-| `sync_history` | 查看历史同步记录 | `repo` |
+| `sync_history` | 查看已核验来源身份的版本报告；旧 `sync/*.md` 保留但不读取 | `repo` |
+
+仓库参数 `repo` 与 `upstream_repo` 都是完整的三字段对象，不接受
+`owner/repo` 简写。`target_branch` 省略时检查全部分支，历史报告也将此
+情况与指定分支分开。旧版本报告不自动迁移、覆盖或混入新历史列表。
+
+### 来源存储与隔离
+
+主体项目位于 `projects/v1/<project-digest>/`。以下来源 digest 使用同一
+`repository-key-v1` 规则，从来源的完整三字段身份生成，不只使用仓库路径。
+
+| 文件 | 当前格式 | 备注 |
+| --- | --- | --- |
+| `upstream.yaml` | `schema_version: 1`；`sources.<source-digest>` 含 `repository`、`versions`、`daily` | 读取核对内嵌身份与键；不同实例的相同 SHA 不合并 |
+| `upstream.archive.yaml` | `schema_version: 1`；`sources.<source-digest>` 含 `repository`、`commits` | 归档失败保留活动记录；重试不重复追加完全相同的已归档提交 |
+| `upstream/<source-digest>/<version>.md` | 按来源隔离的实现记录路径 | 仅使用安全版本文件名；现有读取器不回退旧 `owner/repo` 路径 |
+
+来源身份错误、旧格式或归档内容冲突时明确报错，不自动转换或覆盖数据。
+本次身份升级没有扩展远端平台能力：远端 release/commit 抓取仍只支持
+GitHub.com。当前 `upstream_daily_act` 和 `upstream_daily_skip_noise`
+也仍要求 GitHub.com 主体；不得将能表示 GitLab 来源说成所有工具已支持 GitLab。
 
 ### 枚举值
 
@@ -278,18 +357,18 @@ upstream_daily ──→ upstream_daily_skip_noise ──→ 逐条 upstream_dai
 
 ## Knowledge（1 Resource + 5 Tools）
 
-项目知识沉淀系统，存储在 `~/.contribbot/{owner}/{repo}/knowledge/` 下。
+项目知识沉淀系统，存储在 `~/.contribbot/projects/v1/<digest>/knowledge/` 下；资源列表显示完整仓库身份。
 
 | 类型 | 标识 | 说明 |
 |------|------|------|
-| Resource | `knowledge://{repo}/{knowledgeName}` | 只读访问项目知识，支持 list + read |
+| Resource | `knowledge://project/{digest}/{knowledgeName}` | 只读访问项目知识，`digest` 定位 v3 项目；支持 list + read |
 | Tool | `knowledge_write` | 直接创建/更新项目知识（`name` + `content` + `repo`） |
 
 ### 知识演进（Phase 3A — 可审计提案流）
 
 静态 `knowledge_write` 之外的 **propose → review → apply → audit** 工作流：host AI 推理出提案，
 maintainer 确认后才写入 canonical 知识，写入时带 provenance 脚注。提案索引存于
-`~/.contribbot/{owner}/{repo}/knowledge.proposals.yaml`。
+`~/.contribbot/projects/v1/<digest>/knowledge.proposals.yaml`。
 
 | Tool | 说明 |
 |------|------|
@@ -312,7 +391,7 @@ provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revi
 
 ```
 1. repo_config → 查看项目模式
-2. If fork: sync_fork → 同步 fork 到上游最新
+2. 已确认 parent 且用户授权同步：sync_fork → 同步当前主体 fork
 3. For each tracking source:
    - upstream_daily → 拉取新 commits
    - upstream_daily_skip_noise → 跳过噪音
@@ -371,7 +450,7 @@ provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revi
 
 | 步骤 | 工具组 | 说明 |
 |------|--------|------|
-| 1. 同步 fork | `sync_fork` | fork/fork+upstream 模式下，开始前同步 |
+| 1. 同步 fork | `sync_fork` | fork/fork+tracking 模式下，确认 parent 与用户授权后同步主体仓库 |
 | 2. 建立上下文 | `project_dashboard` | 项目全貌 |
 | 3. 任务管理 | `todo_add` → `todo_activate` → `todo_progress` / `todo_detail` → `todo_update` → `todo_done`；取消按 `todo_cancel` / `todo_control` 分流 | 结束不自动归档；`todo_archive` 另行预览与选择 |
 | 4. 深入调查 | `issue_detail` / `pr_summary` / `discussion_detail` | 了解具体内容 |
@@ -386,11 +465,11 @@ provenance 脚注用 `<!-- contribbot:provenance -->` 标记包裹，多次 revi
 
 ## Agent 行为规则
 
-- 首次进入项目：`repo_config` 查看模式，决定可用工作流
+- 首次进入项目：`project_init` 核实主体并读取/创建最小配置，再用 `repo_config` 查看关系和追踪选择；不从 parent 自动推断追踪
 - 创建 PR 时传 `todo_item`，成功后不重复 `todo_update`；部分失败按原请求恢复日志与关联，不重复发布
 - 每完成一个可恢复执行单元：`todo_progress` 更新 Phase、Next、阻塞项和 Evidence
 - 创建 issue 后：如来自 upstream daily，自动 `upstream_daily_act` 关联
-- 关闭 issue 时：如有对应 todo，自动标记 done
+- 关闭 issue 时：仅在传入精确 `todo_item` 时联动完成；managed 还须完整 completion，预检失败不能退化为只关闭 GitHub
 - 回复 review 前：先用 `pr_review_comments` 获取评论列表
-- 所有 repo 参数必须显式传 `"owner/repo"`，无默认值
+- 仓库范围 repo 参数必须显式传完整 `{platform, instance, path}`，无默认值；展示名称不作输入，不保存 MCP 项目绑定
 - 所有输出为 markdown 格式，表格类输出带备注列

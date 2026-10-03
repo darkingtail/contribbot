@@ -35,7 +35,10 @@ uv run --project packages/agent contribbot remediate D:/dev/my-repo \
 
 ## 前置要求
 
-- [GitHub CLI](https://cli.github.com/) (`gh`) — 已登录 (`gh auth login`)
+- GitHub 实际操作：已登录的 [GitHub CLI](https://cli.github.com/)（`gh auth login`）
+  或 `GITHUB_TOKEN`。MCP 启动和已有项目的离线读取不要求 GitHub 登录。
+- GitLab 首次初始化：能够访问选定实例；私有访问的凭据由可信启动环境按
+  精确 HTTPS 实例绑定。详见[凭据接口](docs/tools.md#gitlab-首次只读初始化)。
 
 ## 安装
 
@@ -76,72 +79,85 @@ contribbot 的 MCP Server 兼容所有支持 MCP 的工具。详见 [其他平�
 
 Skills 是引导式工作流，编排 MCP 工具完成复杂任务。在 Claude Code 中通过名称或自然语言触发。
 
-| Skill                        | 说明                                                           |
-| ---------------------------- | -------------------------------------------------------------- |
-| `contribbot:project-onboard` | 新项目接入 — 检测 fork/upstream 关系、初始化配置、首次同步     |
-| `contribbot:daily-sync`      | 每日巡检 — 同步 fork、拉取上游 commits、跳噪音、triage         |
-| `contribbot:start-task`      | 开始任务 — 选择 todo、激活、LLM 生成实现方案（用户确认后写入） |
-| `contribbot:todo`            | 任务管理 — 添加、激活、领取、更新、完成、归档、清理            |
-| `contribbot:issue`           | Issue 管理 — 浏览、详情、创建、关闭、评论                      |
-| `contribbot:pr`              | PR 管理 — 浏览、摘要、创建、更新、review、回复                 |
-| `contribbot:pre-submit`      | 合并前检查 — PR review、CI 状态、安全告警                      |
-| `contribbot:weekly-review`   | 周回顾 — 贡献统计、进展回顾、清理归档                          |
-| `contribbot:fork-triage`     | 二开分支 cherry-pick 决策                                      |
-| `contribbot:dashboard`       | 项目概况 — 单项目或跨项目总览                                  |
+| Skill | 说明 | 备注 |
+| --- | --- | --- |
+| `contribbot:project-onboard` | 初始化管理主体，确认 tracking 选择 | 首次同步另行授权 |
+| `contribbot:daily-sync` | 日常维护与已配置来源的变更研判 | parent 同步和 tracking 分开 |
+| `contribbot:start-task` | 选择 Todo、激活并拟定方案 | 方案确认后再实施 |
+| `contribbot:todo` | 添加、激活、推进、领取、完成、取消和归档 | 完成不自动归档 |
+| `contribbot:issue` | 浏览、查看、创建、关闭和评论 | 公开写入需要授权 |
+| `contribbot:pr` | 浏览、摘要、创建、更新、审查和回复 | PR 进度与 Todo 主状态分开 |
+| `contribbot:pre-submit` | PR review、CI 状态和安全检查 | 检查通过不等于发布授权 |
+| `contribbot:weekly-review` | 贡献统计与任务进展回顾 | 归档另行决定 |
+| `contribbot:fork-triage` | 评估二开分支的 cherry-pick | 不自动执行挑选结果 |
+| `contribbot:dashboard` | 单项目或跨项目总览 | 各主体的身份和数据分别展示 |
 
 ## 项目模式
 
-contribbot 自动检测你的仓库与上游的关系，适配相应的工作流。
+当前源码使用 schema v3。模式由已核实的 `parent` 关系和用户的
+`tracking` 选择推导，不额外保存“项目类型”字段。
 
-| 模式              | 条件                 | 启用的能力                   |
-| ----------------- | -------------------- | ---------------------------- |
-| **none**          | 无 fork、无 upstream | Issue/PR/todo 管理           |
-| **fork**          | 有 fork 来源         | fork 同步 + cherry-pick 决策 |
-| **upstream**      | 有外部 upstream      | 跨栈 commit 追踪             |
-| **fork+upstream** | 两者都有             | fork 同步 + 跨栈追踪         |
+| 模式 | 条件 | 可用流程 | 备注 |
+| --- | --- | --- | --- |
+| **none** | 无已确认 parent，且未配置追踪 | 本地 Todo 与已支持的仓库工具 | 不把 parent 未知当作不存在 |
+| **fork** | 已确认 parent，未配置追踪 | 经授权同步 fork | 不自动追踪 parent |
+| **tracking** | 无已确认 parent，已配置追踪 | commit / release 追踪 | 来源由用户明确选择 |
+| **fork+tracking** | 已确认 parent，已配置追踪 | fork 同步与来源追踪 | 两种操作分别处理 |
 
-运行 `/contribbot:project-onboard` 自动检测并配置。
+`tracking.pending` 不等于 `tracking.none`：未回答仍保持未决定。
+`project_init` 首次创建 `parent.unknown` 的最小配置，已有配置可离线读取。
+显式 `parent_refresh` 核实 GitHub.com 项目的直接 parent，仅更新本地关系快照。
+`unavailable` 保留旧快照与旧核实时间，不算本轮新证据；
+不会初始化、同步代码、改 tracking、项目生命周期或 Todo。
+schema 整体升级尚未验收，见[当前进度](docs/progress/README.md)。
 
-### 为什么 fork 仓库的数据存在 parent 目录下
+### 每个仓库保留自己的数据
 
-当你在 `darkingtail/plane`（fork of `makeplane/plane`）上工作时，contribbot 把数据存在 `~/.contribbot/makeplane/plane/` —— **parent 仓库**路径下。
+管理 `darkingtail/antdv-next` 时，Todo、Consult 和 Knowledge 始终属于该
+仓库，即使它是 fork。`parent` 只描述直接来源，不把存储重定向过去，
+也不替某次 PR 决定目标。
 
-原因：多人可能 fork 同一个仓库。以 parent 为基准存储，确保所有人的本地数据对齐到同一个规范仓库，`sync_fork` / `upstream_daily` 始终知道哪个是上游。
-
-你的 fork 记录在 `config.yaml` 的 `fork` 字段中：
+以下是最小配置形状示例，不代表已经核实实际 fork 关系：
 
 ```yaml
-# ~/.contribbot/makeplane/plane/config.yaml
-role: admin
-org: null
-fork: darkingtail/plane # 你的 fork
-upstream: null
+# ~/.contribbot/projects/v1/<repository-digest>/config.yaml
+schema_version: 3
+repository:
+  platform: github
+  instance: https://github.com
+  path: darkingtail/antdv-next
+lifecycle:
+  status: active
+parent:
+  status: unknown
+tracking:
+  status: pending
 ```
 
-### 三层核心能力
-
-| 层       | 能力                         | 适用模式                |
-| -------- | ---------------------------- | ----------------------- |
-| 基础     | Issue/PR/todo 管理           | 所有模式                |
-| 同源追踪 | fork 来源的 cherry-pick 决策 | fork、fork+upstream     |
-| 跨栈追踪 | 跨技术栈的功能对齐追踪       | upstream、fork+upstream |
+每次仓库范围 MCP 调用都传入完整 `{platform, instance, path}` 对象。
+宿主可记住已确认的项目，但 MCP 不保存隐式项目绑定。schema v3 能表示
+GitHub 和 GitLab 实例。GitLab 首次初始化已实现单次只读身份 GET，可使用
+精确实例绑定的凭据；已有合法配置仍可离线读取。当前验证仅使用假 token
+和模拟响应，未验证真实部署。GitLab 的 Issue/MR、parent 核实及远端追踪
+尚未实现，这些远端流程仍仅支持 GitHub.com。能表示身份不等于有访问权限。
 
 ## 数据存储
 
-所有数据本地存储在 `~/.contribbot/{owner}/{repo}/`：
+仓库级数据存储在 `~/.contribbot/projects/v1/<repository-digest>/`。
+digest 来自完整平台、实例和路径，读取时核对配置身份；旧 owner/repo
+目录不自动迁移或清空。
 
 ```
-~/.contribbot/{owner}/{repo}/
-├── config.yaml              # 仓库配置
-│                            #   role: admin|maintain|write|triage|read
-│                            #   org: 组织名或 null
-│                            #   fork: 你的 fork 仓库或 null
-│                            #   upstream: 跨栈追踪的外部仓库或 null
+~/.contribbot/projects/v1/<repository-digest>/
+├── config.yaml              # 恰好五个根字段：
+│                            #   schema_version、repository、lifecycle、parent、tracking
 │
-├── todos.yaml               # 活跃 todos
+├── todos.yaml               # 未归档 todos，包含 done / cancelled
+│                            #   id: 稳定 Todo 身份
 │                            #   ref: issue 编号（#123）或自定义标识
 │                            #   title、type（bug/feature/docs/chore）
-│                            #   status: idea → backlog → active → pr_submitted → done | not_planned
+│                            #   status: idea|backlog|active|paused|done|cancelled
+│                            #   PR 进度独立；完成或取消不自动归档
 │                            #   difficulty: easy|medium|hard
 │                            #   pr、branch、claimed_items
 │
@@ -149,18 +165,17 @@ upstream: null
 │   ├── 123.md               #   todo_add 时创建，todo_activate 时补充 issue 详情
 │   └── playground.md        #   LLM 在此生成实现方案
 │
-├── todos.archive.yaml       # 已归档的 todos（done + not_planned）
+├── todos.archive.yaml       # 另行明确归档的 todos（done + cancelled）
 │                            #   用 todo_compact 清理旧条目
 │
-├── upstream.yaml            # 上游追踪
-│                            #   versions: release 级同步状态
-│                            #   daily: commit 级 triage（action: skip|todo|issue|pr|synced）
+├── upstream.yaml            # schema_version: 1；sources 以来源 digest 为键
+│                            #   每个来源含 repository、versions、daily
 │
 ├── upstream.archive.yaml   # 已归档的上游 daily commits
 │                            #   由 upstream_compact 移入
 │
 ├── upstream/                # 上游实现文档
-│   └── {owner}/{repo}/
+│   └── <source-digest>/
 │       └── {version}.md
 │
 ├── templates/               # 自定义模板（首次使用时自动生成带注释的默认模板）
@@ -211,14 +226,19 @@ tools/
 
 ### 配置
 
-`config.yaml` 在首次使用 `repo_config` 时自动检测生成：
+只有 `project_init` 在核实身份后创建最小配置。`repo_config` 用来读取或
+保存明确的追踪选择；项目不存在时返回 `not_initialized`，不自动创建。
 
-| 字段       | 说明                                     |
-| ---------- | ---------------------------------------- |
-| `role`     | 你的 GitHub 权限等级（自动检测）         |
-| `org`      | 组织名（自动检测）                       |
-| `fork`     | 你的 fork 仓库（如果当前是 parent 仓库） |
-| `upstream` | 跨栈追踪的外部仓库                       |
+| 字段 | 说明 | 备注 |
+| --- | --- | --- |
+| `schema_version` | `3` | 拒绝旧配置形状，不自动转换 |
+| `repository` | 管理主体的 `{platform, instance, path}` | 普通配置更新不能改变身份 |
+| `lifecycle` | 本地项目 active / archived | 与 Todo 和远端仓库状态分开 |
+| `parent` | 直接 fork 来源事实快照 | unknown / none / confirmed；不是操作授权 |
+| `tracking` | 用户明确选择的来源 | pending / none / configured；来源使用完整身份 |
+
+权限按远端操作分别核实，不持久化 `role` / `org`。精确字段、时间语义、
+身份规范化和存储规则见 [schema v3 契约](docs/plans/2026-09-29-project-config-contract.md)。
 
 ## 参与开发
 
