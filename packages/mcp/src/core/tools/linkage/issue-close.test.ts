@@ -1,10 +1,11 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TodoStore } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
 import { currentTodoExecution } from '../../storage/todo-store.js'
 import { issueClose } from './issue-close.js'
 import { execFileSync } from 'node:child_process'
@@ -25,7 +26,9 @@ import * as accounting from '../../storage/issue-close-accounting.js'
 import { verifyClosureReconciliation } from '../../execution/closure-reconciliation.js'
 import { stringify } from 'yaml'
 import { settleControl } from '../../execution/control.js'
+import { fixtureRepository, saveFixtureProjectConfig } from '../../execution/__fixtures__/repository.js'
 
+const repository = fixtureRepository('owner/repo')
 const machine = vi.hoisted(() => ({ hostname: null as string | null }))
 vi.mock('node:os', async (original) => {
   const os = await original<typeof import('node:os')>()
@@ -44,7 +47,11 @@ vi.mock('../../clients/github.js', async original => ({
 }))
 
 vi.mock('../../utils/resolve-repo.js', () => ({
-  resolveRepo: vi.fn().mockResolvedValue({ owner: 'owner', name: 'repo' }),
+  resolveRepo: vi.fn().mockImplementation(async () => ({
+    owner: 'owner', name: 'repo',
+    repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+    directory: testProjectDirectory(),
+  })),
 }))
 
 describe('issueClose', () => {
@@ -59,13 +66,17 @@ describe('issueClose', () => {
       const [a, b] = InMemoryTransport.createLinkedPair()
       await Promise.all([client.connect(a), server.connect(b)])
     }
-    return client.callTool({ name: 'issue_close', arguments: { repo: 'owner/repo', issue_number: 42, ...args } })
+    return client.callTool({ name: 'issue_close', arguments: {
+      repo: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+      issue_number: 42, ...args,
+    } })
   }
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'issue-close-'))
     vi.stubEnv('HOME', home)
     vi.stubEnv('USERPROFILE', home)
+    saveFixtureProjectConfig(testProjectDirectory(), 'owner/repo')
     github.closeIssue.mockReset().mockResolvedValue({ state: 'closed' })
     github.createComment.mockReset().mockResolvedValue({ id: 800, body: '' })
     github.getIssue.mockReset().mockResolvedValue({ state: 'open' })
@@ -84,7 +95,7 @@ describe('issueClose', () => {
   })
 
   async function managedFixture(scope: 'task' | 'stage' = 'task') {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: 'managed-linked', title: 'Managed linked task', type: 'feature' })
     const execution = store.activateExecution(0).execution
@@ -119,7 +130,7 @@ describe('issueClose', () => {
     const { digest, root, git_dir, common_dir } = captureCandidate(workspace)
     store.applyWorkflow(todo.id!, execution.id, {
       request_id: 'a', expected_revision: 2,
-      command: { action: 'start_attempt', attempt_id: 'a', owner: 'primary', workspace: { repo: 'owner/repo', root, git_dir, common_dir, baseline: digest, machine: localMachine() } },
+      command: { action: 'start_attempt', attempt_id: 'a', owner: 'primary', workspace: { repo: repository, root, git_dir, common_dir, baseline: digest, machine: localMachine() } },
     })
     store.applyWorkflow(todo.id!, execution.id, {
       request_id: 'y', expected_revision: 3,
@@ -177,7 +188,7 @@ describe('issueClose', () => {
 
   function recoveryFor(fixture: Awaited<ReturnType<typeof managedFixture>>, requestId = 'continue-locally') {
     return {
-      action: 'reconcile-close', repo: 'owner/repo', data_root: join(home, '.contribbot'),
+      action: 'reconcile-close', repo: repository, data_root: join(home, '.contribbot'),
       todo_id: fixture.todoId, execution_id: fixture.completion.execution_id, closure_id: fixture.completion.closure_id,
       request_id: requestId, expected_revision: fixture.store.get(0)!.executions[0]!.workflow!.revision, actor: 'primary',
       decision: 'fixture:user-keep-issue-closed-and-continue-local-work',
@@ -205,7 +216,7 @@ describe('issueClose', () => {
   async function cancelledBeforeDispatch(kind: 'pause' | 'cancel' = 'cancel') {
     const fixture = await managedFixture()
     github.getIssueComments.mockImplementationOnce(async () => { requestControl(fixture, kind); return [] })
-    await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/control/i)
+    await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/control/i)
     return fixture
   }
 
@@ -232,7 +243,7 @@ describe('issueClose', () => {
         requestControl(fixture, 'pause')
         return { state: 'closed' }
       })
-      await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion))
+      await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion))
         .rejects.toThrow(/control|pause/i)
       const state = () => fixture.store.get(0)!.executions[0]!.workflow!
       const before = state()
@@ -252,7 +263,7 @@ describe('issueClose', () => {
         version: 3, control: { kind: 'pause' }, remote: { kind: 'pause_observation' },
       })
       expect(JSON.stringify(result.limitations)).toMatch(/settle-pause/i)
-      const common = { repo: 'owner/repo', data_root: join(home, '.contribbot'),
+      const common = { repo: repository, data_root: join(home, '.contribbot'),
         todo_id: fixture.todoId, execution_id: fixture.completion.execution_id, actor: 'primary', control_id: 'pause' }
       await expect(runLocalCommand({ action: 'settle-pause', ...common, request_id: 'no-yield',
         expected_revision: state().revision })).rejects.toThrow(/yield/i)
@@ -273,7 +284,7 @@ describe('issueClose', () => {
       expect(state().yield).toBeNull()
       expect(state().checks).toEqual(before.checks)
       await runLocalCommand(input)
-      await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow()
+      await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion)).rejects.toThrow()
       expect(github.getIssue).toHaveBeenCalledTimes(reads)
       await runLocalCommand({ action: 'yield', ...yieldIdentity, request_id: 'continue-yield',
         expected_revision: state().revision, observed_operations: ['check'], note: 'Resumed fixture remains idle.' })
@@ -293,8 +304,8 @@ describe('issueClose', () => {
   ])('does not recreate lost provenance on public retry when Issue readback is %s and %s is missing', async (remoteState, missing) => {
     const fixture = await managedFixture()
     github.closeIssue.mockRejectedValueOnce(new Error('Unknown original request'))
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/Unknown/)
-    const path = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, fixture.completion.execution_id)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/Unknown/)
+    const path = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, fixture.completion.execution_id)
     if (missing === 'file') rmSync(path)
     else {
       const receipt = JSON.parse(readFileSync(path, 'utf8'))
@@ -305,7 +316,7 @@ describe('issueClose', () => {
     github.getIssue.mockResolvedValue({ state: remoteState })
     const before = fixture.store.list()
     const reads = github.getIssue.mock.calls.length
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/provenance|journal/i)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/provenance|journal/i)
     expect(existsSync(path) ? readFileSync(path, 'utf8') : null).toBe(original)
     expect(fixture.store.list()).toEqual(before)
     expect(github.getIssue).toHaveBeenCalledTimes(reads)
@@ -317,10 +328,10 @@ describe('issueClose', () => {
     const fault = vi.spyOn(journals, 'writeIssueCloseReceipt').mockImplementationOnce(() => {
       throw new Error('fixture: initial publication failed')
     })
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/publication failed/)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/publication failed/)
     fault.mockRestore()
     const before = fixture.store.list()
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/provenance/i)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/provenance/i)
     expect(fixture.store.list()).toEqual(before)
     expect(github.getIssue).not.toHaveBeenCalled()
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -330,10 +341,10 @@ describe('issueClose', () => {
   it('does not turn a visible comment marker into a returned original request result', async () => {
     const fixture = await managedFixture()
     github.createComment.mockRejectedValueOnce(new Error('Unknown comment response'))
-    await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/Unknown/)
+    await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/Unknown/)
     github.getIssueComments.mockResolvedValue([{ id: 800, body: github.createComment.mock.calls[0]![3] }])
     const reads = github.getIssueComments.mock.calls.length
-    await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/unknown/i)
+    await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/unknown/i)
     expect(github.getIssueComments).toHaveBeenCalledTimes(reads)
     expect(github.createComment).toHaveBeenCalledTimes(1)
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -347,13 +358,17 @@ describe('issueClose', () => {
       if (receipt.dispatch?.effects.some(effect => effect.kind === 'close')) throw new Error('fixture: close admission not saved')
       return write(path, receipt)
     })
-    await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/not saved/)
+    const failure = await issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion).catch(error => error as Error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain('not saved')
+    expect((failure as Error).message).toContain('original issue_close request with its unchanged completion')
+    expect((failure as Error).message).not.toContain('Retry issue_close(')
     fault.mockRestore()
     expect(github.createComment).toHaveBeenCalledTimes(1)
     expect(github.closeIssue).not.toHaveBeenCalled()
     github.getIssueComments.mockResolvedValue([])
     github.closeIssue.mockImplementationOnce(async () => { requestCancellation(fixture); return { state: 'closed' } })
-    await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/control|cancel/i)
+    await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/control|cancel/i)
     expect(github.createComment).toHaveBeenCalledTimes(1)
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     await runLocalCommand(cancellationFor(fixture))
@@ -363,8 +378,8 @@ describe('issueClose', () => {
   it.each([false, true])('does not launder a new unknown admission through normal continuation (journal removed: %s)', async removed => {
     const fixture = await managedFixture()
     github.closeIssue.mockRejectedValueOnce(new Error('Unknown admitted request'))
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/Unknown/)
-    if (removed) rmSync(journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, fixture.completion.execution_id))
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/Unknown/)
+    if (removed) rmSync(journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, fixture.completion.execution_id))
     github.getIssue.mockResolvedValue({ state: 'closed' })
     const before = fixture.store.list()
     await expect(runLocalCommand(recoveryFor(fixture))).rejects.toThrow(/unknown|unresolved|provenance/i)
@@ -381,10 +396,10 @@ describe('issueClose', () => {
       const fixture = kind === 'unknown-admission' ? await managedFixture() : await cancelledBeforeDispatch(control)
       if (kind === 'unknown-admission') {
         github.closeIssue.mockRejectedValueOnce(new Error('Unknown remote result'))
-        await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/Unknown/)
+        await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/Unknown/)
         requestControl(fixture, control)
       }
-      const path = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, fixture.completion.execution_id)
+      const path = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, fixture.completion.execution_id)
       if (kind === 'missing') rmSync(path)
       else if (kind.startsWith('legacy')) {
         const value = JSON.parse(readFileSync(path, 'utf8'))
@@ -403,7 +418,7 @@ describe('issueClose', () => {
       expect(github.closeIssue).toHaveBeenCalledTimes(kind === 'unknown-admission' ? 1 : 0)
       expect(github.createComment).not.toHaveBeenCalled()
       const context = await runLocalCommand({
-        action: 'context', repo: 'owner/repo', data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
+        action: 'context', repo: repository, data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
       })
       expect(context.issue_close_accounting).toBeTruthy()
     }, 25_000,
@@ -469,7 +484,7 @@ describe('issueClose', () => {
   it.each(['cancel', 'pause'] as const)('preserves historical closed facts during %s independently from an Issue that is now open', async control => {
     const fixture = await managedFixture()
     github.closeIssue.mockImplementationOnce(async () => { requestControl(fixture, control); return { state: 'closed' } })
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/control|cancel/i)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/control|cancel/i)
     github.getIssue.mockResolvedValue({ state: 'open' })
     github.getIssueComments.mockResolvedValue([{ id: 900, body: 'Reopened by maintainer' }])
     const result = await runLocalCommand(control === 'pause' ? pauseFor(fixture) : cancellationFor(fixture))
@@ -494,7 +509,7 @@ describe('issueClose', () => {
       }
       return write(path, receipt)
     })
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(boundary)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(boundary)
     fault.mockRestore()
     requestCancellation(fixture)
     if (boundary === 'admission') await runLocalCommand(cancellationFor(fixture))
@@ -517,7 +532,7 @@ describe('issueClose', () => {
         const digest = put.apply(this, args)
         if (faultKind === 'candidate-drift') writeFileSync(join(fixture.workspace, 'later.txt'), 'concurrent write')
         else {
-          const path = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, input.execution_id)
+          const path = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, input.execution_id)
           const value = JSON.parse(readFileSync(path, 'utf8'))
           value.startedAt = '2000-01-01T00:00:00.000Z'
           writeFileSync(path, JSON.stringify(value))
@@ -539,7 +554,7 @@ describe('issueClose', () => {
     const gate = new Promise<void>(resolve => { release = resolve })
     const started = new Promise<void>(resolve => { entered = resolve })
     github.closeIssue.mockImplementationOnce(async () => { entered(); await gate; return { state: 'closed' } })
-    const publisher = issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion).catch(error => error)
+    const publisher = issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion).catch(error => error)
     await started
     requestControl(fixture, control)
     let settled = false
@@ -552,7 +567,7 @@ describe('issueClose', () => {
     release()
     expect(await publisher).toBeInstanceOf(Error)
     expect(await recovery).toBeInstanceOf(Error)
-    const path = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, fixture.completion.execution_id)
+    const path = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, fixture.completion.execution_id)
     expect(JSON.parse(readFileSync(path, 'utf8')).dispatch.effects[0]).toMatchObject({
       kind: 'close', result: { kind: 'close', state: 'closed' },
     })
@@ -566,7 +581,7 @@ describe('issueClose', () => {
     const fixture = await cancelledBeforeDispatch('pause')
     const result = await runLocalCommand(pauseFor(fixture))
     const state = () => fixture.store.get(0)!.executions[0]!.workflow!
-    const identity = { repo: 'owner/repo', data_root: join(home, '.contribbot'),
+    const identity = { repo: repository, data_root: join(home, '.contribbot'),
       todo_id: fixture.todoId, execution_id: fixture.completion.execution_id, actor: 'primary' }
     await runLocalCommand({ action: 'yield', ...identity, request_id: 'fresh-yield',
       expected_revision: state().revision, observed_operations: ['check'], note: 'Original calls all returned.' })
@@ -614,7 +629,7 @@ describe('issueClose', () => {
     const input = pauseFor(fixture)
     await runLocalCommand(input)
     const state = () => fixture.store.get(0)!.executions[0]!.workflow!
-    const identity = { repo: 'owner/repo', data_root: join(home, '.contribbot'),
+    const identity = { repo: repository, data_root: join(home, '.contribbot'),
       todo_id: fixture.todoId, execution_id: fixture.completion.execution_id, actor: 'primary' }
     await runLocalCommand({ action: 'yield', ...identity, request_id: 'pause-yield', expected_revision: state().revision,
       observed_operations: ['check'], note: 'Fixture is idle.' })
@@ -626,11 +641,11 @@ describe('issueClose', () => {
     await runLocalCommand({ action: 'yield', ...identity, request_id: 'new-yield', expected_revision: state().revision,
       observed_operations: ['check'], note: 'Resumed fixture is idle.' })
     github.closeIssue.mockRejectedValueOnce(new Error('fixture: new close response unknown'))
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', {
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, {
       ...fixture.completion, closure_id: 'explicit-new-close', expected_revision: state().revision,
       mode: 'with_gaps', acknowledged_gaps: ['acceptance:test'], decision: 'user:new-close-with-test-gap',
     })).rejects.toThrow(/new close response unknown/)
-    const path = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, input.execution_id)
+    const path = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, input.execution_id)
     const before = readFileSync(path)
     await runLocalCommand(input)
     expect(readFileSync(path)).toEqual(before)
@@ -645,7 +660,7 @@ describe('issueClose', () => {
     const recovery = await runLocalCommand(cancellationFor(fixture))
     const state = () => fixture.store.get(0)!.executions[0]!.workflow!
     await runLocalCommand({
-      action: 'yield', repo: 'owner/repo', data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
+      action: 'yield', repo: repository, data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
       execution_id: fixture.completion.execution_id, request_id: 'cancel-yield', expected_revision: state().revision,
       actor: 'primary', observed_operations: ['check'], note: 'Fixture callbacks settled.',
     })
@@ -679,7 +694,7 @@ describe('issueClose', () => {
         requestCancellation(fixture)
         return { state: 'closed' }
       })
-      await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion))
+      await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion))
         .rejects.toThrow(/control|stop|cancel/i)
       const state = () => fixture.store.get(0)!.executions[0]!.workflow!
       const before = state()
@@ -694,14 +709,14 @@ describe('issueClose', () => {
       expect(state().yield).toBeNull()
       expect(fixture.store.get(0)!.status).toBe('active')
       await runLocalCommand(recovery)
-      await expect(issueClose(42, 'Finishing', fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow()
+      await expect(issueClose(42, 'Finishing', fixture.todoId, testRepository, fixture.completion)).rejects.toThrow()
       await runLocalCommand({
-        action: 'yield', repo: 'owner/repo', data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
+        action: 'yield', repo: repository, data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
         execution_id: fixture.completion.execution_id, request_id: 'cancel-yield', expected_revision: state().revision,
         actor: 'primary', observed_operations: ['check'], note: 'Original callbacks and all writers accounted for.',
       })
       const finish = {
-        action: 'close', repo: 'owner/repo', data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
+        action: 'close', repo: repository, data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
         ...fixture.completion, closure_id: 'cancel-local', expected_revision: state().revision,
         mode: 'stopped', decision: 'user:cancel', target: { kind: 'local' },
       }
@@ -728,7 +743,7 @@ describe('issueClose', () => {
     }
     if (timing === 'before-comment') github.getIssueComments.mockImplementation(async () => { stop(); return [] })
     else github.closeIssue.mockImplementation(async () => { stop(); return { state: 'closed' } })
-    await expect(issueClose(42, timing === 'before-comment' ? 'Finishing' : undefined, fixture.todoId, 'owner/repo', fixture.completion))
+    await expect(issueClose(42, timing === 'before-comment' ? 'Finishing' : undefined, fixture.todoId, testRepository, fixture.completion))
       .rejects.toThrow(/control|stop|cancel/i)
     const state = fixture.store.get(0)!.executions[0]!.workflow!
     expect(state.control?.active_id).toBe('cancel')
@@ -746,7 +761,7 @@ describe('issueClose', () => {
       writeFileSync(join(fixture.workspace, 'kept.txt'), 'kept')
       return { state: 'closed' }
     })
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion))
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion))
       .rejects.toThrow(/closed successfully.*candidate/is)
     return fixture
   }
@@ -758,7 +773,7 @@ describe('issueClose', () => {
     delete closing.issue_dispatch
     closing.remote_receipt = null
     writeFileSync(join(fixture.directory, 'todos.yaml'), stringify({ todos }))
-    const path = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, fixture.completion.execution_id)
+    const path = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, fixture.completion.execution_id)
     const journal = JSON.parse(readFileSync(path, 'utf8'))
     delete journal.dispatch
     writeFileSync(path, JSON.stringify(journal))
@@ -789,7 +804,7 @@ describe('issueClose', () => {
       'artifacts', `${result.reconciliation_receipt}.json`)
     const bytes = readFileSync(path)
     expect(JSON.parse(bytes.toString())).toMatchObject({ version: 2, control: { kind: 'cancel' } })
-    await runLocalCommand({ action: 'continue', repo: 'owner/repo', data_root: join(home, '.contribbot'),
+    await runLocalCommand({ action: 'continue', repo: repository, data_root: join(home, '.contribbot'),
       todo_id: fixture.todoId, execution_id: fixture.completion.execution_id, actor: 'primary',
       request_id: 'continue-cancel', control_id: 'cancel', decision: 'user:withdraw-cancel-and-continue',
       expected_revision: fixture.store.get(0)!.executions[0]!.workflow!.revision })
@@ -811,7 +826,7 @@ describe('issueClose', () => {
       requestCancellation(fixture)
       const state = () => fixture.store.get(0)!.executions[0]!.workflow!
       await runLocalCommand({
-        action: 'yield', repo: 'owner/repo', data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
+        action: 'yield', repo: repository, data_root: join(home, '.contribbot'), todo_id: fixture.todoId,
         execution_id: fixture.completion.execution_id, request_id: 'cancel-yield', expected_revision: state().revision,
         actor: 'primary', observed_operations: ['check'], note: 'All original callbacks accounted for.',
       })
@@ -842,7 +857,7 @@ describe('issueClose', () => {
     })
     fixture.store.reopen(fixture.todoId)
     const before = fixture.store.list()
-    await expect(issueClose(42, 'Do not post', fixture.todoId, 'owner/repo')).rejects.toThrow(/managed/i)
+    await expect(issueClose(42, 'Do not post', fixture.todoId, testRepository)).rejects.toThrow(/managed/i)
     expect(github.getIssue).not.toHaveBeenCalled()
     expect(github.getIssueComments).not.toHaveBeenCalled()
     expect(github.createComment).not.toHaveBeenCalled()
@@ -871,7 +886,7 @@ describe('issueClose', () => {
       writeFileSync(join(workspace, 'interruption.txt'), 'Fixture interruption')
       return { state: 'closed' }
     })
-    await expect(issueClose(42, 'Finish', todoId, 'owner/repo', completion)).rejects.toThrow(/closed successfully.*candidate/is)
+    await expect(issueClose(42, 'Finish', todoId, testRepository, completion)).rejects.toThrow(/closed successfully.*candidate/is)
     const todos = store.list()
     const plan = todos[0]!.executions[0]!.workflow!.plans[0]!
     delete plan.content.completion_scope
@@ -879,7 +894,7 @@ describe('issueClose', () => {
     plan.digest = planDigest(plan.content)
     writeFileSync(join(directory, 'todos.yaml'), stringify({ todos }))
     rmSync(join(workspace, 'interruption.txt'))
-    await issueClose(42, 'Finish', todoId, 'owner/repo', completion)
+    await issueClose(42, 'Finish', todoId, testRepository, completion)
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     expect(github.createComment).toHaveBeenCalledTimes(1)
     expect(store.get(0)!.status).toBe('done')
@@ -894,16 +909,16 @@ describe('issueClose', () => {
       writeFileSync(join(workspace, 'later.txt'), 'unexpected external write')
       return { state: 'closed' }
     })
-    await expect(issueClose(42, 'Finish', todoId, 'owner/repo', completion)).rejects.toThrow(/closed successfully.*candidate/is)
+    await expect(issueClose(42, 'Finish', todoId, testRepository, completion)).rejects.toThrow(/closed successfully.*candidate/is)
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     expect(github.createComment).toHaveBeenCalledTimes(1)
     expect(store.listArchived()).toEqual([])
     expect(store.list()[0]!.executions[0]!.workflow!.closing_id).toBe('linked-close')
-    await expect(issueClose(42, 'Finish', todoId, 'owner/repo', completion)).rejects.toThrow(/candidate/i)
+    await expect(issueClose(42, 'Finish', todoId, testRepository, completion)).rejects.toThrow(/candidate/i)
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     expect(github.createComment).toHaveBeenCalledTimes(1)
     rmSync(join(workspace, 'later.txt'))
-    await issueClose(42, 'Finish', todoId, 'owner/repo', completion)
+    await issueClose(42, 'Finish', todoId, testRepository, completion)
     expect(store.list()[0]!.executions[0]!.workflow!.closure?.mode).toBe('verified')
     expect(store.listArchived()).toEqual([])
   }, 25_000)
@@ -919,7 +934,7 @@ describe('issueClose', () => {
     const before = store.get(0)!.executions[0]!.workflow!
     const candidate = captureCandidate(workspace)
     const recovery = {
-      action: 'reconcile-close', repo: 'owner/repo', data_root: join(home, '.contribbot'),
+      action: 'reconcile-close', repo: repository, data_root: join(home, '.contribbot'),
       todo_id: todoId, execution_id: completion.execution_id, closure_id: completion.closure_id,
       request_id: 'keep-and-continue', expected_revision: before.revision, actor: 'primary',
       decision: 'fixture:user-keep-remote-closed-and-continue-locally',
@@ -992,7 +1007,7 @@ describe('issueClose', () => {
         if (receipt.state === 'closed') throw new Error('fixture: interrupted before closed journal publication')
         return write(path, receipt)
       })
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/fixture|journal/i)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/fixture|journal/i)
     fault.mockRestore()
     const before = fixture.store.get(0)!.executions[0]!.workflow!
     expect(before.closings[0]!.remote_receipt).toBeNull()
@@ -1039,7 +1054,7 @@ describe('issueClose', () => {
   it('does not observe a pending Issue request as closed when GitHub reports open', async () => {
     const fixture = await managedFixture()
     github.closeIssue.mockRejectedValue(new Error('fixture: connection lost, no final receipt'))
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion)).rejects.toThrow(/connection lost/)
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion)).rejects.toThrow(/connection lost/)
     const before = fixture.store.list()
     await expect(runLocalCommand(recoveryFor(fixture))).rejects.toThrow(/unknown|not observed closed/i)
     expect(fixture.store.list()).toEqual(before)
@@ -1061,7 +1076,7 @@ describe('issueClose', () => {
     const key = JSON.stringify([input.closure_id, input.request_id])
     const artifacts = new ExecutionArtifacts(fixture.directory, input.execution_id)
     const published = artifacts.getReceipt(key, 'closure-reconciliation')!
-    const journalPath = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, input.execution_id)
+    const journalPath = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, input.execution_id)
     expect(existsSync(journalPath)).toBe(true)
     const reads = github.getIssue.mock.calls.length
     const result = await runLocalCommand(input)
@@ -1111,7 +1126,7 @@ describe('issueClose', () => {
       writeFileSync(join(fixture.workspace, 'kept.txt'), 'kept')
       return { state: 'closed' }
     })
-    const closing = issueClose(42, undefined, fixture.todoId, 'owner/repo', fixture.completion).catch(error => error)
+    const closing = issueClose(42, undefined, fixture.todoId, testRepository, fixture.completion).catch(error => error)
     await started
     const input = recoveryFor(fixture)
     let settled = false
@@ -1145,11 +1160,11 @@ describe('issueClose', () => {
         candidate: { digest: candidate.digest, root: candidate.root, git_dir: candidate.git_dir, common_dir: candidate.common_dir } },
     })
     github.closeIssue.mockRejectedValue(new Error('fixture: later close interrupted'))
-    await expect(issueClose(42, undefined, fixture.todoId, 'owner/repo', {
+    await expect(issueClose(42, undefined, fixture.todoId, testRepository, {
       ...fixture.completion, closure_id: 'new-public-intent', expected_revision: state().revision,
       mode: 'with_gaps', acknowledged_gaps: ['acceptance:test'], decision: 'fixture:explicit-new-public-request-with-gaps',
     })).rejects.toThrow(/later close interrupted/)
-    const path = journals.issueCloseReceiptPath(fixture.directory, 'owner', 'repo', 42, fixture.todoId, input.execution_id)
+    const path = journals.issueCloseReceiptPath(fixture.directory, repository, 42, fixture.todoId, input.execution_id)
     const before = readFileSync(path, 'utf8')
     expect(JSON.parse(before).closureId).toBe('new-public-intent')
     await runLocalCommand(input)
@@ -1163,7 +1178,7 @@ describe('issueClose', () => {
       execution_id: 'execution', closure_id: 'finish', expected_revision: 0, mode: 'verified',
       acknowledged_gaps: [], decision: 'user-close-both', note: 'Close both, not just GitHub',
     }
-    await expect(issueClose(42, 'Must not post', undefined, 'owner/repo', completion)).rejects.toThrow(/todo|identity/i)
+    await expect(issueClose(42, 'Must not post', undefined, testRepository, completion)).rejects.toThrow(/todo|identity/i)
     expect(github.getIssue).not.toHaveBeenCalled()
     expect(github.createComment).not.toHaveBeenCalled()
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -1243,15 +1258,14 @@ describe('issueClose', () => {
     const args = { todo_item: todoId, completion }
     expect((await publicClose(args)).isError).not.toBe(true)
     if (alreadyArchived) store.archiveAndDelete(0)
-    const journalPath = journals.issueCloseReceiptPath(directory, 'owner', 'repo', 42, todoId, completion.execution_id)
+    const journalPath = journals.issueCloseReceiptPath(directory, repository, 42, todoId, completion.execution_id)
     journals.writeIssueCloseReceipt(journalPath, {
-      owner: 'owner', repo: 'repo', issueNumber: 42, todoId, executionId: completion.execution_id,
+      repository, issueNumber: 42, todoId, executionId: completion.execution_id,
       lifecycleRevision: 0,
       closureId: completion.closure_id, state: 'closed', startedAt: new Date().toISOString(),
       remoteClosedAt: new Date().toISOString(),
     })
     expect((await publicClose(args)).isError).not.toBe(true)
-    const digest = createHash('sha256').update(`owner/repo#42\0${todoId}\0${completion.execution_id}`).digest('hex').slice(0, 24)
     expect(existsSync(journalPath)).toBe(false)
     if (!alreadyArchived) store.archiveAndDelete(0)
     const restored = store.restoreArchivedForActivation(todoId)!
@@ -1264,7 +1278,7 @@ describe('issueClose', () => {
     expect(store.list()[0]!.executions.at(-1)!.closed_at).not.toBeNull()
     expect(store.listArchived()).toEqual([])
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
-    expect(existsSync(join(directory, '.operations', `issue-close-${digest}.json`))).toBe(false)
+    expect(existsSync(journals.issueCloseReceiptPath(directory, repository, 42, todoId, completion.execution_id))).toBe(false)
   }, 25_000)
 
   it('rejects missing, ambiguous or mismatched public completion identities before GitHub effects', async () => {
@@ -1289,24 +1303,24 @@ describe('issueClose', () => {
   it('does not depend on archive writes or repeat managed effects on retries', async () => {
     const { directory, store, todoId, completion } = await managedFixture()
     mkdirSync(join(directory, 'todos.archive.yaml.tmp'))
-    await issueClose(42, 'Approved comment', todoId, 'owner/repo', completion)
+    await issueClose(42, 'Approved comment', todoId, testRepository, completion)
     expect(store.list()[0]!.pending_transition).toBeUndefined()
     expect(store.list()[0]!.status).toBe('done')
-    await expect(issueClose(42, 'Different comment', todoId, 'owner/repo', completion)).rejects.toThrow(/reuse/i)
+    await expect(issueClose(42, 'Different comment', todoId, testRepository, completion)).rejects.toThrow(/reuse/i)
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     rmSync(join(directory, 'todos.archive.yaml.tmp'), { recursive: true })
-    await issueClose(42, 'Approved comment', todoId, 'owner/repo', completion)
-    await issueClose(42, 'Approved comment', todoId, 'owner/repo', completion)
+    await issueClose(42, 'Approved comment', todoId, testRepository, completion)
+    await issueClose(42, 'Approved comment', todoId, testRepository, completion)
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     expect(github.createComment).toHaveBeenCalledTimes(1)
     expect(store.listArchived()).toHaveLength(0)
   }, 25_000)
   it('closes the current execution without archiving a linked todo', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     store.add({ ref: 'linked-todo', title: 'Linked todo', type: 'bug' })
     store.activateExecution(0)
 
-    await issueClose(42, undefined, 'linked-todo', 'owner/repo')
+    await issueClose(42, undefined, 'linked-todo', testRepository)
 
     expect(store.listArchived()).toEqual([])
     expect(store.list()[0]!.executions[0]).toMatchObject({
@@ -1318,7 +1332,7 @@ describe('issueClose', () => {
   })
 
   it('refuses managed closure before comments or remote close effects', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     const todo = store.add({ ref: 'managed', title: 'Managed task', type: 'feature' })
     const execution = store.activateExecution(0).execution
     store.applyWorkflow(todo.id!, execution.id, {
@@ -1332,7 +1346,7 @@ describe('issueClose', () => {
         },
       },
     })
-    await expect(issueClose(42, 'Premature close', todo.id, 'owner/repo')).rejects.toThrow(/Managed.*preflight/)
+    await expect(issueClose(42, 'Premature close', todo.id, testRepository)).rejects.toThrow(/Managed.*preflight/)
     expect(github.getIssue).not.toHaveBeenCalled()
     expect(github.createComment).not.toHaveBeenCalled()
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -1340,7 +1354,7 @@ describe('issueClose', () => {
   })
 
   it('keeps the linked todo identity stable while GitHub close is pending', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     store.add({ ref: '#1', title: 'Earlier', type: 'chore' })
     store.add({ ref: '#2', title: 'Target', type: 'bug' })
     store.activateExecution(1)
@@ -1350,7 +1364,7 @@ describe('issueClose', () => {
 
     let releaseClose!: () => void
     github.closeIssue.mockReturnValue(new Promise<{ state: string }>(resolve => { releaseClose = () => resolve({ state: 'closed' }) }))
-    const closing = issueClose(42, undefined, '2', 'owner/repo')
+    const closing = issueClose(42, undefined, '2', testRepository)
     await vi.waitFor(() => expect(github.closeIssue).toHaveBeenCalled())
     store.delete(0)
     releaseClose()
@@ -1363,13 +1377,13 @@ describe('issueClose', () => {
   })
 
   it('does not fall back to a title match when the linked todo disappears', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     const target = store.add({ ref: '#2', title: 'Target', type: 'bug' })
     store.add({ ref: '#3', title: `Follow up ${target.id}`, type: 'feature' })
 
     let releaseClose!: () => void
     github.closeIssue.mockReturnValue(new Promise<{ state: string }>(resolve => { releaseClose = () => resolve({ state: 'closed' }) }))
-    const closing = issueClose(42, undefined, target.id, 'owner/repo')
+    const closing = issueClose(42, undefined, target.id, testRepository)
     await vi.waitFor(() => expect(github.closeIssue).toHaveBeenCalled())
 
     const targetIndex = store.resolveItem(target.id!)!.storeIndex
@@ -1381,8 +1395,8 @@ describe('issueClose', () => {
     expect(store.resolveItem('#3')!.item.title).toBe(`Follow up ${target.id}`)
   })
 
-  it('reports remote close success and suppresses a duplicate close comment during archive retry', async () => {
-    const dir = getContribDir('owner', 'repo')
+  it.each(['Closing now.', undefined])('reports remote close success without duplicate effects during local completion retry (comment: %s)', async (comment) => {
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const target = store.add({ ref: '#2', title: 'Target', type: 'bug' })
     store.activateExecution(0)
@@ -1393,13 +1407,18 @@ describe('issueClose', () => {
     })
     mkdirSync(join(dir, 'todos.yaml.tmp'))
 
-    await expect(issueClose(2, 'Closing now.', target.id, 'owner/repo'))
-      .rejects.toThrow(new RegExp(`issue #2 was closed.*todo_item="${target.id}"`, 'is'))
+    const failure = await issueClose(2, comment, target.id, testRepository).catch(error => error as Error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toMatch(new RegExp(`issue #2 was closed.*todo_item="${target.id}"`, 'is'))
+    expect((failure as Error).message).toContain(`repo=${JSON.stringify(testRepository)}`)
+    if (comment === undefined) expect((failure as Error).message).not.toContain('comment=')
+    else expect((failure as Error).message).toContain(`comment=${JSON.stringify(comment)}`)
+    expect(github.createComment).toHaveBeenCalledTimes(comment === undefined ? 0 : 1)
 
     rmSync(join(dir, 'todos.yaml.tmp'), { recursive: true, force: true })
     github.getIssueComments.mockResolvedValue([{ id: 801, body: postedBody, user: { login: 'maintainer' } }])
     github.createComment.mockClear()
-    await issueClose(2, 'Closing now.', target.id, 'owner/repo')
+    await issueClose(2, comment, target.id, testRepository)
 
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     expect(github.createComment).not.toHaveBeenCalled()
@@ -1408,18 +1427,28 @@ describe('issueClose', () => {
     expect(store.listArchived()).toEqual([])
   })
 
+  it('keeps the complete repository object in guidance after a comment succeeds but close fails', async () => {
+    github.closeIssue.mockRejectedValueOnce(new Error('Close response unavailable'))
+    const failure = await issueClose(2, 'Closing now.', undefined, testRepository).catch(error => error as Error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain('could not be closed')
+    expect((failure as Error).message).toContain(`repo=${JSON.stringify(testRepository)}`)
+    expect(github.createComment).toHaveBeenCalledTimes(1)
+    expect(github.closeIssue).toHaveBeenCalledTimes(1)
+  })
+
   it('completes independently of a broken archive destination and does not repeat a successful remote close', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const target = store.add({ ref: '#3', title: 'Archive write target', type: 'bug' })
     store.activateExecution(0)
     mkdirSync(join(dir, 'todos.archive.yaml.tmp'))
 
-    await issueClose(3, undefined, target.id, 'owner/repo')
+    await issueClose(3, undefined, target.id, testRepository)
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
 
     rmSync(join(dir, 'todos.archive.yaml.tmp'), { recursive: true, force: true })
-    await issueClose(3, undefined, target.id, 'owner/repo')
+    await issueClose(3, undefined, target.id, testRepository)
 
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
     expect(store.list()[0]!.id).toBe(target.id)
@@ -1428,7 +1457,7 @@ describe('issueClose', () => {
   })
 
   it('rejects an unrelated pending Todo archive before any remote close', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const target = store.add({ ref: '#4', title: 'Generic archive target', type: 'bug' })
     store.completeTodo(0, 'done', 'Todo completed.')
@@ -1436,7 +1465,7 @@ describe('issueClose', () => {
     expect(() => store.archiveAndDelete(0)).toThrow()
     rmSync(join(dir, 'todos.yaml.tmp'), { recursive: true, force: true })
 
-    await expect(issueClose(4, undefined, target.id, 'owner/repo'))
+    await expect(issueClose(4, undefined, target.id, testRepository))
       .rejects.toThrow(/pending archival.*todo_archive/is)
 
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -1444,7 +1473,7 @@ describe('issueClose', () => {
   })
 
   it('rejects a generic pending archive with an execution before remote work', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const target = store.add({ ref: '#5', title: 'Generic execution archive', type: 'bug' })
     store.activateExecution(0)
@@ -1453,7 +1482,7 @@ describe('issueClose', () => {
     expect(() => store.archiveAndDelete(0)).toThrow()
     rmSync(join(dir, 'todos.yaml.tmp'), { recursive: true, force: true })
 
-    await expect(issueClose(5, undefined, target.id, 'owner/repo'))
+    await expect(issueClose(5, undefined, target.id, testRepository))
       .rejects.toThrow(/pending archival.*todo_archive/is)
 
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -1461,7 +1490,7 @@ describe('issueClose', () => {
   })
 
   it('does not let a newer execution bypass an unresolved close receipt', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const target = store.add({ ref: '#6', title: 'Execution drift target', type: 'bug' })
     store.activateExecution(0)
@@ -1469,7 +1498,7 @@ describe('issueClose', () => {
     let releaseClose!: () => void
     github.closeIssue.mockReturnValue(new Promise<{ state: string }>(resolve => { releaseClose = () => resolve({ state: 'closed' }) }))
 
-    const closing = issueClose(6, undefined, target.id, 'owner/repo')
+    const closing = issueClose(6, undefined, target.id, testRepository)
     await vi.waitFor(() => expect(github.closeIssue).toHaveBeenCalledTimes(1))
     store.completeTodo(0, 'done', 'Completed elsewhere.')
     store.archiveAndDelete(0)
@@ -1480,7 +1509,7 @@ describe('issueClose', () => {
     releaseClose()
 
     await expect(closing).rejects.toThrow(/changed execution/)
-    await expect(issueClose(6, undefined, target.id, 'owner/repo'))
+    await expect(issueClose(6, undefined, target.id, testRepository))
       .rejects.toThrow(new RegExp(`${firstExecutionId}.*${secondExecutionId}`, 's'))
 
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
@@ -1488,20 +1517,15 @@ describe('issueClose', () => {
   })
 
   it('reconciles a pending journal against a remotely closed issue without closing again', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const target = store.add({ ref: '#7', title: 'Pending close journal', type: 'bug' })
     store.activateExecution(0)
     const executionId = currentTodoExecution(store.resolveItemById(target.id!)!.item)!.id
-    const digest = createHash('sha256')
-      .update(`owner/repo#7\0${target.id}\0${executionId}`)
-      .digest('hex')
-      .slice(0, 24)
-    const receiptPath = join(dir, '.operations', `issue-close-${digest}.json`)
+    const receiptPath = journals.issueCloseReceiptPath(dir, repository, 7, target.id!, executionId)
     mkdirSync(join(dir, '.operations'), { recursive: true })
     writeFileSync(receiptPath, JSON.stringify({
-      owner: 'owner',
-      repo: 'repo',
+      repository,
       issueNumber: 7,
       todoId: target.id,
       executionId,
@@ -1515,7 +1539,7 @@ describe('issueClose', () => {
     }), 'utf-8')
     github.getIssue.mockResolvedValue({ state: 'closed' })
 
-    await issueClose(7, undefined, target.id, 'owner/repo')
+    await issueClose(7, undefined, target.id, testRepository)
 
     expect(github.closeIssue).not.toHaveBeenCalled()
     expect(store.list()[0]!.id).toBe(target.id)
@@ -1525,22 +1549,17 @@ describe('issueClose', () => {
   })
 
   it('cleans a confirmed receipt when the linked todo was already archived', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const target = store.add({ ref: '#8', title: 'Archived close recovery', type: 'bug' })
     store.activateExecution(0)
     const executionId = currentTodoExecution(store.resolveItemById(target.id!)!.item)!.id
     store.completeTodo(0, 'done', 'Linked GitHub issue #8 was closed.')
     store.archiveAndDelete(0)
-    const digest = createHash('sha256')
-      .update(`owner/repo#8\0${target.id}\0${executionId}`)
-      .digest('hex')
-      .slice(0, 24)
-    const receiptPath = join(dir, '.operations', `issue-close-${digest}.json`)
+    const receiptPath = journals.issueCloseReceiptPath(dir, repository, 8, target.id!, executionId)
     mkdirSync(join(dir, '.operations'), { recursive: true })
     writeFileSync(receiptPath, JSON.stringify({
-      owner: 'owner',
-      repo: 'repo',
+      repository,
       issueNumber: 8,
       todoId: target.id,
       executionId,
@@ -1554,7 +1573,7 @@ describe('issueClose', () => {
       },
     }), 'utf-8')
 
-    const result = await issueClose(8, undefined, target.id, 'owner/repo')
+    const result = await issueClose(8, undefined, target.id, testRepository)
 
     expect(result).toMatch(/already archived/i)
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -1563,7 +1582,7 @@ describe('issueClose', () => {
   })
 
   it.each([false, true])('rejects a cancelled Todo before any Issue effect (archived: %s)', async archived => {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#9', title: 'Cancelled linked task', type: 'bug' })
     store.cancelTodo(todo.id!, 0, 'fixture:user-cancelled')
@@ -1573,7 +1592,7 @@ describe('issueClose', () => {
     const file = join(directory, archived ? 'todos.archive.yaml' : 'todos.yaml')
     const bytes = readFileSync(file)
 
-    await expect(issueClose(9, 'Do not post', todo.id, 'owner/repo'))
+    await expect(issueClose(9, 'Do not post', todo.id, testRepository))
       .rejects.toThrow(archived ? 'Todo not found' : 'Reopen explicitly')
 
     expect(github.getIssue).not.toHaveBeenCalled()
@@ -1587,13 +1606,13 @@ describe('issueClose', () => {
   })
 
   it('blocks plain cancellation during admitted Issue close and never repeats its remote effects', async () => {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#9', title: 'Admitted Issue close', type: 'bug' })
-    const path = journals.issueCloseReceiptPath(directory, 'owner', 'repo', 9, todo.id!, null)
+    const path = journals.issueCloseReceiptPath(directory, repository, 9, todo.id!, null)
     github.getIssue.mockImplementationOnce(async () => {
       expect(journals.readIssueCloseReceipt(path, {
-        owner: 'owner', repo: 'repo', issueNumber: 9, todoId: todo.id!, executionId: null,
+        repository, issueNumber: 9, todoId: todo.id!, executionId: null,
       })).toMatchObject({ state: 'pending', lifecycleRevision: 0 })
       const before = readFileSync(join(directory, 'todos.yaml'))
       expect(() => store.cancelTodo(todo.id!, 0, 'fixture:cancel-during-issue-close')).toThrow(/issue_close.*accounted/i)
@@ -1602,12 +1621,12 @@ describe('issueClose', () => {
       return { state: 'open' }
     })
 
-    await issueClose(9, 'Close exactly once.', todo.id, 'owner/repo')
+    await issueClose(9, 'Close exactly once.', todo.id, testRepository)
     const completed = store.list()
     expect(completed[0]).toMatchObject({ id: todo.id, status: 'done', executions: [] })
     expect(completed[0]!.last_cancellation).toBeUndefined()
     expect(existsSync(path)).toBe(false)
-    expect(await issueClose(9, 'Close exactly once.', todo.id, 'owner/repo')).toContain('already done locally')
+    expect(await issueClose(9, 'Close exactly once.', todo.id, testRepository)).toContain('already done locally')
     expect(store.list()).toEqual(completed)
     expect(store.listArchived()).toEqual([])
     expect(github.getIssue).toHaveBeenCalledTimes(1)
@@ -1616,11 +1635,11 @@ describe('issueClose', () => {
   })
 
   function plainAccountingFixture(kind: 'pause' | 'cancel' = 'pause') {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#12', title: 'Plain original accounting', type: 'bug' })
     const execution = store.activateExecution(0).execution
-    const path = journals.issueCloseReceiptPath(directory, 'owner', 'repo', 12, todo.id!, execution.id)
+    const path = journals.issueCloseReceiptPath(directory, repository, 12, todo.id!, execution.id)
     const state = () => store.get(0)!.executions[0]!.workflow!
     const request = () => store.applyWorkflow(todo.id!, execution.id, {
       request_id: kind, expected_revision: 0,
@@ -1661,7 +1680,7 @@ describe('issueClose', () => {
       expect(readFileSync(join(directory, 'todos.yaml'))).toEqual(bytes)
       expect(artifactFiles()).toEqual(artifacts)
     }
-    const run = (comment = 'Original close decision.') => issueClose(12, comment, todo.id, 'owner/repo')
+    const run = (comment = 'Original close decision.') => issueClose(12, comment, todo.id, testRepository)
     return { directory, store, todo, execution, path, state, request, settle, resume, auditNames, effectCounts, assertBlocked, run }
   }
 
@@ -1905,7 +1924,7 @@ describe('issueClose', () => {
     expect(audit.control).toEqual(fixture.state().control)
     const journal = JSON.parse(audit.journalContent)
     expect(journal).toMatchObject({
-      owner: original.owner, repo: original.repo, issueNumber: original.issueNumber,
+      repository: original.repository, issueNumber: original.issueNumber,
       todoId: original.todoId, executionId: original.executionId,
       lifecycleRevision: 0, startedAt: original.startedAt,
       state: boundary === 'closeIssue' ? 'closed' : 'pending',
@@ -2165,16 +2184,16 @@ describe('issueClose', () => {
   })
 
   it('allows only the exact parsed own managed journal, including its supplied comment digest', () => {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#12', title: 'Exact owned journal guard', type: 'bug' })
     const execution = store.activateExecution(0).execution
     const allowed = {
-      owner: 'owner', repo: 'repo', issueNumber: 12, todoId: todo.id!, executionId: execution.id,
+      repository, issueNumber: 12, todoId: todo.id!, executionId: execution.id,
       closureId: 'managed-issue-close', lifecycleRevision: 0,
       commentDigest: createHash('sha256').update('Exact close decision.').digest('hex'),
     }
-    const path = journals.issueCloseReceiptPath(directory, 'owner', 'repo', 12, todo.id!, execution.id)
+    const path = journals.issueCloseReceiptPath(directory, repository, 12, todo.id!, execution.id)
     const { commentDigest, ...identity } = allowed
     journals.writeIssueCloseReceipt(path, {
       ...identity, state: 'pending', startedAt: '2026-09-17T01:00:00.000Z',
@@ -2184,7 +2203,7 @@ describe('issueClose', () => {
     // Local stopped, settlement, resume and relocation receive no exception.
     expect(() => journals.assertNoPendingIssueClose(directory, todo.id!)).toThrow(/issue_close.*accounted/)
     for (const mismatch of [
-      { owner: 'another-owner' }, { repo: 'another-repo' }, { issueNumber: 13 },
+      { repository: fixtureRepository('another-owner/another-repo') }, { issueNumber: 13 },
       { todoId: 'another-todo' }, { executionId: 'another-execution' },
       { closureId: 'another-closure' }, { lifecycleRevision: 1 }, { commentDigest: '0'.repeat(64) },
     ]) {
@@ -2193,7 +2212,7 @@ describe('issueClose', () => {
     }
     const before = readFileSync(path)
     const other = { ...identity, todoId: 'other-todo', issueNumber: 13 }
-    const otherPath = journals.issueCloseReceiptPath(directory, 'owner', 'repo', 13, other.todoId, execution.id)
+    const otherPath = journals.issueCloseReceiptPath(directory, repository, 13, other.todoId, execution.id)
     writeFileSync(otherPath, JSON.stringify(other))
     expect(() => journals.assertNoPendingIssueClose(directory, todo.id!, allowed)).toThrow()
     expect(readFileSync(path)).toEqual(before)
@@ -2202,11 +2221,11 @@ describe('issueClose', () => {
   it.each((['pause', 'cancel'] as const).flatMap(kind =>
     (['getIssue', 'createComment', 'closeIssue'] as const).map(boundary => ({ kind, boundary })),
   ))('fences local $kind settlement until original plain $boundary returns', async ({ kind, boundary }) => {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#12', title: 'Plain Issue control settlement gate', type: 'bug' })
     const execution = store.activateExecution(0).execution
-    const path = journals.issueCloseReceiptPath(directory, 'owner', 'repo', 12, todo.id!, execution.id)
+    const path = journals.issueCloseReceiptPath(directory, repository, 12, todo.id!, execution.id)
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
     let entered = false
@@ -2247,7 +2266,7 @@ describe('issueClose', () => {
       return boundary === 'createComment' ? { id: 801, body: '' }
         : { state: boundary === 'getIssue' ? 'open' : 'closed' }
     })
-    const closing = issueClose(12, 'Original close decision.', todo.id, 'owner/repo')
+    const closing = issueClose(12, 'Original close decision.', todo.id, testRepository)
       .then(() => undefined, error => error as Error)
     try {
       await vi.waitFor(() => expect(entered).toBe(true))
@@ -2267,11 +2286,11 @@ describe('issueClose', () => {
 
   it.each(['getIssue', 'closeIssue'] as const)(
     'rejects a stale unstarted lifecycle completed and reopened during %s, including retry', async boundary => {
-      const directory = getContribDir('owner', 'repo')
+      const directory = testProjectDirectory()
       const store = new TodoStore(directory)
       const todo = store.add({ ref: '#13', title: 'Unstarted lifecycle race', type: 'bug' })
       expect(todo.executions).toEqual([])
-      const path = journals.issueCloseReceiptPath(directory, 'owner', 'repo', 13, todo.id!, null)
+      const path = journals.issueCloseReceiptPath(directory, repository, 13, todo.id!, null)
       let reopened: Buffer | undefined
       github[boundary].mockImplementationOnce(async () => {
         await Promise.resolve()
@@ -2287,7 +2306,7 @@ describe('issueClose', () => {
         return { state: boundary === 'getIssue' ? 'open' : 'closed' }
       })
 
-      const error = await issueClose(13, 'Original lifecycle only.', todo.id, 'owner/repo')
+      const error = await issueClose(13, 'Original lifecycle only.', todo.id, testRepository)
         .then(() => undefined, error => error)
       expect.soft(error).toBeInstanceOf(Error)
       expect.soft(reopened).toBeDefined()
@@ -2308,7 +2327,7 @@ describe('issueClose', () => {
       github.getIssueComments.mockClear()
       github.createComment.mockClear()
       github.closeIssue.mockClear()
-      await expect.soft(issueClose(13, 'Original lifecycle only.', todo.id, 'owner/repo')).rejects.toThrow()
+      await expect.soft(issueClose(13, 'Original lifecycle only.', todo.id, testRepository)).rejects.toThrow()
       expect.soft(github.getIssue).not.toHaveBeenCalled()
       expect.soft(github.getIssueComments).not.toHaveBeenCalled()
       expect.soft(github.createComment).not.toHaveBeenCalled()
@@ -2324,14 +2343,14 @@ describe('issueClose', () => {
   )
 
   it('serializes concurrent close attempts so only one remote close can run', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     const target = store.add({ ref: '#9', title: 'Concurrent close', type: 'bug' })
     let releaseClose!: () => void
     github.closeIssue.mockReturnValue(new Promise<{ state: string }>(resolve => { releaseClose = () => resolve({ state: 'closed' }) }))
 
-    const first = issueClose(9, undefined, target.id, 'owner/repo')
+    const first = issueClose(9, undefined, target.id, testRepository)
     await vi.waitFor(() => expect(github.closeIssue).toHaveBeenCalledTimes(1))
-    const second = issueClose(9, undefined, target.id, 'owner/repo')
+    const second = issueClose(9, undefined, target.id, testRepository)
     await new Promise(resolve => setTimeout(resolve, 75))
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
 
@@ -2341,10 +2360,38 @@ describe('issueClose', () => {
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
   })
 
+  it('uses the resolved project directory for the linked Todo and receipt', async () => {
+    const directory = join(home, 'separate-project')
+    const store = new TodoStore(directory)
+    const todo = store.add({ ref: '#9', title: 'Directory-bound close', type: 'bug' })
+    vi.mocked(resolveRepo).mockResolvedValueOnce({
+      owner: 'owner', name: 'repo', directory,
+      repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+    })
+    const result = await issueClose(9, undefined, todo.id, {
+      platform: 'github', instance: 'https://github.com', path: 'owner/repo',
+    })
+    expect(result).toContain(`Todo ID: \`${todo.id}\``)
+    expect(store.get(0)?.status).toBe('done')
+    expect(existsSync(join(testProjectDirectory(), 'todos.yaml'))).toBe(false)
+  })
+
+  it('rejects unsupported remote platforms before GitHub effects', async () => {
+    vi.mocked(resolveRepo).mockResolvedValueOnce({
+      owner: 'team', name: 'repo', directory: join(home, 'gitlab-project'),
+      repository: { platform: 'gitlab', instance: 'https://code.example.com/gitlab', path: 'team/repo' },
+    })
+    await expect(issueClose(9, undefined, undefined, {
+      platform: 'gitlab', instance: 'https://code.example.com/gitlab', path: 'team/repo',
+    })).rejects.toThrow(/GitHub.com repositories only/)
+    expect(github.getIssue).not.toHaveBeenCalled()
+    expect(github.closeIssue).not.toHaveBeenCalled()
+  })
+
   it('skips an unlinked close when GitHub already reports the issue closed', async () => {
     github.getIssue.mockResolvedValue({ state: 'closed' })
 
-    const result = await issueClose(10, undefined, undefined, 'owner/repo')
+    const result = await issueClose(10, undefined, undefined, testRepository)
 
     expect(result).toMatch(/already closed/i)
     expect(github.closeIssue).not.toHaveBeenCalled()
@@ -2359,9 +2406,9 @@ describe('issueClose', () => {
       state = 'closed'
     })
 
-    const first = issueClose(11, undefined, undefined, 'owner/repo')
+    const first = issueClose(11, undefined, undefined, testRepository)
     await vi.waitFor(() => expect(github.closeIssue).toHaveBeenCalledTimes(1))
-    const second = issueClose(11, undefined, undefined, 'owner/repo')
+    const second = issueClose(11, undefined, undefined, testRepository)
     await new Promise(resolve => setTimeout(resolve, 75))
     expect(github.closeIssue).toHaveBeenCalledTimes(1)
 

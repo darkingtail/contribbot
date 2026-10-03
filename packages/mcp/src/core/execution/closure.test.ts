@@ -77,7 +77,8 @@ describe('local managed closure with actual candidate and check artifacts', () =
     const { root, git_dir, common_dir, digest } = captureCandidate(workspace)
     send({
       action: 'start_attempt', attempt_id: 'attempt', owner: 'primary',
-      workspace: { repo: 'fixture/repo', root, git_dir, common_dir, baseline: digest, machine: localMachine() },
+      workspace: { repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+        root, git_dir, common_dir, baseline: digest, machine: localMachine() },
     })
     send({
       action: 'yield', actor: 'primary', candidate: { root, git_dir, common_dir, digest },

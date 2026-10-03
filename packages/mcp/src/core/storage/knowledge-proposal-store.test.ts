@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, existsSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { KnowledgeProposalStore, type ProposalInput } from './knowledge-proposal-store.js'
+import { fixtureRepository } from '../execution/__fixtures__/repository.js'
 
 function sampleInput(overrides: Partial<ProposalInput> = {}): ProposalInput {
   return {
-    repo: 'owner/repo',
+    repo: fixtureRepository('owner/repo'),
     target: 'ci-conventions',
     action: 'create',
     source_type: 'todo',
@@ -117,5 +118,34 @@ describe('KnowledgeProposalStore', () => {
     expect(second.proposal.evidence_count).toBe(2)
     expect(second.proposal.source_refs).toEqual(['run-1', 'run-2'])
     expect(store.list()).toHaveLength(1)
+  })
+
+  it('rejects a linked proposal directory on reads and writes', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'kp-outside-'))
+    try {
+      writeFileSync(join(outside, 'knowledge.proposals.yaml'), 'proposals: []\n')
+      const linked = join(dir, 'linked')
+      symlinkSync(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
+      const linkedStore = new KnowledgeProposalStore(linked)
+
+      expect(() => linkedStore.list()).toThrow(/symbolic link/i)
+      expect(() => linkedStore.add(sampleInput())).toThrow(/symbolic link/i)
+      expect(readFileSync(join(outside, 'knowledge.proposals.yaml'), 'utf-8')).toBe('proposals: []\n')
+    }
+    finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a linked temporary file before saving a proposal', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'kp-outside-'))
+    try {
+      symlinkSync(outside, join(dir, 'knowledge.proposals.yaml.tmp'), process.platform === 'win32' ? 'junction' : 'dir')
+      expect(() => store.add(sampleInput())).toThrow(/symbolic link/i)
+      expect(existsSync(join(dir, 'knowledge.proposals.yaml'))).toBe(false)
+    }
+    finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
   })
 })

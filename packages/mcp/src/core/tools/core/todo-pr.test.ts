@@ -1,15 +1,18 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TodoStore } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
 import { todoUpdate } from './todo-update.js'
 import { todoList } from './todos.js'
 import { settleControl } from '../../execution/control.js'
 
 vi.mock('../../utils/resolve-repo.js', () => ({
-  resolveRepo: vi.fn().mockResolvedValue({ owner: 'owner', name: 'repo' }),
+  resolveRepo: vi.fn().mockImplementation(async () => ({
+    owner: 'owner', name: 'repo', directory: testProjectDirectory(),
+    repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+  })),
 }))
 
 describe('Todo PR associations', () => {
@@ -20,7 +23,7 @@ describe('Todo PR associations', () => {
     home = mkdtempSync(join(tmpdir(), 'todo-pr-'))
     vi.stubEnv('HOME', home)
     vi.stubEnv('USERPROFILE', home)
-    dir = getContribDir('owner', 'repo')
+    dir = testProjectDirectory()
     store = new TodoStore(dir)
   })
   afterEach(() => {
@@ -32,13 +35,13 @@ describe('Todo PR associations', () => {
     'links without changing %s, retains legacy PR and deduplicates repeat links', async (status) => {
       const todo = store.add({ ref: 'association', title: 'Association', type: 'feature' })
       store.update(0, { status, pr: 41 })
-      await todoUpdate(todo.id!, { pr: 42 }, 'owner/repo')
-      await todoUpdate(todo.id!, { pr: 42 }, 'owner/repo')
+      await todoUpdate(todo.id!, { pr: 42 }, testRepository)
+      await todoUpdate(todo.id!, { pr: 42 }, testRepository)
       expect(store.get(0)).toMatchObject({ status, pr: 42, pull_requests: [
-        { repo: 'owner/repo', number: 41 }, { repo: 'owner/repo', number: 42 },
+        { repo: testRepository, number: 41 }, { repo: testRepository, number: 42 },
       ] })
       expect(store.listArchived()).toEqual([])
-      const listing = await todoList('owner/repo')
+      const listing = await todoList(testRepository)
       expect(listing).toContain('/pull/41')
       expect(listing).toContain('/pull/42')
     },
@@ -52,9 +55,9 @@ describe('Todo PR associations', () => {
       command: { action: 'request_control', control_id: 'pause', kind: 'pause', decision: 'user:pause', note: 'Pause work.' } })
     settleControl('settle_pause', { directory: dir, todo_id: todo.id, execution_id: execution.id,
       request_id: 'settle', expected_revision: 1, control_id: 'pause', actor: 'primary' })
-    await todoUpdate(todo.id!, { pr: 42 }, 'owner/repo')
+    await todoUpdate(todo.id!, { pr: 42 }, testRepository)
     expect(store.get(0)).toMatchObject({ status: 'paused', pr: 42, pull_requests: [
-      { repo: 'owner/repo', number: 41 }, { repo: 'owner/repo', number: 42 },
+      { repo: testRepository, number: 41 }, { repo: testRepository, number: 42 },
     ] })
     expect(store.listArchived()).toEqual([])
   })
@@ -65,14 +68,14 @@ describe('Todo PR associations', () => {
     if (status === 'cancelled') store.cancelTodo(todo.id!, store.get(0)!.lifecycle_revision ?? 0, 'user:cancel')
     else store.completeTodo(0, 'done', 'User completed the work.')
     const before = readFileSync(join(dir, 'todos.yaml'), 'utf8')
-    await expect(todoUpdate(todo.id!, { pr: 42 }, 'owner/repo')).rejects.toThrow()
+    await expect(todoUpdate(todo.id!, { pr: 42 }, testRepository)).rejects.toThrow()
     expect(readFileSync(join(dir, 'todos.yaml'), 'utf8')).toBe(before)
     expect(store.get(0)?.status).toBe(status)
   })
 
   it('still permits an explicit otherwise-valid lifecycle decision alongside linkage', async () => {
     const todo = store.add({ ref: 'explicit', title: 'Explicit', type: 'feature' })
-    await todoUpdate(todo.id!, { status: 'backlog', pr: 42 }, 'owner/repo')
+    await todoUpdate(todo.id!, { status: 'backlog', pr: 42 }, testRepository)
     expect(store.get(0)).toMatchObject({ status: 'backlog', pr: 42 })
   })
 
@@ -81,7 +84,7 @@ describe('Todo PR associations', () => {
     store.update(0, { pr: 41, status: 'active' })
     const file = join(dir, 'todos.yaml')
     const before = readFileSync(file, 'utf8')
-    const listing = await todoList('owner/repo')
+    const listing = await todoList(testRepository)
     expect(listing).toContain('/pull/41')
     expect(listing).not.toContain('/pull/123')
     expect(readFileSync(file, 'utf8')).toBe(before)
@@ -95,7 +98,7 @@ describe('Todo PR associations', () => {
     const file = join(dir, 'todos.yaml')
     writeFileSync(file, JSON.stringify({ todos }))
     const before = readFileSync(file, 'utf8')
-    const listing = await todoList('owner/repo')
+    const listing = await todoList(testRepository)
     expect(listing).toContain('> 1 active · 1 backlog · 1 idea · 1 paused · 1 done · 1 cancelled\n')
     expect(listing).toContain('### Paused')
     expect(listing).toContain('### Cancelled')
@@ -103,7 +106,7 @@ describe('Todo PR associations', () => {
     expect(listing).toContain('Cancelled, not archived')
     expect(listing.match(/\/pull\/42/g)).toHaveLength(statuses.length)
     for (const status of statuses) {
-      const filtered = await todoList('owner/repo', status)
+      const filtered = await todoList(testRepository, status)
       expect(filtered).toContain(`Work ${status}`)
       expect(filtered).toContain('/pull/42')
       for (const other of statuses.filter(other => other !== status)) expect(filtered).not.toContain(`Work ${other}`)
@@ -114,7 +117,7 @@ describe('Todo PR associations', () => {
   it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid PR number %s without writing', async (pr) => {
     const todo = store.add({ ref: 'invalid', title: 'Invalid PR', type: 'docs' })
     const before = readFileSync(join(dir, 'todos.yaml'), 'utf8')
-    await expect(todoUpdate(todo.id!, { pr }, 'owner/repo')).rejects.toThrow(/PR|number|integer/i)
+    await expect(todoUpdate(todo.id!, { pr }, testRepository)).rejects.toThrow(/PR|number|integer/i)
     expect(readFileSync(join(dir, 'todos.yaml'), 'utf8')).toBe(before)
   })
 })

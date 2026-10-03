@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { getContribDir, validatePathSegment } from '../../utils/config.js'
-import { safeWriteFileSync } from '../../utils/fs.js'
+import { validatePathSegment } from '../../utils/config.js'
+import { assertNoSymlinks, safeWriteFileSync } from '../../utils/fs.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import { projectDirectory, repositoryDisplay, type RepositoryInput, type RepositoryRef } from '../../utils/repository-ref.js'
 import { markdownTable, todayDate, truncate } from '../../utils/format.js'
 import {
   KNOWLEDGE_PROPOSAL_ACTIONS,
@@ -14,12 +15,13 @@ import {
   type KnowledgeSourceType,
 } from '../../enums.js'
 import { KnowledgeProposalStore, type KnowledgeProposal } from '../../storage/knowledge-proposal-store.js'
-import { getKnowledgePath, knowledgeExists } from './knowledge.js'
+import { RepoConfig } from '../../storage/repo-config.js'
+import { assertKnowledgeProject, getKnowledgePath, knowledgeExists } from './knowledge.js'
 
 const PROVENANCE_MARKER = '<!-- contribbot:provenance -->'
 
-function storeFor(owner: string, name: string): KnowledgeProposalStore {
-  return new KnowledgeProposalStore(getContribDir(owner, name))
+function storeFor(repository: RepositoryRef): KnowledgeProposalStore {
+  return new KnowledgeProposalStore(projectDirectory(repository))
 }
 
 function sourceLabel(p: KnowledgeProposal): string {
@@ -41,12 +43,15 @@ function applyProvenanceFooter(content: string, proposal: KnowledgeProposal, app
 
 function writeKnowledge(path: string, content: string): void {
   const dir = dirname(path)
+  assertNoSymlinks(path)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  assertNoSymlinks(path)
+  assertNoSymlinks(`${path}.tmp`)
   safeWriteFileSync(path, content)
 }
 
 export async function knowledgeProposeUpdate(args: {
-  repo?: string
+  repo?: RepositoryInput
   target: string
   action: string
   source_type: string
@@ -55,7 +60,8 @@ export async function knowledgeProposeUpdate(args: {
   rationale: string
   proposed_content: string
 }): Promise<string> {
-  const { owner, name } = await resolveRepo(args.repo)
+  const { repository } = await resolveRepo(args.repo)
+  assertKnowledgeProject(repository)
   const target = validatePathSegment(args.target)
   const action = validateEnum<KnowledgeProposalAction>(KNOWLEDGE_PROPOSAL_ACTIONS, args.action, 'action')
   const sourceType = validateEnum<KnowledgeSourceType>(KNOWLEDGE_SOURCE_TYPES, args.source_type, 'source_type')
@@ -63,9 +69,9 @@ export async function knowledgeProposeUpdate(args: {
   if (!args.title?.trim()) throw new Error('title is required.')
   if (!args.proposed_content?.trim()) throw new Error('proposed_content is required.')
 
-  const store = storeFor(owner, name)
+  const store = storeFor(repository)
   const input = {
-    repo: `${owner}/${name}`,
+    repo: repository,
     target,
     action,
     source_type: sourceType,
@@ -81,15 +87,15 @@ export async function knowledgeProposeUpdate(args: {
   return [
     `## Knowledge proposal ${created ? 'created' : 'refreshed'} — \`${proposal.id}\``,
     '',
-    `| Field | Value |`,
-    `| --- | --- |`,
-    `| Repo | ${proposal.repo} |`,
-    `| Target | \`${proposal.target}\` |`,
-    `| Action | ${proposal.action} |`,
-    `| Source | ${sourceLabel(proposal)} |`,
-    `| Title | ${proposal.title} |`,
-    `| Status | pending |`,
-    `| Evidence | ${proposal.evidence_count ?? 1} observation(s) |`,
+    markdownTable(['Field', 'Value', 'Remark'], [
+      ['Repo', repositoryDisplay(repository), 'Managed project'],
+      ['Target', `\`${proposal.target}\``, 'Proposed knowledge entry'],
+      ['Action', proposal.action, 'Requested change'],
+      ['Source', sourceLabel(proposal), 'Proposal provenance'],
+      ['Title', proposal.title, 'Proposal summary'],
+      ['Status', 'pending', 'Awaiting review'],
+      ['Evidence', `${proposal.evidence_count ?? 1} observation(s)`, 'Recorded observations'],
+    ]),
     '',
     proposal.rationale ? `**Rationale**: ${proposal.rationale}` : '_No rationale provided._',
     '',
@@ -104,16 +110,17 @@ export async function knowledgeProposeUpdate(args: {
   ].join('\n')
 }
 
-export async function knowledgeProposals(repo?: string, status?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
+export async function knowledgeProposals(repo?: RepositoryInput, status?: string): Promise<string> {
+  const { repository } = await resolveRepo(repo)
+  assertKnowledgeProject(repository)
   const statusFilter = status
     ? validateEnum<KnowledgeProposalStatus>(KNOWLEDGE_PROPOSAL_STATUSES, status, 'status')
     : undefined
 
-  const store = storeFor(owner, name)
+  const store = storeFor(repository)
   const proposals = store.listByStatus(statusFilter)
 
-  const heading = `## Knowledge proposals — ${owner}/${name}${statusFilter ? ` (${statusFilter})` : ''}`
+  const heading = `## Knowledge proposals — ${repositoryDisplay(repository)}${statusFilter ? ` (${statusFilter})` : ''}`
   if (proposals.length === 0) {
     return `${heading}\n\n_No proposals${statusFilter ? ` with status ${statusFilter}` : ''}. Use \`knowledge_propose_update\` to create one._`
   }
@@ -147,17 +154,18 @@ export async function knowledgeProposals(repo?: string, status?: string): Promis
   ].join('\n')
 }
 
-export async function knowledgeApplyUpdate(repo: string | undefined, proposalId: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = storeFor(owner, name)
+export async function knowledgeApplyUpdate(repo: RepositoryInput | undefined, proposalId: string): Promise<string> {
+  const { repository } = await resolveRepo(repo)
+  assertKnowledgeProject(repository)
+  const store = storeFor(repository)
   const proposal = store.get(proposalId)
   if (!proposal) throw new Error(`Proposal "${proposalId}" not found. Use \`knowledge_proposals\` to list them.`)
   if (proposal.status !== 'pending') {
     throw new Error(`Proposal "${proposalId}" is already ${proposal.status}, cannot apply.`)
   }
 
-  const path = getKnowledgePath(owner, name, proposal.target)
-  const exists = knowledgeExists(owner, name, proposal.target)
+  const path = getKnowledgePath(repository, proposal.target)
+  const exists = knowledgeExists(repository, proposal.target)
   const previousContent = exists ? readFileSync(path, 'utf-8') : null
   const appliedAt = todayDate()
 
@@ -195,27 +203,29 @@ export async function knowledgeApplyUpdate(repo: string | undefined, proposalId:
   return [
     `## Knowledge proposal applied — \`${proposal.id}\``,
     '',
-    `| Field | Value |`,
-    `| --- | --- |`,
-    `| Action | ${proposal.action} |`,
-    `| Target | \`${proposal.target}\` |`,
-    `| Path | \`~/.contribbot/${owner}/${name}/knowledge/${proposal.target}/README.md\` |`,
-    `| Resource | \`knowledge://${owner}/${name}/${proposal.target}\` |`,
-    `| Applied | ${appliedAt} |`,
+    markdownTable(['Field', 'Value', 'Remark'], [
+      ['Action', proposal.action, 'Applied change'],
+      ['Target', `\`${proposal.target}\``, 'Canonical knowledge entry'],
+      ['Path', `\`${path}\``, 'Canonical file'],
+      ['Resource', `Use the Knowledge resource for ${repositoryDisplay(repository)}`, 'Read-only access'],
+      ['Applied', appliedAt, 'Date applied'],
+    ]),
     '',
     `Provenance footer recorded in the knowledge entry.`,
   ].join('\n')
 }
 
-export async function knowledgeRollbackUpdate(repo: string | undefined, proposalId: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = storeFor(owner, name)
+export async function knowledgeRollbackUpdate(repo: RepositoryInput | undefined, proposalId: string): Promise<string> {
+  const { repository } = await resolveRepo(repo)
+  assertKnowledgeProject(repository)
+  const store = storeFor(repository)
   const proposal = store.get(proposalId)
   if (!proposal) throw new Error(`Proposal "${proposalId}" not found. Use \`knowledge_proposals\` to list them.`)
   if (proposal.status !== 'applied') {
     throw new Error(`Proposal "${proposalId}" is ${proposal.status}, only applied proposals can be rolled back.`)
   }
-  const path = getKnowledgePath(owner, name, proposal.target)
+  const path = getKnowledgePath(repository, proposal.target)
+  assertNoSymlinks(path)
   if (proposal.previous_existed) {
     if (proposal.previous_content === null || proposal.previous_content === undefined) {
       throw new Error(`Proposal "${proposalId}" has no rollback snapshot.`)
@@ -235,9 +245,10 @@ export async function knowledgeRollbackUpdate(repo: string | undefined, proposal
   ].join('\n')
 }
 
-export async function knowledgeRejectUpdate(repo: string | undefined, proposalId: string, reason?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = storeFor(owner, name)
+export async function knowledgeRejectUpdate(repo: RepositoryInput | undefined, proposalId: string, reason?: string): Promise<string> {
+  const { repository } = await resolveRepo(repo)
+  assertKnowledgeProject(repository)
+  const store = storeFor(repository)
   const proposal = store.get(proposalId)
   if (!proposal) throw new Error(`Proposal "${proposalId}" not found. Use \`knowledge_proposals\` to list them.`)
   if (proposal.status !== 'pending') {
@@ -262,10 +273,7 @@ export async function knowledgeRejectUpdate(repo: string | undefined, proposalId
 /**
  * Count pending knowledge proposals for a repo. Used by project_dashboard.
  */
-export function countPendingProposals(owner: string, name: string): number {
-  try {
-    return storeFor(owner, name).countPending()
-  } catch {
-    return 0
-  }
+export function countPendingProposals(repository: RepositoryRef): number {
+  if (!new RepoConfig(projectDirectory(repository)).load()) return 0
+  return storeFor(repository).countPending()
 }

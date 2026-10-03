@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { planDigest } from '../execution/workflow.js'
 import type { WorkflowPlanInput } from '../execution/contracts.js'
 import { executionContext, runLocalCommand } from '../execution/local.js'
+import { fixtureProjectDirectory, fixtureRepository, saveFixtureProjectConfig } from '../execution/__fixtures__/repository.js'
 import * as fsUtils from '../utils/fs.js'
 import { RecordFiles } from './record-files.js'
 import { TodoStore } from './todo-store.js'
 
 const start = '<!-- contribbot:workflow:start -->'
 const end = '<!-- contribbot:workflow:end -->'
+const repository = fixtureRepository('fixture/repo')
 const plan: WorkflowPlanInput = {
   goal: 'Preserve the document while repairing arithmetic', completion_scope: 'task', remaining_scope: [], non_goals: ['Publication'],
   scope: ['src'], risk: 'normal',
@@ -32,7 +34,8 @@ describe('managed Todo document projection', () => {
   let path: string
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'contribbot-projection-'))
-    directory = join(home, 'fixture', 'repo')
+    directory = fixtureProjectDirectory(home, 'fixture/repo')
+    saveFixtureProjectConfig(directory, 'fixture/repo')
     store = new TodoStore(directory)
     const todo = store.add({ ref: 'sum', title: 'Fix sum', type: 'bug' })
     todoId = todo.id!
@@ -82,7 +85,7 @@ describe('managed Todo document projection', () => {
     expect(context.recovery.join(' ')).toMatch(/document|projection/i)
     const yaml = readFileSync(join(directory, 'todos.yaml'), 'utf8')
     vi.restoreAllMocks()
-    await runLocalCommand({ action: 'resume', repo: 'fixture/repo', data_root: home, todo_id: todoId, execution_id: executionId })
+    await runLocalCommand({ action: 'resume', repo: repository, data_root: home, todo_id: todoId, execution_id: executionId })
     expect(readFileSync(join(directory, 'todos.yaml'), 'utf8')).toBe(yaml)
     expect(content()).toContain(plan.goal)
     expect(executionContext(directory, todoId).document_projection.status).toBe('current')
@@ -175,7 +178,7 @@ describe('managed Todo document projection', () => {
     propose()
     const edited = content().replace(plan.goal, 'Hand edited')
     writeFileSync(path, edited)
-    await expect(runLocalCommand({ action: 'resume', repo: 'fixture/repo', data_root: home,
+    await expect(runLocalCommand({ action: 'resume', repo: repository, data_root: home,
       todo_id: todoId, execution_id: 'not-this-execution' })).rejects.toThrow(/execution/i)
     expect(content()).toBe(edited)
   })
@@ -207,7 +210,7 @@ describe('managed Todo document projection', () => {
       actual(file, text)
     })
     const closed = await runLocalCommand({
-      action: 'close', repo: 'fixture/repo', data_root: home, todo_id: todoId, execution_id: executionId,
+      action: 'close', repo: repository, data_root: home, todo_id: todoId, execution_id: executionId,
       closure_id: 'stop', expected_revision: 2, mode: 'stopped', acknowledged_gaps: [],
       decision: 'fixture-user:stop-before-implementation', note: 'Stopped, not verified.', target: { kind: 'local' },
     })
@@ -219,7 +222,7 @@ describe('managed Todo document projection', () => {
     expect(content()).toBe(original)
     const archive = readFileSync(join(directory, 'todos.archive.yaml'), 'utf8')
     vi.restoreAllMocks()
-    await runLocalCommand({ action: 'resume', repo: 'fixture/repo', data_root: home,
+    await runLocalCommand({ action: 'resume', repo: repository, data_root: home,
       todo_id: todoId, execution_id: executionId })
     expect(content()).toContain('Recorded closure: stopped')
     expect(content()).toContain('fixture-user:stop-before-implementation')
@@ -244,7 +247,6 @@ describe('managed Todo document projection', () => {
     writeFileSync(join(workspace, 'sum.cjs'), 'module.exports = values => values.reduce((a,b) => a+b,0)\n')
     git('add', '.')
     git('commit', '--quiet', '-m', 'Isolated test')
-    writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
     const counter = join(home, 'counter')
     const commandPlan: WorkflowPlanInput = {
       ...plan, scope: ['.'], steps: [{ ...plan.steps[0]!, scope: ['.'] }],
@@ -255,7 +257,7 @@ describe('managed Todo document projection', () => {
     }
     const state = () => store.get(0)!.executions[0]!.workflow!
     const call = (action: string, payload: Record<string, unknown> = {}) => runLocalCommand({
-      action, repo: 'fixture/repo', data_root: home, todo_id: todoId, execution_id: executionId, ...payload,
+      action, repo: repository, data_root: home, todo_id: todoId, execution_id: executionId, ...payload,
     })
     store.applyWorkflow(todoId, executionId, { ...proposal, command: { ...proposal.command, plan: commandPlan } })
     store.applyWorkflow(todoId, executionId, {

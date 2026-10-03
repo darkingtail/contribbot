@@ -7,7 +7,7 @@ try {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-      repo: { type: 'string' }, request: { type: 'string' }, 'data-root': { type: 'string' },
+      request: { type: 'string' }, 'data-root': { type: 'string' },
       help: { type: 'boolean' }, schema: { type: 'boolean' },
     },
   })
@@ -23,13 +23,13 @@ try {
     console.log(localHelp(action))
   }
   else {
-    if (!action || !values.repo || !values.request) throw new Error('Provide one action, --repo owner/repo and --request JSON file (or - for stdin).')
+    if (!action || !values.request) throw new Error('Provide one action and --request JSON file (or - for stdin) with a complete repo object.')
     const raw = readFileSync(values.request === '-' ? 0 : values.request, 'utf8')
     if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw new Error('Request exceeds 2 MiB.')
     const payload: unknown = JSON.parse(raw)
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Request must be a JSON object.')
     const result = await runLocalCommand({
-      ...payload, action, repo: values.repo, ...(values['data-root'] ? { data_root: values['data-root'] } : {}),
+      ...payload, action, ...(values['data-root'] ? { data_root: values['data-root'] } : {}),
     })
     console.log(JSON.stringify(result))
   }

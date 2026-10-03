@@ -1,12 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { isAbsolute, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { isDeepStrictEqual } from 'node:util'
 import { RepoConfig } from '../storage/repo-config.js'
 import { currentTodoExecution, TodoStore } from '../storage/todo-store.js'
-import { validatePathSegment } from '../utils/config.js'
+import { projectDirectory, repositoryRefSchema, sameRepository } from '../utils/repository-ref.js'
 import { ExecutionArtifacts } from './artifacts.js'
 import { captureCandidate } from './candidate.js'
 import { observeCheck, recoverCheck, runCheck } from './checks.js'
@@ -26,7 +25,7 @@ import { collectRemoteDeliveries } from './remote-delivery.js'
 
 const text = z.string().trim().min(1)
 export const localIdentitySchema = z.object({
-  repo: z.string().regex(/^[\w][\w.-]*\/[\w][\w.-]*$/),
+  repo: repositoryRefSchema,
   data_root: z.string().refine(isAbsolute, 'data_root must be absolute.').optional(),
   todo_id: text, execution_id: text.optional(),
 })
@@ -147,8 +146,13 @@ export function executionContext(directory: string, todoId: string, executionId?
 }
 
 function storageFor(input: z.infer<typeof localIdentitySchema>): string {
-  const [owner, name] = input.repo.split('/')
-  return join(input.data_root ?? join(homedir(), '.contribbot'), validatePathSegment(owner!), validatePathSegment(name!))
+  const directory = projectDirectory(input.repo, input.data_root)
+  const config = new RepoConfig(directory).load()
+  if (!config) throw new Error('Initialize the repository config before accessing a local execution.')
+  if (!sameRepository(config.repository, input.repo)) {
+    throw new Error('Repository config identity does not match the requested local execution.')
+  }
+  return directory
 }
 
 function readWorkflow(directory: string, todoId: string, executionId: string): WorkflowState {
@@ -210,7 +214,7 @@ async function executeLocalCommand(raw: unknown): Promise<Record<string, unknown
       assertLocalWorkspace(existing.workspace)
       const root = realpathSync(input.workspace)
       if ((process.platform === 'win32' ? root.toLowerCase() : root) !== existing.workspace.root
-        || input.repo !== existing.workspace.repo) throw new Error('Attempt id reuse with a different workspace/repository.')
+        || !sameRepository(input.repo, existing.workspace.repo)) throw new Error('Attempt id reuse with a different workspace/repository.')
       let command: WorkflowCommand
       if (input.action === 'relocate') {
         if (!existing.relocation) throw new Error('Attempt was not created by relocation.')
@@ -232,8 +236,10 @@ async function executeLocalCommand(raw: unknown): Promise<Record<string, unknown
     if (!config) throw new Error('Initialize the canonical repository config before binding a workspace.')
     const snapshot = captureCandidate(input.workspace)
     const origin = canonicalOrigin(snapshot.root)
-    if (![input.repo.toLowerCase(), config.fork?.toLowerCase()].includes(origin.toLowerCase())) {
-      throw new Error(`Workspace origin ${origin} does not match canonical repository ${input.repo} or its recorded fork.`)
+    if (input.repo.platform !== 'github' || input.repo.instance !== 'https://github.com'
+      || !sameRepository(config.repository, input.repo)
+      || origin.toLowerCase() !== input.repo.path.toLowerCase()) {
+      throw new Error(`Workspace origin ${origin} does not match managed repository ${input.repo.instance}/${input.repo.path}.`)
     }
     const storage = realpathSync(directory)
     const rel = relative(snapshot.root, storage)

@@ -1,9 +1,10 @@
 import { parseRepo, getPullReviewComments } from '../../clients/github.js'
 import { truncate } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 export async function prReviewComments(
   prNumber: number,
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
   const { owner, name } = parseRepo(repo)
   const comments = await getPullReviewComments(owner, name, prNumber)

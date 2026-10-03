@@ -1,3 +1,4 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,7 +7,6 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TodoStore } from '../../storage/todo-store.js'
 import { RecordFiles } from '../../storage/record-files.js'
-import { getContribDir } from '../../utils/config.js'
 import { prCreate } from '../linkage/pr-create.js'
 import { todoActivate } from './todo-activate.js'
 import { todoClaim } from './todo-claim.js'
@@ -18,7 +18,10 @@ const github = vi.hoisted(() => ({
 }))
 vi.mock('../../clients/github.js', () => github)
 vi.mock('../../utils/resolve-repo.js', () => ({
-  resolveRepo: vi.fn().mockResolvedValue({ owner: 'owner', name: 'repo' }),
+  resolveRepo: vi.fn().mockImplementation(async () => ({
+    owner: 'owner', name: 'repo', directory: testProjectDirectory(),
+    repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+  })),
 }))
 
 describe('tool-level selection and publication transactions', () => {
@@ -36,7 +39,7 @@ describe('tool-level selection and publication transactions', () => {
     home = mkdtempSync(join(tmpdir(), 'contribbot-tool-transactions-'))
     vi.stubEnv('HOME', home)
     vi.stubEnv('USERPROFILE', home)
-    directory = getContribDir('owner', 'repo')
+    directory = testProjectDirectory()
     store = new TodoStore(directory)
     github.getIssue.mockReset().mockResolvedValue({
       number: 2, title: 'Target', state: 'open', user: { login: 'author' }, labels: [],
@@ -67,7 +70,7 @@ describe('tool-level selection and publication transactions', () => {
       contender ??= compete()
       return original.call(this, index)
     })
-    await todoActivate(id, 'feature/target', 'owner/repo')
+    await todoActivate(id, 'feature/target', testRepository)
     expect(contender).toBe('blocked')
     expect(store.findByRef('following')!.executions).toEqual([])
     expect(store.resolveItemById(id)!.item.executions).toHaveLength(1)
@@ -81,15 +84,15 @@ describe('tool-level selection and publication transactions', () => {
       contender ??= compete()
       return original.call(this, index, fields)
     })
-    if (action === 'activate-final') await todoActivate(id, 'feature/target', 'owner/repo')
-    if (action === 'pr-link') await prCreate('Target PR', 'feature/target', 'main', undefined, false, id, 'owner/repo')
-    if (action === 'claim-save') await todoClaim(id, ['Implement target'], 'owner/repo')
+    if (action === 'activate-final') await todoActivate(id, 'feature/target', testRepository)
+    if (action === 'pr-link') await prCreate('Target PR', 'feature/target', 'main', undefined, false, id, testRepository)
+    if (action === 'claim-save') await todoClaim(id, ['Implement target'], testRepository)
     expect(contender).toBe('blocked')
     expect(store.findByRef('following')).toMatchObject({ status: 'idea', claimed_items: null, pr: null, branch: null })
     const target = store.resolveItemById(id)!.item
     if (action === 'activate-final') expect(target).toMatchObject({ status: 'active', branch: 'feature/target' })
     if (action === 'pr-link') expect(target).toMatchObject({ status: 'idea', pr: 77,
-      pull_requests: [{ repo: 'owner/repo', number: 77 }] })
+      pull_requests: [{ repo: testRepository, number: 77 }] })
     if (action === 'claim-save') expect(target.claimed_items).toEqual(['Implement target'])
   }, 15_000)
 
@@ -100,7 +103,7 @@ describe('tool-level selection and publication transactions', () => {
       contender ??= compete()
       return original.apply(this, args)
     })
-    await todoAdd('New task', 'new-task', 'owner/repo')
+    await todoAdd('New task', 'new-task', testRepository)
     expect(contender).toBe('blocked')
     const todo = store.findByRef('new-task')!
     expect(todo).toBeDefined()

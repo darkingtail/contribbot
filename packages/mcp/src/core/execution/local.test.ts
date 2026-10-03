@@ -11,6 +11,8 @@ import type { WorkflowPlanInput } from './contracts.js'
 import { captureCandidate } from './candidate.js'
 import { finalizeClosure, prepareClosure } from './closure.js'
 import { stringify } from 'yaml'
+import { projectDirectory } from '../utils/repository-ref.js'
+import { RepoConfig } from '../storage/repo-config.js'
 
 const machine = vi.hoisted(() => ({ hostname: null as string | null }))
 vi.mock('node:os', async (original) => {
@@ -26,8 +28,12 @@ describe('local helper user-facing workflow', () => {
   let todoId: string
   let executionId: string
   const state = () => store.list()[0]!.executions[0]!.workflow!
+  const storagePath = () => projectDirectory({
+    platform: 'github', instance: 'https://github.com', path: 'fixture/repo',
+  }, dataRoot)
   const call = (action: string, payload: Record<string, unknown>) => runLocalCommand({
-    action, repo: 'fixture/repo', data_root: dataRoot, ...payload,
+    action, repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+    data_root: dataRoot, ...payload,
   })
   const identity = () => ({ todo_id: todoId, execution_id: executionId })
   const relocation = () => ({
@@ -74,11 +80,17 @@ describe('local helper user-facing workflow', () => {
     writeFileSync(join(workspace, 'README.md'), 'Delivered document')
     git('add', '.')
     git('commit', '--quiet', '-m', 'fixture')
-    const storage = join(dataRoot, 'fixture', 'repo')
+    const storage = storagePath()
+    new RepoConfig(storage).save({
+      schema_version: 3,
+      repository: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+      lifecycle: { status: 'active' },
+      parent: { status: 'unknown' },
+      tracking: { status: 'pending' },
+    })
     store = new TodoStore(storage)
     todoId = store.add({ ref: 'document', title: 'Document', type: 'docs' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(storage, 'config.yaml'), 'fork: null\nupstream: null\n')
   })
   afterEach(() => { machine.hostname = null; rmSync(directory, { recursive: true, force: true }) })
 
@@ -144,7 +156,7 @@ describe('local helper user-facing workflow', () => {
       control_id: 'pause', actor: 'primary', decision: 'user:continue' })
     const todos = store.list()
     todos[0]!.executions[0]!.workflow!.epoch = epoch
-    writeFileSync(join(dataRoot, 'fixture', 'repo', 'todos.yaml'), stringify({ todos }))
+    writeFileSync(join(storagePath(), 'todos.yaml'), stringify({ todos }))
     await call('yield', { ...identity(), request_id: 'after-corruption', expected_revision: state().revision,
       actor: 'primary', observed_operations: ['manual'], note: 'No writers remain.' })
     expect((await call('inspect', identity())).readiness).toMatchObject({ ready: false, gaps: ['control:history'] })
@@ -152,7 +164,7 @@ describe('local helper user-facing workflow', () => {
 
   it('withdraws a reversible local closure under the exact stop request, then settles pause', async () => {
     await acceptedReport()
-    const directory = join(dataRoot, 'fixture', 'repo')
+    const directory = storagePath()
     prepareClosure({ directory, ...identity(), closure_id: 'original-close', expected_revision: state().revision,
       mode: 'verified', decision: 'user:old-complete', note: 'Originally finishing', acknowledged_gaps: [], target: { kind: 'local' } })
     await stop()
@@ -189,11 +201,11 @@ describe('local helper user-facing workflow', () => {
     await call('continue', { ...identity(), request_id: 'continue', expected_revision: state().revision,
       control_id: 'pause', actor: 'primary', decision: 'user:continue' })
     await stop('cancel')
-    const finish = { directory: join(dataRoot, 'fixture', 'repo'), ...identity(), closure_id: 'unbound-cancel',
+    const finish = { directory: storagePath(), ...identity(), closure_id: 'unbound-cancel',
       expected_revision: state().revision, mode: 'stopped', decision: 'user:cancel', note: 'Retain partial design.',
       acknowledged_gaps: [], target: { kind: 'local' } }
     if (boundary === 'finalize') prepareClosure(finish)
-    rmSync(join(dataRoot, 'fixture', 'repo', 'executions', executionId, 'artifacts', `${receipt}.json`))
+    rmSync(join(storagePath(), 'executions', executionId, 'artifacts', `${receipt}.json`))
     expect(() => (boundary === 'prepare' ? prepareClosure : finalizeClosure)(finish)).toThrow(/accounting|receipt|ENOENT/i)
     expect(store.get(0)!.status).toBe('active')
     expect(state().closure).toBeNull()
@@ -201,7 +213,7 @@ describe('local helper user-facing workflow', () => {
 
   it('rejects closure withdrawal by a superseded control or a different owner', async () => {
     await acceptedReport()
-    prepareClosure({ directory: join(dataRoot, 'fixture', 'repo'), ...identity(), closure_id: 'original',
+    prepareClosure({ directory: storagePath(), ...identity(), closure_id: 'original',
       expected_revision: state().revision, mode: 'verified', decision: 'user:complete',
       note: 'Original close', acknowledged_gaps: [], target: { kind: 'local' } })
     await stop()
@@ -225,6 +237,19 @@ describe('local helper user-facing workflow', () => {
     expect(store.resolveItemFromAll(todo.id!)!.executions).toEqual([])
   })
 
+  it('refuses missing or mismatched project config before reading a Todo', async () => {
+    const configPath = join(storagePath(), 'config.yaml')
+    rmSync(configPath)
+    await expect(call('context', identity())).rejects.toThrow(/Initialize.*config/i)
+    writeFileSync(configPath, [
+      'schema_version: 3', 'repository:', '  platform: github',
+      '  instance: https://github.com', '  path: fixture/other',
+      'lifecycle:', '  status: active', 'parent:', '  status: unknown',
+      'tracking:', '  status: pending', '',
+    ].join('\n'))
+    await expect(call('context', identity())).rejects.toThrow(/identity.*directory/i)
+  })
+
   it('binds verified repository, captures yield, records explicit user acceptance and closes', async () => {
     await acceptedReport()
     const result = await call('close', {
@@ -240,7 +265,7 @@ describe('local helper user-facing workflow', () => {
 
   it.each(['receipt', 'manifest'] as const)('does not advertise delivery readiness when a report %s is missing', async (missing) => {
     await acceptedReport()
-    const storage = join(dataRoot, 'fixture', 'repo')
+    const storage = storagePath()
     const check = state().checks[0]!
     const artifacts = new ExecutionArtifacts(storage, executionId)
     const report = artifacts.get(check.receipt) as { manifest: string }
@@ -293,10 +318,12 @@ describe('local helper user-facing workflow', () => {
   it('reads a structured context through the real CLI from an unrelated cwd', async () => {
     await prepare()
     const input = join(directory, 'request.json')
-    writeFileSync(input, JSON.stringify(identity()))
+    writeFileSync(input, JSON.stringify({
+      ...identity(), repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+    }))
     const tsx = fileURLToPath(new URL('../../../node_modules/tsx/dist/cli.mjs', import.meta.url))
     const cli = fileURLToPath(new URL('../../cli/execution.ts', import.meta.url))
-    const result = spawnSync(process.execPath, [tsx, cli, 'context', '--repo', 'fixture/repo', '--data-root', dataRoot, '--request', input], {
+    const result = spawnSync(process.execPath, [tsx, cli, 'context', '--data-root', dataRoot, '--request', input], {
       cwd: directory, windowsHide: true, encoding: 'utf8',
     })
     expect(result.status, result.stderr + result.stdout).toBe(0)
@@ -364,7 +391,8 @@ describe('local helper user-facing workflow', () => {
     store.applyWorkflow(todoId, executionId, {
       request_id: 'historical-bind', expected_revision: state().revision,
       command: { action: 'start_attempt', attempt_id: 'attempt', owner: 'primary',
-        workspace: { repo: 'fixture/repo', root, git_dir, common_dir, baseline: digest } },
+        workspace: { repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+          root, git_dir, common_dir, baseline: digest } },
     })
     const before = state()
     expect(await call('context', identity())).toMatchObject({
@@ -392,7 +420,7 @@ describe('local helper user-facing workflow', () => {
     expect(state()).toEqual(beforeBind)
     machine.hostname = null
     prepareClosure({
-      ...identity(), directory: join(dataRoot, 'fixture', 'repo'), closure_id: 'pending',
+      ...identity(), directory: storagePath(), closure_id: 'pending',
       expected_revision: state().revision, mode: 'verified', acknowledged_gaps: [],
       decision: 'fixture:close', note: 'Prepared but not yet finalized', target: { kind: 'local' },
     })
@@ -430,7 +458,7 @@ describe('local helper user-facing workflow', () => {
       locator: 'fixture:new-user-acceptance', summary: 'Fixture user accepts this attempt.',
     })
     expect((await call('inspect', identity())).readiness).toMatchObject({ ready: true, gaps: [] })
-    const storage = join(dataRoot, 'fixture', 'repo')
+    const storage = storagePath()
     const receipt = state().attempts[1]!.relocation!.receipt
     const artifacts = new ExecutionArtifacts(storage, executionId)
     const record = artifacts.get(receipt) as { manifest: string }

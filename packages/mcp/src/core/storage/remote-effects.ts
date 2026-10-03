@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { repositoryRefSchema } from '../utils/repository-ref.js'
 import { safeWriteFileSync } from '../utils/fs.js'
 import { withTodoLock } from './todo-lock.js'
 
 const text = z.string().min(1).max(65_536)
-const identity = { execution_id: text.nullable(), repo: text }
+const identity = { execution_id: text.nullable(), repo: repositoryRefSchema }
 const requestSchema = z.discriminatedUnion('kind', [
   z.object({ ...identity, kind: z.literal('pr'), payload: z.object({
     title: text, head: text, base: text, body: z.string().max(1_048_576), draft: z.boolean(),

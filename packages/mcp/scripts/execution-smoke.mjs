@@ -9,6 +9,7 @@ import { createRequire, register as registerModule } from 'node:module'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { stringify } from 'yaml'
 const flags = process.argv.slice(2)
 if (flags.length > 1 || flags.some(flag => flag !== '--source-skill')) throw new Error('Usage: execution-smoke.mjs [--source-skill]')
 const sourceSkill = flags.includes('--source-skill')
@@ -18,12 +19,22 @@ if (sourceSkill) {
   register({ tsconfig: fileURLToPath(new URL('../tsconfig.json', import.meta.url)) })
 }
 const { TodoStore } = await import(sourceSkill ? '../src/core/storage/todo-store.ts' : '../dist/index.js')
+const { projectDirectory } = await import(sourceSkill ? '../../core/src/repository/ref.ts' : 'contribbot-core/repository/ref')
 
 const home = mkdtempSync(join(tmpdir(), 'contribbot-execution-smoke-'))
 const workspace = join(home, 'workspace')
 const dataRoot = join(home, '.contribbot')
 const repo = 'execution-smoke/repo'
-const directory = join(dataRoot, ...repo.split('/'))
+const repository = { platform: 'github', instance: 'https://github.com', path: repo }
+const directory = projectDirectory(repository, dataRoot)
+const config = {
+  schema_version: 3, repository,
+  lifecycle: { status: 'active' }, parent: { status: 'unknown' }, tracking: { status: 'pending' },
+}
+const configure = path => {
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'config.yaml'), stringify(config))
+}
 const counter = join(home, 'command-runs.txt')
 const gate = join(home, 'wait-for-release')
 const started = join(home, 'waiting-command')
@@ -84,6 +95,8 @@ try {
   const checkSchema = JSON.parse(discovery.stdout)
   assert.equal(checkSchema.type, 'object')
   assert.ok(checkSchema.required.includes('acceptance_id'))
+  assert.ok(checkSchema.required.includes('repo'))
+  assert.deepEqual(checkSchema.properties.repo.required, ['platform', 'instance', 'path'])
   assert.equal(checkSchema.properties.directory, undefined)
   assert.equal(checkSchema['x-contribbot'].validation, 'structure-only')
   assert.deepEqual(readdirSync(home), beforeDiscovery)
@@ -107,10 +120,10 @@ try {
   git('add', '.')
   git('commit', '--quiet', '-m', 'Isolated broken fixture')
 
+  configure(directory)
   const store = new TodoStore(directory)
   const todoId = store.add({ ref: 'sum', title: 'Correct sum calculation', type: 'bug' }).id
   const executionId = store.activateExecution(0).execution.id
-  writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
   const identity = { todo_id: todoId, execution_id: executionId }
   const workflow = () => store.list()[0].executions[0].workflow
   const revision = () => workflow()?.revision ?? 0
@@ -120,10 +133,10 @@ try {
   }
   const local = (action, payload = {}, success = true, root = dataRoot) => {
     const child = spawnSync(process.execPath, [
-      cliPath, action, '--repo', repo, '--data-root', root, '--request', '-',
+      cliPath, action, '--data-root', root, '--request', '-',
     ], {
       cwd: home, env, windowsHide: true, encoding: 'utf8', timeout: 30_000,
-      input: JSON.stringify({ ...identity, ...payload }), maxBuffer: 4 * 1024 * 1024,
+      input: JSON.stringify({ repo: repository, ...identity, ...payload }), maxBuffer: 4 * 1024 * 1024,
     })
     assert.equal(child.error, undefined)
     assert.equal(child.signal, null)
@@ -141,7 +154,7 @@ try {
     catch (error) { throw new Error(`Fixture MCP connection failed: ${serverError}`, { cause: error }) }
   }
   const call = async (name, payload = {}) => {
-    const response = await client.callTool({ name, arguments: { repo, ...identity, ...payload } })
+    const response = await client.callTool({ name, arguments: { repo: repository, ...identity, ...payload } })
     assert.notEqual(response.isError, true, JSON.stringify(response))
     assert.equal(response.structuredContent?.schema_version, 1)
     return response.structuredContent
@@ -295,9 +308,9 @@ try {
   writeFileSync(gate, 'wait')
   const crashRequest = commandRequest('requester-crash')
   const requestPath = join(home, 'crash-request.json')
-  writeFileSync(requestPath, JSON.stringify({ ...identity, ...crashRequest }))
+  writeFileSync(requestPath, JSON.stringify({ repo: repository, ...identity, ...crashRequest }))
   const requester = spawn(process.execPath, [
-    cliPath, 'check', '--repo', repo, '--data-root', dataRoot, '--request', requestPath,
+    cliPath, 'check', '--data-root', dataRoot, '--request', requestPath,
   ], { cwd: home, env, windowsHide: true, stdio: 'ignore' })
   const requesterStopped = new Promise((resolve) => {
     requester.once('close', () => resolve())
@@ -329,7 +342,7 @@ try {
   const blockedWriter = await client.callTool({
     name: 'todo_operation',
     arguments: {
-      repo, ...identity, request_id: 'writer-during-surviving-check', expected_revision: revision(),
+      repo: repository, ...identity, request_id: 'writer-during-surviving-check', expected_revision: revision(),
       command: {
         action: 'begin_operation', operation_id: 'unsafe-writer', kind: 'write', actor: 'scripted-host',
         delegated: false, step_id: 'fix', scope: ['sum.cjs'], purpose: 'Must be rejected while the original command runs',
@@ -362,7 +375,7 @@ try {
   try {
     const missingEvidence = await client.callTool({
       name: 'todo_done', arguments: {
-        repo, item: todoId, completion: {
+        repo: repository, item: todoId, completion: {
           execution_id: executionId, closure_id: 'public-missing-evidence', expected_revision: revision(),
           mode: 'verified', acknowledged_gaps: [], decision: 'isolated-fixture:attempt-close', note: 'Must reject lost evidence',
         },
@@ -390,13 +403,13 @@ try {
   assert.equal(localClosed.archived, false)
   assert.equal(store.list().length, 1)
   assert.equal(store.listArchived().length, 0)
-  const previewResult = await client.callTool({ name: 'todo_archive', arguments: { repo } })
+  const previewResult = await client.callTool({ name: 'todo_archive', arguments: { repo: repository } })
   assert.notEqual(previewResult.isError, true)
   const archivePreview = previewResult.content[0].text
   const archiveSelections = JSON.parse(archivePreview.match(/```json\n([\s\S]*?)\n```/)[1])
   assert.equal(archiveSelections.length, 1)
   assert.equal(archiveSelections[0].todo_id, todoId)
-  const archiveResult = await client.callTool({ name: 'todo_archive', arguments: { repo, selections: archiveSelections } })
+  const archiveResult = await client.callTool({ name: 'todo_archive', arguments: { repo: repository, selections: archiveSelections } })
   assert.notEqual(archiveResult.isError, true)
   assert.match(archiveResult.content[0].text, /success/)
   const archived = store.listArchived()
@@ -580,11 +593,11 @@ try {
   mark('A seeded remote-close journal supports local continuation across CLI processes, retaining files and requiring fresh checks')
 
   const occupant = (root, actor) => {
-    const path = join(root, ...repo.split('/'))
+    const path = projectDirectory(repository, root)
+    configure(path)
     const ownerStore = new TodoStore(path)
     const todo = ownerStore.add({ ref: actor, title: 'Preserve unfinished work', type: 'feature' })
     const execution = ownerStore.activateExecution(0).execution
-    writeFileSync(join(path, 'config.yaml'), 'fork: null\nupstream: null\n')
     const context = { todo_id: todo.id, execution_id: execution.id }
     const state = () => ownerStore.list()[0].executions[0].workflow
     const invoke = (action, payload, success = true) => local(action, { ...context, ...payload }, success, root)
@@ -676,7 +689,7 @@ try {
     const completion = { execution_id: stageExecution, closure_id: `stage-${mode}`, expected_revision: stageState().revision,
       mode, decision: 'fixture:cannot-accept-whole-task-from-stage', note: 'Stage only', acknowledged_gaps: [] }
     assert.match(stageLocal('close', { ...completion, target: { kind: 'local' } }, false).error.message, /coverage|stage/i)
-    const response = await client.callTool({ name: 'todo_done', arguments: { repo, item: stageTodo.id, completion } })
+    const response = await client.callTool({ name: 'todo_done', arguments: { repo: repository, item: stageTodo.id, completion } })
     assert.equal(response.isError, true)
     assert.match(response.structuredContent.error.message, /coverage|stage/i)
   }
@@ -737,7 +750,7 @@ try {
   const linkedIndex = store.list().findIndex(todo => todo.id === linkedTodo.id)
   store.update(linkedIndex, { status: 'backlog', pr: 41 })
   for (const pr of [42, 43, 42]) {
-    const response = await client.callTool({ name: 'todo_update', arguments: { repo, item: linkedTodo.id, pr } })
+    const response = await client.callTool({ name: 'todo_update', arguments: { repo: repository, item: linkedTodo.id, pr } })
     assert.notEqual(response.isError, true, JSON.stringify(response))
   }
   const associated = store.resolveItemById(linkedTodo.id).item
@@ -747,7 +760,7 @@ try {
   await client.close()
   await transport.close()
   await connect()
-  const listed = await client.callTool({ name: 'todo_list', arguments: { repo } })
+  const listed = await client.callTool({ name: 'todo_list', arguments: { repo: repository } })
   assert.notEqual(listed.isError, true, JSON.stringify(listed))
   const listText = listed.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
   for (const number of [41, 42, 43]) assert.ok(listText.includes(`/pull/${number}`))
@@ -786,7 +799,7 @@ try {
     expected_revision: deliveryState().revision, mode, acknowledged_gaps: ['delivery:report'],
     decision: 'fixture:whole-task-decision', note: 'Fixture completion' })
   const refused = await client.callTool({ name: 'todo_done', arguments: {
-    repo, item: deliveryTodo.id, completion: completionForDelivery('missing-file', 'verified'),
+    repo: repository, item: deliveryTodo.id, completion: completionForDelivery('missing-file', 'verified'),
   } })
   assert.equal(refused.isError, true)
   assert.match(refused.structuredContent.error.message, /delivery:report/)
@@ -808,7 +821,7 @@ try {
   assert.equal(deliveryContext.workspace_observation, 'not_observed')
   assert.deepEqual(deliveryContext.delivery_requirements.items, deliveryPlan.deliverables)
   const finalDelivery = await client.callTool({ name: 'todo_done', arguments: {
-    repo, item: deliveryTodo.id, completion: { ...completionForDelivery('delivered', 'verified'), acknowledged_gaps: [] },
+    repo: repository, item: deliveryTodo.id, completion: { ...completionForDelivery('delivered', 'verified'), acknowledged_gaps: [] },
   } })
   assert.notEqual(finalDelivery.isError, true, JSON.stringify(finalDelivery))
   assert.equal(store.resolveItemById(deliveryTodo.id).item.status, 'done')
@@ -857,7 +870,7 @@ try {
   await connect()
   assert.deepEqual((await call('todo_context', committedIdentity)).delivery_requirements.items, committedPlan.deliverables)
   const committedResult = await client.callTool({ name: 'todo_done', arguments: {
-    repo, item: committedTodo.id, completion: { execution_id: committedExecution, closure_id: 'committed',
+    repo: repository, item: committedTodo.id, completion: { execution_id: committedExecution, closure_id: 'committed',
       expected_revision: committedState().revision, mode: 'verified', acknowledged_gaps: [],
       decision: 'fixture:whole-task', note: 'Actual fixture commit and fresh acceptance' },
   } })
@@ -935,7 +948,7 @@ try {
     expected_revision: remoteState().revision, mode: 'verified', acknowledged_gaps: [],
     decision: 'fixture:finish', note: 'Explicit completion with fresh remote verification' }
   const remoteRefused = await client.callTool({ name: 'todo_done', arguments: {
-    repo, item: remoteTodo.id, completion: remoteCompletion,
+    repo: repository, item: remoteTodo.id, completion: remoteCompletion,
   } })
   assert.equal(remoteRefused.isError, true)
   assert.match(remoteRefused.structuredContent.error.message, /delivery:/)
@@ -944,12 +957,12 @@ try {
   remoteCompletion.closure_id = 'remote-verified'
   remoteCompletion.expected_revision = remoteState().revision
   const remoteCompleted = await client.callTool({ name: 'todo_done', arguments: {
-    repo, item: remoteTodo.id, completion: remoteCompletion,
+    repo: repository, item: remoteTodo.id, completion: remoteCompletion,
   } })
   assert.notEqual(remoteCompleted.isError, true, JSON.stringify(remoteCompleted))
   assert.equal(store.resolveItemById(remoteTodo.id).item.status, 'done')
   const callsBeforeReplay = readFileSync(githubCalls, 'utf8')
-  await client.callTool({ name: 'todo_done', arguments: { repo, item: remoteTodo.id, completion: remoteCompletion } })
+  await client.callTool({ name: 'todo_done', arguments: { repo: repository, item: remoteTodo.id, completion: remoteCompletion } })
   assert.equal(readFileSync(githubCalls, 'utf8'), callsBeforeReplay)
   assert.ok(!store.listArchived().some(todo => todo.id === remoteTodo.id))
   mark('Built CLI/MCP query simulated GitHub endpoints, reject reports and wrong content, recheck before completion and preserve completed replay')
@@ -1041,7 +1054,7 @@ try {
   }
 
   const plainTodo = store.add({ ref: 'plain-cancellation', title: 'Cancel without invented execution', type: 'chore' })
-  const plainRequest = { repo, todo_id: plainTodo.id, expected_lifecycle_revision: 0, decision: 'fixture:cancel-unstarted-task' }
+  const plainRequest = { repo: repository, todo_id: plainTodo.id, expected_lifecycle_revision: 0, decision: 'fixture:cancel-unstarted-task' }
   const plainResponse = await client.callTool({ name: 'todo_cancel', arguments: plainRequest })
   assert.notEqual(plainResponse.isError, true, JSON.stringify(plainResponse))
   assert.equal(plainResponse.structuredContent.todo.status, 'cancelled')
@@ -1050,16 +1063,16 @@ try {
   const plainSnapshot = readFileSync(join(directory, 'todos.yaml'), 'utf8')
   assert.notEqual((await client.callTool({ name: 'todo_cancel', arguments: plainRequest })).isError, true)
   assert.equal(readFileSync(join(directory, 'todos.yaml'), 'utf8'), plainSnapshot)
-  assert.notEqual((await client.callTool({ name: 'todo_reopen', arguments: { repo, item: plainTodo.id } })).isError, true)
+  assert.notEqual((await client.callTool({ name: 'todo_reopen', arguments: { repo: repository, item: plainTodo.id } })).isError, true)
   const reopenedSnapshot = readFileSync(join(directory, 'todos.yaml'), 'utf8')
   assert.equal((await client.callTool({ name: 'todo_cancel', arguments: plainRequest })).isError, true)
   assert.equal(readFileSync(join(directory, 'todos.yaml'), 'utf8'), reopenedSnapshot)
   mark('Built MCP cancels an unstarted task without execution or archival and rejects stale cancellation after reopening')
   for (const status of ['pr_submitted', 'not_planned']) {
     assert.equal((await client.callTool({ name: 'todo_update', arguments: {
-      repo, item: plainTodo.id, status, branch: 'must-not-change', note: 'Must not be saved',
+      repo: repository, item: plainTodo.id, status, branch: 'must-not-change', note: 'Must not be saved',
     } })).isError, true)
-    assert.equal((await client.callTool({ name: 'todo_list', arguments: { repo, status } })).isError, true)
+    assert.equal((await client.callTool({ name: 'todo_list', arguments: { repo: repository, status } })).isError, true)
     assert.equal(readFileSync(join(directory, 'todos.yaml'), 'utf8'), reopenedSnapshot)
   }
   mark('Built MCP rejects removed Todo state updates and filters before any metadata writes')

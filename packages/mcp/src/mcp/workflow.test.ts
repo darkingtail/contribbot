@@ -10,22 +10,25 @@ import { TodoStore } from '../core/storage/todo-store.js'
 import { ExecutionArtifacts } from '../core/execution/artifacts.js'
 import type { WorkflowPlanInput } from '../core/execution/contracts.js'
 import { runLocalCommand } from '../core/execution/local.js'
+import { fixtureProjectDirectory, saveFixtureProjectConfig } from '../core/execution/__fixtures__/repository.js'
 
 describe('managed workflow over actual MCP stdio', () => {
+  const repo = 'workflow-fixture/repo'
+  const repoRef = { platform: 'github', instance: 'https://github.com', path: repo } as const
   let home: string
   let client: Client
   let transport: StdioClientTransport
   let store: TodoStore
   let todoId: string
   let executionId: string
+  const directory = () => fixtureProjectDirectory(join(home, '.contribbot'), repo)
 
   beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), 'contribbot-managed-stdio-'))
-    const directory = join(home, '.contribbot', 'workflow-fixture', 'repo')
-    store = new TodoStore(directory)
+    saveFixtureProjectConfig(directory(), repo)
+    store = new TodoStore(directory())
     todoId = store.add({ ref: 'task', title: 'Workflow task', type: 'feature' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
     client = new Client({ name: 'workflow-fixture', version: '1' })
     transport = new StdioClientTransport({
       command: process.execPath,
@@ -44,7 +47,7 @@ describe('managed workflow over actual MCP stdio', () => {
     await transport?.close()
     rmSync(home, { recursive: true, force: true })
   })
-  const args = () => ({ repo: 'workflow-fixture/repo', todo_id: todoId, execution_id: executionId })
+  const args = () => ({ repo: repoRef, todo_id: todoId, execution_id: executionId })
   const state = () => store.get(0)!.executions[0]!.workflow!
   const local = (action: string, payload: Record<string, unknown> = {}) => runLocalCommand({
     ...args(), data_root: join(home, '.contribbot'), action, ...payload,
@@ -133,7 +136,7 @@ describe('managed workflow over actual MCP stdio', () => {
     await local('settle-pause', { request_id: 'settle', expected_revision: state().revision, control_id: 'pause', actor: 'primary' })
     const context = await client.callTool({ name: 'todo_resume', arguments: args() })
     expect(context.structuredContent).toMatchObject({ todo: { status: 'paused' }, control: { settled: true, dispatch_allowed: false } })
-    const list = await client.callTool({ name: 'todo_list', arguments: { repo: 'workflow-fixture/repo', status: 'paused' } })
+    const list = await client.callTool({ name: 'todo_list', arguments: { repo: repoRef, status: 'paused' } })
     expect(JSON.stringify(list.content)).toContain('### Paused')
     await local('continue', { request_id: 'continue', expected_revision: state().revision, control_id: 'pause',
       actor: 'primary', decision: 'fixture:user-continue' })
@@ -178,7 +181,7 @@ describe('managed workflow over actual MCP stdio', () => {
     const projection = (proposed.structuredContent as { document_projection: { path: string; status: string } }).document_projection
     expect(projection.status).toBe('current')
     const original = readFileSync(projection.path, 'utf8')
-    const yaml = readFileSync(join(home, '.contribbot', 'workflow-fixture', 'repo', 'todos.yaml'), 'utf8')
+    const yaml = readFileSync(join(directory(), 'todos.yaml'), 'utf8')
     const changed = original.replace('An inspectable user outcome', 'Unverified hand-edit')
     writeFileSync(projection.path, changed)
     const observed = await client.callTool({ name: 'todo_context', arguments: args() })
@@ -187,7 +190,7 @@ describe('managed workflow over actual MCP stdio', () => {
     const repaired = await client.callTool({ name: 'todo_resume', arguments: args() })
     expect(repaired.structuredContent).toMatchObject({ workflow_revision: 1, document_projection: { status: 'current' } })
     expect(readFileSync(projection.path, 'utf8')).toBe(original)
-    expect(readFileSync(join(home, '.contribbot', 'workflow-fixture', 'repo', 'todos.yaml'), 'utf8')).toBe(yaml)
+    expect(readFileSync(join(directory(), 'todos.yaml'), 'utf8')).toBe(yaml)
   })
 
   it('does not expose shell execution, fabricated local results or unconfirmed closure via generic operations', async () => {
@@ -233,7 +236,7 @@ describe('managed workflow over actual MCP stdio', () => {
     expect((await local('inspect')).readiness).toMatchObject({ ready: true, missing: [] })
     expect(store.get(0)!.status).toBe('active')
     expect(state().closure).toBeNull()
-    const input = { repo: 'workflow-fixture/repo', item: todoId, completion: completion() }
+    const input = { repo: repoRef, item: todoId, completion: completion() }
     const result = await client.callTool({ name: 'todo_done', arguments: input })
     expect(result.isError, JSON.stringify(result)).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
@@ -243,10 +246,10 @@ describe('managed workflow over actual MCP stdio', () => {
     expect(store.listArchived()).toHaveLength(0)
     expect((await client.callTool({ name: 'todo_done', arguments: input })).isError).not.toBe(true)
     expect(store.listArchived()).toHaveLength(0)
-    const preview = await client.callTool({ name: 'todo_archive', arguments: { repo: 'workflow-fixture/repo' } })
+    const preview = await client.callTool({ name: 'todo_archive', arguments: { repo: repoRef } })
     const text = (preview.content as { text: string }[])[0]!.text
     const selections = JSON.parse(text.match(/```json\n([\s\S]*?)\n```/)![1]!)
-    const archived = await client.callTool({ name: 'todo_archive', arguments: { repo: 'workflow-fixture/repo', selections } })
+    const archived = await client.callTool({ name: 'todo_archive', arguments: { repo: repoRef, selections } })
     expect(JSON.stringify(archived)).toContain('success')
     expect(store.list()).toEqual([])
     expect((await client.callTool({ name: 'todo_done', arguments: input })).isError).not.toBe(true)
@@ -263,7 +266,7 @@ describe('managed workflow over actual MCP stdio', () => {
     expect(store.get(0)!.status).toBe('active')
 
     const input = {
-      repo: 'workflow-fixture/repo', item: todoId,
+      repo: repoRef, item: todoId,
       completion: { ...completion(), decision: userStatement },
     }
     const result = await client.callTool({ name: 'todo_done', arguments: input })
@@ -275,7 +278,7 @@ describe('managed workflow over actual MCP stdio', () => {
     expect(state().closings).toHaveLength(1)
     expect(state().closings[0]!.intent.decision).toBe(userStatement)
     const evidence = new ExecutionArtifacts(
-      join(home, '.contribbot', 'workflow-fixture', 'repo'), executionId,
+      directory(), executionId,
     ).getReceipt(report.operation_id)
     expect(evidence?.value).toMatchObject({
       locator: userStatement, source: 'user', observed_at: report.observed_at,
@@ -309,7 +312,7 @@ describe('managed workflow over actual MCP stdio', () => {
   it('does not let a finish request substitute for a missing current user report', async () => {
     await boundFixture(true, 'task', 'source')
     const result = await client.callTool({ name: 'todo_done', arguments: {
-      repo: 'workflow-fixture/repo', item: todoId, completion: completion('no-user-observation'),
+      repo: repoRef, item: todoId, completion: completion('no-user-observation'),
     } })
     expect(result.isError).toBe(true)
     expect(state().checks.map(item => item.source)).toEqual(['local_runner'])
@@ -324,7 +327,7 @@ describe('managed workflow over actual MCP stdio', () => {
     await local('report', userReport('fixture:user-accepts-current-source-only'))
     expect((await local('inspect')).readiness).toMatchObject({ ready: false, missing: ['user-docs'] })
     const result = await client.callTool({ name: 'todo_done', arguments: {
-      repo: 'workflow-fixture/repo', item: todoId, completion: completion('missing-docs-observation'),
+      repo: repoRef, item: todoId, completion: completion('missing-docs-observation'),
     } })
     expect(result.isError).toBe(true)
     expect(state().checks.map(item => item.acceptance_id)).toEqual(['arithmetic', 'user-result'])
@@ -343,7 +346,7 @@ describe('managed workflow over actual MCP stdio', () => {
     expect((await local('inspect')).readiness).toMatchObject({ ready: true, missing: [] })
     expect(store.get(0)!.status).toBe('active')
     const result = await client.callTool({ name: 'todo_done', arguments: {
-      repo: 'workflow-fixture/repo', item: todoId,
+      repo: repoRef, item: todoId,
       completion: { ...completion(), decision: userStatement },
     } })
     expect(result.isError, JSON.stringify(result)).not.toBe(true)
@@ -365,7 +368,7 @@ describe('managed workflow over actual MCP stdio', () => {
     })
     for (const mode of ['verified', 'with_gaps']) {
       const result = await client.callTool({ name: 'todo_done', arguments: {
-        repo: 'workflow-fixture/repo', item: todoId, completion: completion(`stage-${mode}`, mode),
+        repo: repoRef, item: todoId, completion: completion(`stage-${mode}`, mode),
       } })
       expect(result.isError).toBe(true)
       expect(JSON.stringify(result)).toMatch(/coverage|stage/i)
@@ -380,18 +383,18 @@ describe('managed workflow over actual MCP stdio', () => {
   it('refuses missing evidence through public todo_done without archiving or silently downgrading', async () => {
     await boundFixture()
     const receipt = state().checks[0]!.receipt
-    const artifact = join(home, '.contribbot/workflow-fixture/repo/executions', executionId, 'artifacts', `${receipt}.json`)
+    const artifact = join(directory(), 'executions', executionId, 'artifacts', `${receipt}.json`)
     const content = readFileSync(artifact)
     rmSync(artifact)
     const result = await client.callTool({ name: 'todo_done', arguments: {
-      repo: 'workflow-fixture/repo', item: todoId, completion: completion('missing-evidence'),
+      repo: repoRef, item: todoId, completion: completion('missing-evidence'),
     } })
     expect(result.isError).toBe(true)
     expect(store.listArchived()).toEqual([])
     expect(state().closure).toBeNull()
     writeFileSync(artifact, content)
     const recovered = await client.callTool({ name: 'todo_done', arguments: {
-      repo: 'workflow-fixture/repo', item: todoId, completion: completion('new-closure'),
+      repo: repoRef, item: todoId, completion: completion('new-closure'),
     } })
     expect(recovered.isError, JSON.stringify(recovered)).not.toBe(true)
     expect(store.list()[0]!.executions[0]!.workflow!.closure?.mode).toBe('verified')
@@ -408,7 +411,7 @@ describe('managed workflow over actual MCP stdio', () => {
       expect(requested.isError, JSON.stringify(requested)).not.toBe(true)
     }
     const result = await client.callTool({ name: 'todo_done', arguments: {
-      repo: 'workflow-fixture/repo', item: todoId, completion: completion('explicit-outcome', mode, ['acceptance:arithmetic']),
+      repo: repoRef, item: todoId, completion: completion('explicit-outcome', mode, ['acceptance:arithmetic']),
     } })
     expect(result.isError, JSON.stringify(result)).not.toBe(true)
     expect(result.structuredContent).toMatchObject({ closure: { mode } })

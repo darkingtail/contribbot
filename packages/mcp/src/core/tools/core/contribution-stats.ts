@@ -1,38 +1,39 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { existsSync, readdirSync, statSync } from 'node:fs'
 import { parseRepo, getCurrentUser, searchIssues } from '../../clients/github.js'
 import { markdownTable } from '../../utils/format.js'
+import { repositoryDisplay, type RepositoryInput } from '../../utils/repository-ref.js'
+import { listStoredProjects } from './project-list.js'
 
 function listAllProjects(): string[] {
-  const contribRoot = join(homedir(), '.contribbot')
-  if (!existsSync(contribRoot)) return []
-
-  const projects: string[] = []
-  const owners = readdirSync(contribRoot).filter(f =>
-    statSync(join(contribRoot, f)).isDirectory() && !f.startsWith('.'),
-  )
-  for (const owner of owners) {
-    const ownerDir = join(contribRoot, owner)
-    const repos = readdirSync(ownerDir).filter(f =>
-      statSync(join(ownerDir, f)).isDirectory(),
-    )
-    for (const repo of repos) {
-      projects.push(`${owner}/${repo}`)
+  return (listStoredProjects() ?? []).map(({ config }) => {
+    const repository = config.repository
+    if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+      throw new Error(`contribution_stats supports GitHub.com repositories only: ${repositoryDisplay(repository)}. No GitHub request was attempted.`)
     }
-  }
-  return projects
+    return repository.path
+  })
 }
 
 export async function contributionStats(
   days?: number,
   author?: string,
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
   const effectiveDays = days ?? 7
   const since = new Date()
   since.setDate(since.getDate() - effectiveDays)
   const sinceStr = since.toISOString().slice(0, 10)
+
+  let repos: string[]
+  if (!repo) {
+    repos = listAllProjects()
+  } else {
+    const { owner, name } = parseRepo(repo)
+    repos = [`${owner}/${name}`]
+  }
+
+  if (repos.length === 0) {
+    return 'Error: No projects found. Use contribbot tools first to track projects.'
+  }
 
   let username = author
   if (!username) {
@@ -41,17 +42,6 @@ export async function contributionStats(
   }
   if (!username) {
     return 'Error: Could not determine GitHub username. Pass `author` parameter.'
-  }
-
-  let repos: string[]
-  if (repo === 'all' || !repo) {
-    repos = listAllProjects()
-  } else {
-    repos = [repo.includes('/') ? repo : `${parseRepo(repo).owner}/${parseRepo(repo).name}`]
-  }
-
-  if (repos.length === 0) {
-    return 'Error: No projects found. Use contribbot tools first to track projects.'
   }
 
   interface RepoStats {
@@ -89,20 +79,21 @@ export async function contributionStats(
 
   if (repos.length === 1) {
     const s = allStats[0]!
+    lines.push(`> Repository: ${s.repo}`, '')
     lines.push(markdownTable(
-      ['Metric', 'Count'],
+      ['Metric', 'Count', 'Note'],
       [
-        ['PRs Created', String(s.prsCreated)],
-        ['Issues Created', String(s.issuesCreated)],
-        ['Reviews', String(s.reviews)],
+        ['PRs Created', String(s.prsCreated), 'GitHub.com search'],
+        ['Issues Created', String(s.issuesCreated), 'GitHub.com search'],
+        ['Reviews', String(s.reviews), 'GitHub.com search'],
       ],
     ))
   } else {
-    const headers = ['Metric', ...repos.map(r => r.split('/')[1] ?? r), 'Total']
+    const headers = ['Metric', ...repos, 'Total', 'Note']
     const rows = [
-      ['PRs Created', ...allStats.map(s => String(s.prsCreated)), String(totalPRs)],
-      ['Issues Created', ...allStats.map(s => String(s.issuesCreated)), String(totalIssues)],
-      ['Reviews', ...allStats.map(s => String(s.reviews)), String(totalReviews)],
+      ['PRs Created', ...allStats.map(s => String(s.prsCreated)), String(totalPRs), 'GitHub.com search'],
+      ['Issues Created', ...allStats.map(s => String(s.issuesCreated)), String(totalIssues), 'GitHub.com search'],
+      ['Reviews', ...allStats.map(s => String(s.reviews)), String(totalReviews), 'GitHub.com search'],
     ]
     lines.push(markdownTable(headers, rows))
   }

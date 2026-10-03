@@ -3,10 +3,11 @@ import { getIssue } from '../../clients/github.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { TodoStore } from '../../storage/todo-store.js'
 import { currentTodoExecution } from '../../storage/todo-store.js'
+import type { TodoItem } from '../../storage/todo-store.js'
 import { TODO_STATUSES, validateEnum } from '../../enums.js'
 import type { TodoType } from '../../enums.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import type { RepositoryInput, RepositoryRef } from '../../utils/repository-ref.js'
 import { difficultyEmoji, todayDate } from '../../utils/format.js'
 import { detectTypeFromLabels } from '../../utils/github-helpers.js'
 import { closeManagedWithReadback } from '../../execution/closure.js'
@@ -16,20 +17,27 @@ export { archiveTodos as todoArchive } from './todo-lifecycle.js'
 
 export type TodoCompletion = Omit<ClosureRequest, 'directory' | 'todo_id' | 'target'>
 
-function refLink(ref: string | null, owner: string, name: string): string {
+function refLink(ref: string | null, repository: RepositoryRef): string {
   if (!ref) return '—'
-  if (ref.startsWith('#')) {
+  if (ref.startsWith('#') && repository.platform === 'github' && repository.instance === 'https://github.com') {
     const num = ref.slice(1)
-    return `[${ref}](https://github.com/${owner}/${name}/issues/${num})`
+    return `[${ref}](https://github.com/${repository.path}/issues/${num})`
   }
   return ref
 }
 
-export async function todoList(repo?: string, status?: string): Promise<string> {
+export async function todoList(repo?: RepositoryInput, status?: string): Promise<string> {
   if (status !== undefined) validateEnum(TODO_STATUSES, status, 'status')
-  const { owner, name } = await resolveRepo(repo)
-  const store = new TodoStore(getContribDir(owner, name))
+  const { owner, name, repository, directory } = await resolveRepo(repo)
+  const store = new TodoStore(directory)
   const allTodos = store.listForDisplay()
+  const supportsGithubLinks = repository.platform === 'github' && repository.instance === 'https://github.com'
+  const formatPulls = (todo: TodoItem): string => {
+    if (supportsGithubLinks) return formatTodoPullLinks(todo, repository)
+    const explicit = formatTodoPullLinks({ ...todo, pr: null }, repository)
+    const implicit = todo.pr === null ? '' : `#${todo.pr} (implicit PR unavailable)`
+    return [explicit === '—' ? '' : explicit, implicit].filter(Boolean).join(', ') || '—'
+  }
 
   if (allTodos.length === 0) {
     return `## Todos — ${owner}/${name}\n\n_No todos yet. Use \`todo_add\` to create one._`
@@ -73,7 +81,7 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
       const branch = t.branch ? `\`${t.branch}\`` : '—'
       const execution = currentTodoExecution(t)
       const note = execution ? `${execution.phase}: ${execution.next}` : 'No open execution'
-      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${t.status} | ${branch} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | ${note} |`)
+      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, repository)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${t.status} | ${branch} | ${formatPulls(t)} | ${note} |`)
     })
     lines.push('')
   }
@@ -84,7 +92,7 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
     lines.push('| # | Ref | Type | Title | Status | PR | Note |')
     lines.push('| --- | --- | --- | --- | --- | --- | --- |')
     backlogIdeas.forEach((t) => {
-      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${t.status} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | ${t.executions.length} execution(s) |`)
+      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, repository)} | ${t.type} | ${t.title} | ${t.status} | ${formatPulls(t)} | ${t.executions.length} execution(s) |`)
     })
     lines.push('')
   }
@@ -95,7 +103,7 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
     lines.push('| # | Ref | Type | Title | Difficulty | PR | Note |')
     lines.push('| --- | --- | --- | --- | --- | --- | --- |')
     done.forEach((t) => {
-      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | Completed, not archived; ${t.executions.length} execution(s) |`)
+      lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, repository)} | ${t.type} | ${t.title} | ${difficultyEmoji(t.difficulty)} | ${formatPulls(t)} | Completed, not archived; ${t.executions.length} execution(s) |`)
     })
     lines.push('')
   }
@@ -105,16 +113,19 @@ export async function todoList(repo?: string, status?: string): Promise<string> 
   ] as const) {
     if (!items.length) continue
     lines.push(`### ${title}`, '| # | Ref | Type | Title | PR | Note |', '| --- | --- | --- | --- | --- | --- |')
-    for (const t of items) lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, owner, name)} | ${t.type} | ${t.title} | ${formatTodoPullLinks(t, `${owner}/${name}`)} | ${note}; ${t.executions.length} execution(s) |`)
+    for (const t of items) lines.push(`| ${displayIndexes.get(t)} | ${refLink(t.ref, repository)} | ${t.type} | ${t.title} | ${formatPulls(t)} | ${note}; ${t.executions.length} execution(s) |`)
     lines.push('')
   }
 
   return lines.join('\n')
 }
 
-export async function todoAdd(text: string, ref?: string, repo?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+export async function todoAdd(text: string, ref?: string, repo?: RepositoryInput): Promise<string> {
+  const { owner, name, repository, directory: contribDir } = await resolveRepo(repo)
+  const issueRef = ref ? /^#?\d+$/.test(ref) : /^#\d+\s*/.test(text)
+  if (issueRef && (repository.platform !== 'github' || repository.instance !== 'https://github.com')) {
+    throw new Error('Issue-backed Todo creation supports GitHub.com repositories only; no Todo or remote data was changed.')
+  }
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
 
@@ -216,9 +227,8 @@ export async function todoAdd(text: string, ref?: string, repo?: string): Promis
   })
 }
 
-export async function todoDelete(indexOrText: string, repo?: string, force = false): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+export async function todoDelete(indexOrText: string, repo?: RepositoryInput, force = false): Promise<string> {
+  const { directory: contribDir } = await resolveRepo(repo)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
 
@@ -251,9 +261,8 @@ export async function todoDelete(indexOrText: string, repo?: string, force = fal
   })
 }
 
-export async function todoDone(indexOrText: string, repo?: string, completion?: TodoCompletion): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+export async function todoDone(indexOrText: string, repo?: RepositoryInput, completion?: TodoCompletion): Promise<string> {
+  const { directory: contribDir } = await resolveRepo(repo)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
 

@@ -1,22 +1,13 @@
-import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { TodoStore } from '../../storage/todo-store.js'
 import { UpstreamStore } from '../../storage/upstream-store.js'
 import { markdownTable } from '../../utils/format.js'
-import { RepoConfig } from '../../storage/repo-config.js'
 import type { ProjectStatus } from '../../enums.js'
-
-const RESERVED_RUNTIME_DIRS = new Set(['remediation', 'worktrees'])
-
-const PROJECT_MARKERS = [
-  'config.yaml',
-  'todos.yaml',
-  'upstream.yaml',
-  'knowledge.proposals.yaml',
-  'todos.archive.yaml',
-  'upstream.archive.yaml',
-]
+import { repositoryDigest, repositoryDisplay, type RepositoryRef } from '../../utils/repository-ref.js'
+import { scanStoredProjects, type ProjectProblem } from 'contribbot-core/repository/projects'
+export { listStoredProjects, scanStoredProjects, PROJECT_PROBLEM_CODES } from 'contribbot-core/repository/projects'
+export type { ProjectProblemCode, ProjectProblem } from 'contribbot-core/repository/projects'
 
 const TODO_READ_ERROR_NOTE = 'Todo data unreadable (todos.yaml); use todo_list for this project to inspect the error.'
 
@@ -24,93 +15,89 @@ function formatTodoCounts(open: number | null, done: number | null): string {
   return `${open === null ? 'unknown' : open} / ${done === null ? 'unknown' : done}`
 }
 
-function isTrackedProjectDir(dir: string): boolean {
-  return PROJECT_MARKERS.some(marker => existsSync(join(dir, marker)))
-    || ['knowledge', 'patrol', 'sync'].some(folder => existsSync(join(dir, folder)))
+export interface ProjectListResult {
+  markdown: string
+  projects: { repository: RepositoryRef, digest: string, status: ProjectStatus }[]
+  problems: ProjectProblem[]
 }
 
-export function projectList(status: ProjectStatus | 'all' = 'active'): string {
+export function projectListResult(status: ProjectStatus | 'all' = 'active'): ProjectListResult {
   if (!['active', 'archived', 'all'].includes(status)) throw new Error('Invalid project status filter.')
-  const contribRoot = join(homedir(), '.contribbot')
-
-  if (!existsSync(contribRoot)) {
-    return '## Projects\n\n_No projects configured. Data will appear after using contrib tools._'
-  }
-
-  const owners = readdirSync(contribRoot).filter((f) => {
-    const p = join(contribRoot, f)
-    return statSync(p).isDirectory() && !f.startsWith('.') && !RESERVED_RUNTIME_DIRS.has(f)
-  })
+  const scan = scanStoredProjects()
+  const storedProjects = scan.projects
 
   interface ProjectInfo {
+    repository: RepositoryRef
     fullName: string
     todosOpen: number | null
     todosDone: number | null
-    upstreamPending: number
-    upstreamTotal: number
+    upstreamPending: number | null
+    upstreamTotal: number | null
     lastActive: string
     status: ProjectStatus
-    todoReadError: boolean
   }
 
   const projects: ProjectInfo[] = []
+  const problems = [...scan.problems]
+  for (const { directory: repoDir, config } of storedProjects) {
+    const fullName = repositoryDisplay(config.repository)
+    const projectStatus = config.lifecycle.status
+    if (status !== 'all' && status !== projectStatus) continue
 
-  for (const owner of owners) {
-    const ownerDir = join(contribRoot, owner)
-    const repos = readdirSync(ownerDir).filter((f) => {
-      const repoDir = join(ownerDir, f)
-      return statSync(repoDir).isDirectory() && isTrackedProjectDir(repoDir)
-    })
+    const todoStore = new TodoStore(repoDir)
+    let todosOpen: number | null = null
+    let todosDone: number | null = null
+    try {
+      const todos = todoStore.list()
+      todosOpen = todos.filter(t => !['done', 'cancelled'].includes(t.status)).length
+      todosDone = todos.filter(t => t.status === 'done').length
+    }
+    catch (error) {
+      problems.push({
+        code: 'todo_data_unreadable',
+        directory: repoDir,
+        repository: config.repository,
+        message: TODO_READ_ERROR_NOTE,
+      })
+    }
 
-    for (const repo of repos) {
-      const repoDir = join(ownerDir, repo)
-      const fullName = `${owner}/${repo}`
-      const projectStatus = new RepoConfig(repoDir).load()?.status ?? 'active'
-      if (status !== 'all' && status !== projectStatus) continue
-
-      const todoStore = new TodoStore(repoDir)
-      let todosOpen: number | null = null
-      let todosDone: number | null = null
-      let todoReadError = false
-      try {
-        const todos = todoStore.list()
-        todosOpen = todos.filter(t => !['done', 'cancelled'].includes(t.status)).length
-        todosDone = todos.filter(t => t.status === 'done').length
-      }
-      catch {
-        todoReadError = true
-      }
-
+    let upstreamPending: number | null = 0
+    let upstreamTotal: number | null = 0
+    try {
       const upstreamStore = new UpstreamStore(repoDir)
       const upstreamRepos = upstreamStore.listRepos()
-      let upstreamPending = 0
-      let upstreamTotal = 0
       for (const ur of upstreamRepos) {
         const daily = upstreamStore.getDaily(ur)
         upstreamTotal += daily.commits.length
         upstreamPending += daily.commits.filter(c => c.action === null).length
       }
-
-      let lastActive = '—'
-      try {
-        const todosYaml = join(repoDir, 'todos.yaml')
-        const upstreamYaml = join(repoDir, 'upstream.yaml')
-        const times: number[] = []
-        if (existsSync(todosYaml)) times.push(statSync(todosYaml).mtimeMs)
-        if (existsSync(upstreamYaml)) times.push(statSync(upstreamYaml).mtimeMs)
-        if (times.length > 0) {
-          lastActive = new Date(Math.max(...times)).toISOString().slice(0, 10)
-        }
-      } catch {
-        // ignore
-      }
-
-      projects.push({ fullName, todosOpen, todosDone, upstreamPending, upstreamTotal, lastActive, status: projectStatus, todoReadError })
     }
-  }
+    catch (error) {
+      upstreamPending = null
+      upstreamTotal = null
+      problems.push({
+        code: 'upstream_data_unreadable',
+        directory: repoDir,
+        repository: config.repository,
+        message: 'Upstream data unreadable (upstream.yaml); use upstream_list for this project to inspect the error.',
+      })
+    }
 
-  if (projects.length === 0) {
-    return `## Projects\n\n_No ${status === 'all' ? '' : `${status} `}projects found. Use project_list with status "all" to include archived projects._`
+    let lastActive = '—'
+    try {
+      const todosYaml = join(repoDir, 'todos.yaml')
+      const upstreamYaml = join(repoDir, 'upstream.yaml')
+      const times: number[] = []
+      if (existsSync(todosYaml)) times.push(statSync(todosYaml).mtimeMs)
+      if (existsSync(upstreamYaml)) times.push(statSync(upstreamYaml).mtimeMs)
+      if (times.length > 0) {
+        lastActive = new Date(Math.max(...times)).toISOString().slice(0, 10)
+      }
+    } catch {
+      // ignore
+    }
+
+    projects.push({ repository: config.repository, fullName, todosOpen, todosDone, upstreamPending, upstreamTotal, lastActive, status: projectStatus })
   }
 
   const headers = ['Project', 'Status', 'Todos (open/done)', 'Upstream (pending/total)', 'Last Active', 'Note']
@@ -118,13 +105,41 @@ export function projectList(status: ProjectStatus | 'all' = 'active'): string {
     p.fullName,
     p.status,
     formatTodoCounts(p.todosOpen, p.todosDone),
-    p.upstreamTotal > 0 ? `${p.upstreamPending} / ${p.upstreamTotal}` : '—',
+    p.upstreamTotal === null ? 'unknown / unknown' : p.upstreamTotal > 0 ? `${p.upstreamPending} / ${p.upstreamTotal}` : '—',
     p.lastActive,
-    [
-      p.status === 'archived' ? 'Archived; data retained, patrol blocked' : 'Active maintenance',
-      ...(p.todoReadError ? [TODO_READ_ERROR_NOTE] : []),
-    ].join('; '),
+    p.status === 'archived' ? 'Archived; data retained, patrol blocked' : 'Active maintenance',
   ])
 
-  return `## Projects\n\n> ${projects.length} projects tracked (filter: ${status})\n\n${markdownTable(headers, rows)}`
+  const problemMarkdown = problems.length === 0
+    ? ''
+    : `\n\n## Project Diagnostics\n\n> ${problems.length} diagnostic problem(s) reported; no damaged data was modified.\n\n${
+      markdownTable(
+        ['Code', 'Directory', 'Repository', 'Message', 'Note'],
+        problems.map(problem => [
+          problem.code,
+          problem.directory,
+          problem.repository ? repositoryDisplay(problem.repository) : '—',
+          problem.message,
+          'Needs direct inspection before repair or write',
+        ]),
+      )
+    }`
+
+  const projectMarkdown = projects.length === 0
+    ? `_No ${status === 'all' ? '' : `${status} `}projects found. Use project_list with status "all" to include archived projects._`
+    : `> ${projects.length} projects tracked (filter: ${status})\n\n${markdownTable(headers, rows)}`
+
+  return {
+    markdown: `## Projects\n\n${projectMarkdown}${problemMarkdown}`,
+    projects: projects.map(({ repository, status: projectStatus }) => ({
+      repository,
+      digest: repositoryDigest(repository),
+      status: projectStatus,
+    })),
+    problems,
+  }
+}
+
+export function projectList(status: ProjectStatus | 'all' = 'active'): string {
+  return projectListResult(status).markdown
 }

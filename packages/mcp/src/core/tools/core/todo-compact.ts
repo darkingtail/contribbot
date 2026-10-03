@@ -1,15 +1,14 @@
 import { TodoStore } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 export async function todoCompact(
   before?: string,
   keep?: number,
-  repo?: string,
+  repo?: RepositoryInput,
   force = false,
 ): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+  const { owner, name, directory: contribDir } = await resolveRepo(repo)
   const store = new TodoStore(contribDir)
 
   if (before && keep !== undefined) {

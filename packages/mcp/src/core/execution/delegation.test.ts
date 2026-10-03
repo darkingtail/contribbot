@@ -7,6 +7,7 @@ import { TodoStore } from '../storage/todo-store.js'
 import { ExecutionArtifacts } from './artifacts.js'
 import { runLocalCommand } from './local.js'
 import type { WorkflowPlanInput } from './contracts.js'
+import { fixtureProjectDirectory, saveFixtureProjectConfig } from './__fixtures__/repository.js'
 
 describe('isolated delegated candidate integration', () => {
   let home: string
@@ -17,9 +18,11 @@ describe('isolated delegated candidate integration', () => {
   let todoId: string
   let executionId: string
   let serial: number
+  const storagePath = () => fixtureProjectDirectory(dataRoot, 'fixture/repo')
   const state = () => store.resolveItemById(todoId)!.item.executions[0]!.workflow!
   const call = (action: string, input: Record<string, unknown> = {}) => runLocalCommand({
-    action, repo: 'fixture/repo', data_root: dataRoot, todo_id: todoId, execution_id: executionId,
+    action, repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+    data_root: dataRoot, todo_id: todoId, execution_id: executionId,
     ...input,
   })
   const mutate = (action: string, input: Record<string, unknown> = {}) => call(action, {
@@ -114,10 +117,10 @@ describe('isolated delegated candidate integration', () => {
     git('worktree', 'add', '--quiet', '--detach', child, 'HEAD')
     writeFileSync(join(main, 'notes.txt'), 'Existing uncommitted user document\n')
     copyFileSync(join(main, 'notes.txt'), join(child, 'notes.txt'))
-    store = new TodoStore(join(dataRoot, 'fixture', 'repo'))
+    saveFixtureProjectConfig(storagePath(), 'fixture/repo')
+    store = new TodoStore(storagePath())
     todoId = store.add({ ref: 'delegation', title: 'Delegated sum fix', type: 'bug' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(dataRoot, 'fixture', 'repo', 'config.yaml'), 'fork: null\nupstream: null\n')
     serial = 0
     await call('apply', {
       request_id: 'plan', expected_revision: 0, command: { action: 'propose_plan', plan_id: 'plan', plan },
@@ -156,7 +159,7 @@ describe('isolated delegated candidate integration', () => {
     const delegation = state().operations[0]!.delegation!
     for (const id of [delegation.launch, delegation.attachment, delegation.observation!.receipt,
       delegation.result!.receipt, delegation.review!.receipt, delegation.integration!.receipt]) {
-      const path = join(dataRoot, 'fixture', 'repo', 'executions', executionId, 'artifacts', `${id}.json`)
+      const path = join(storagePath(), 'executions', executionId, 'artifacts', `${id}.json`)
       const original = readFileSync(path)
       rmSync(path)
       expect((await call('inspect')).readiness).toMatchObject({ ready: false })
@@ -305,7 +308,7 @@ describe('isolated delegated candidate integration', () => {
     })
     await expect(collect()).rejects.toThrow(/Injected/)
     injected.mockRestore()
-    const artifacts = new ExecutionArtifacts(join(dataRoot, 'fixture', 'repo'), executionId)
+    const artifacts = new ExecutionArtifacts(storagePath(), executionId)
     const original = artifacts.getReceipt('delegate')!
     await observe('terminal', [], new Date(Date.now() + 1000).toISOString())
     const result = await collect()
@@ -319,7 +322,7 @@ describe('isolated delegated candidate integration', () => {
     repair()
     await observe()
     const attachment = state().operations[0]!.delegation!.attachment
-    rmSync(join(dataRoot, 'fixture', 'repo', 'executions', executionId, 'artifacts', `${attachment}.json`))
+    rmSync(join(storagePath(), 'executions', executionId, 'artifacts', `${attachment}.json`))
     await expect(collect()).rejects.toThrow(/artifact|ENOENT|attachment/i)
     expect(state().operations[0]!.delegation!.result).toBeNull()
   }, 15_000)

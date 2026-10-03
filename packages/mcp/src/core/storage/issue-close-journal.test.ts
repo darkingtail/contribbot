@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { parseIssueCloseReceipt } from './issue-close-journal.js'
+import { fixtureRepository } from '../execution/__fixtures__/repository.js'
 
 describe('Issue close journal lifecycle binding', () => {
-  const identity = { owner: 'owner', repo: 'repo', issueNumber: 42, todoId: 't-example', executionId: null }
+  const identity = { repository: fixtureRepository('owner/repo'), issueNumber: 42, todoId: 't-example', executionId: null }
   const current = {
     ...identity, lifecycleRevision: 0, state: 'closed',
     startedAt: '2026-09-19T08:00:00.000Z', remoteClosedAt: '2026-09-19T08:01:00.000Z',

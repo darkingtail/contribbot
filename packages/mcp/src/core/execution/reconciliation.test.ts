@@ -12,6 +12,7 @@ import { describeProcess, observeProcess } from './processes.js'
 import type { ProcessHandle, WorkflowRequest } from './contracts.js'
 import { captureCandidate } from './candidate.js'
 import * as processes from './processes.js'
+import { fixtureProjectDirectory, saveFixtureProjectConfig } from './__fixtures__/repository.js'
 
 describe('explicit interrupted-command reconciliation', () => {
   let home: string
@@ -24,7 +25,8 @@ describe('explicit interrupted-command reconciliation', () => {
   const state = () => store.list()[0]!.executions[0]!.workflow!
   const identity = () => ({ todo_id: todoId, execution_id: executionId })
   const local = (action: string, payload: Record<string, unknown> = {}) => runLocalCommand({
-    action, repo: 'fixture/repo', data_root: dataRoot, ...identity(), ...payload,
+    action, repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+    data_root: dataRoot, ...identity(), ...payload,
   })
   const checkRequest = (id: string) => ({
     directory, ...identity(), request_id: id, operation_id: id, acceptance_id: 'behavior',
@@ -97,7 +99,7 @@ describe('explicit interrupted-command reconciliation', () => {
     home = mkdtempSync(join(tmpdir(), 'contribbot-reconciliation-'))
     workspace = join(home, 'workspace')
     dataRoot = join(home, 'data')
-    directory = join(dataRoot, 'fixture', 'repo')
+    directory = fixtureProjectDirectory(dataRoot, 'fixture/repo')
     mkdirSync(workspace)
     const git = (...args: string[]) => execFileSync('git', [
       '-c', 'core.hooksPath=nonexistent-hooks', '-c', 'commit.gpgSign=false', ...args,
@@ -109,10 +111,10 @@ describe('explicit interrupted-command reconciliation', () => {
     writeFileSync(join(workspace, 'sum.cjs'), 'module.exports = (a, b) => a + b\n')
     git('add', '.')
     git('commit', '--quiet', '-m', 'fixture')
+    saveFixtureProjectConfig(directory, 'fixture/repo')
     store = new TodoStore(directory)
     todoId = store.add({ ref: 'task', title: 'Recovery', type: 'bug' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
   })
   afterEach(() => { vi.restoreAllMocks(); rmSync(home, { recursive: true, force: true }) })
 
@@ -145,7 +147,13 @@ describe('explicit interrupted-command reconciliation', () => {
     await yieldNow()
     expect((await local('inspect')).readiness).toMatchObject({ ready: false, missing: ['behavior'] })
     rmSync(wait)
-    expect((await runCheck(checkRequest('fresh'))).outcome).toBe('passed')
+    const fresh = await runCheck(checkRequest('fresh'))
+    expect(fresh.outcome, JSON.stringify({
+      error: fresh.receipt.error,
+      process: fresh.receipt.process,
+      before: fresh.receipt.before,
+      after: fresh.receipt.after,
+    })).toBe('passed')
     expect((await local('inspect')).readiness).toMatchObject({ ready: true })
     expect(readFileSync(counter, 'utf8')).toBe('run\nrun\n')
   }, 30_000)

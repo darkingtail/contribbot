@@ -1,7 +1,8 @@
 import { getIssue, getIssueComments, getIssueTimeline, parseRepo } from '../../clients/github.js'
 import { relativeTime, truncate } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
-export async function issueDetail(issueNumber: number, repo?: string): Promise<string> {
+export async function issueDetail(issueNumber: number, repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
   const [issue, comments, timeline] = await Promise.all([

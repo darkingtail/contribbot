@@ -28,13 +28,14 @@ vi.mock('./artifacts.js', () => ({
 
 import { collectRemoteDeliveries, remoteDeliveryObservations } from './remote-delivery.js'
 import { createWorkflow } from './workflow.js'
+import { fixtureRepository } from './__fixtures__/repository.js'
 
 const sha = (number: number) => number.toString(16).padStart(40, '0')
 const collect = () => collectRemoteDeliveries('/fixture', 'todo', 'execution', fixture.state, fixture.candidate)
 function deliveries(count: number) {
   fixture.state.plans[0]!.content.deliverables = Array.from({ length: count }, (_, number) => ({
     id: `delivery-${number}`, description: 'Fixture', required: false, acceptance_ids: ['review'],
-    target: { kind: 'remote_pull', repo: 'fixture/repo', number: number + 1,
+    target: { kind: 'remote_pull', repo: fixtureRepository('fixture/repo'), number: number + 1,
       base: 'main', endpoint: 'merged', allow_draft: false, scope: ['src'] },
   }))
 }
@@ -58,7 +59,8 @@ describe('remote collector boundaries with isolated dependency doubles', () => {
       }],
       attempts: [{
         id: 'attempt', plan_id: 'plan', owner: 'fixture', started_at: new Date().toISOString(),
-        workspace: { repo: 'fixture/repo', root: '/work', git_dir: '/work/.git', common_dir: '/work/.git', baseline: 'a'.repeat(64) },
+        workspace: { repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+          root: '/work', git_dir: '/work/.git', common_dir: '/work/.git', baseline: 'a'.repeat(64) },
       }],
     }
     fixture.observeCommitDelivery.mockReturnValue({ endpoint: 'present', note: 'Fixture local match', commit: {} })

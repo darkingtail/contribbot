@@ -33,6 +33,38 @@ describe('createServer tool schemas', () => {
     expect(projectDashboard!.inputSchema.required ?? []).toContain('repo')
   })
 
+  it('exposes a complete repository identity on every repo-scoped tool', async () => {
+    const { tools } = await listTools()
+    const scoped = tools.filter(tool => tool.inputSchema.properties?.repo)
+    expect(scoped.length).toBeGreaterThan(40)
+    for (const tool of scoped) {
+      const repo = tool.inputSchema.properties!.repo as {
+        $ref?: string
+        type?: string
+        required?: string[]
+        additionalProperties?: boolean
+        properties?: Record<string, unknown>
+      }
+      const localProperty = repo.$ref?.startsWith('#/properties/')
+        ? repo.$ref.slice('#/properties/'.length)
+        : undefined
+      const schema = (repo.$ref
+        ? tool.inputSchema.properties?.[localProperty ?? '']
+        : repo) as typeof repo | undefined
+      expect(schema?.type, tool.name).toBe('object')
+      expect(schema?.required, tool.name).toEqual(expect.arrayContaining(['platform', 'instance', 'path']))
+      expect(schema?.additionalProperties, tool.name).toBe(false)
+    }
+  })
+
+  it('rejects shorthand and incomplete identities before a repository tool runs', async () => {
+    await listTools()
+    for (const repo of ['workflow-fixture/repo', { platform: 'github', path: 'workflow-fixture/repo' }]) {
+      const result = await client!.callTool({ name: 'todo_list', arguments: { repo } })
+      expect(result.isError).toBe(true)
+    }
+  })
+
   it('keeps cross-project stats repo optional', async () => {
     const { tools } = await listTools()
     const contributionStats = tools.find(t => t.name === 'contribution_stats')
@@ -127,18 +159,34 @@ describe('createServer tool schemas', () => {
     expect(tools.find(tool => tool.name === 'todo_done')?.description).toContain('same user statement')
   })
 
-  it('keeps both weekly review prompts on preview-first explicit archival', async () => {
+  it('keeps repository identity out of prompt arguments and explicit in tool calls', async () => {
     await listTools()
-    const cases: Record<string, string>[] = [{ repo: 'workflow-fixture/repo' }, {}]
-    for (const args of cases) {
-      const prompt = await client!.getPrompt({ name: 'weekly-review', arguments: args })
-      const text = prompt.messages
+    const { prompts } = await client!.listPrompts()
+    for (const name of ['daily-sync', 'start-task', 'pre-submit', 'weekly-review']) {
+      const prompt = prompts.find(entry => entry.name === name)
+      expect(prompt).toBeDefined()
+      expect(prompt!.arguments?.map(argument => argument.name) ?? []).not.toContain('repo')
+      const args: Record<string, string> = name === 'pre-submit' ? { pr: '42' } : {}
+      const result = await client!.getPrompt({ name, arguments: args })
+      const text = result.messages
         .map(message => message.content.type === 'text' ? message.content.text : '')
         .join('\n')
-      expect(text).toContain('preview ended todos only')
-      expect(text).toContain('user explicitly selects exact Todo IDs and preview snapshots')
-      expect(text).not.toContain('clean up completed todos')
+      expect(text).toContain('{platform, instance, path}')
+      expect(text).toContain('repo to every repository-scoped tool')
     }
+  })
+
+  it('keeps weekly review on preview-first explicit archival for both scopes', async () => {
+    await listTools()
+    const prompt = await client!.getPrompt({ name: 'weekly-review' })
+    const text = prompt.messages
+      .map(message => message.content.type === 'text' ? message.content.text : '')
+      .join('\n')
+    expect(text).toContain('For a confirmed project:')
+    expect(text).toContain('For a cross-project overview:')
+    expect(text).toContain('preview ended todos only')
+    expect(text).toContain('user explicitly selects exact Todo IDs and preview snapshots')
+    expect(text).not.toContain('clean up completed todos')
   })
 
   it('requires an explicit force option for destructive todo archive compaction', async () => {

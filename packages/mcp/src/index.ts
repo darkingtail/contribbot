@@ -24,6 +24,7 @@ export { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from './core/
 export { repoConfig } from './core/tools/core/repo-config-tool.js'
 export { projectList } from './core/tools/core/project-list.js'
 export { projectInit } from './core/tools/core/project-init.js'
+export { parentRefreshResult } from './core/tools/core/project-parent.js'
 export { projectArchive, projectRestore, projectStatus } from './core/tools/core/project-lifecycle.js'
 export { ProjectStatus, PROJECT_STATUSES } from './core/enums.js'
 export { projectGuidance } from './core/tools/core/project-guidance.js'
@@ -86,7 +87,7 @@ export type { TodoItem, ArchivedTodoItem, TodoExecution, TodoEvidence, TodoExecu
 
 // Utilities
 export { safeWriteFileSync } from './core/utils/fs.js'
-export { resolveRepo, resolveToParent } from './core/utils/resolve-repo.js'
+export { resolveRepo, resolveRepoIdentity } from './core/utils/resolve-repo.js'
 
 // MCP server factory
 export { createServer } from './mcp/server.js'

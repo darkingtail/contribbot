@@ -1,3 +1,4 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -5,7 +6,6 @@ import { stringify } from 'yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TODO_STATUSES, TODO_UPDATABLE_STATUSES, UPSTREAM_ITEM_STATUSES } from '../../enums.js'
 import { TodoStore } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
 import { todoUpdate } from './todo-update.js'
 
 vi.mock('../../utils/resolve-repo.js', () => ({
@@ -21,7 +21,7 @@ describe('six-state Todo contract', () => {
     home = mkdtempSync(join(tmpdir(), 'contribbot-six-state-'))
     vi.stubEnv('HOME', home)
     vi.stubEnv('USERPROFILE', home)
-    directory = getContribDir('owner', 'repo')
+    directory = testProjectDirectory()
     store = new TodoStore(directory)
     store.add({ ref: 'task', title: 'Task', type: 'chore' })
   })
@@ -38,7 +38,7 @@ describe('six-state Todo contract', () => {
 
   it.each(['pr_submitted', 'not_planned'])('rejects %s before metadata or note writes', async status => {
     const before = readFileSync(join(directory, 'todos.yaml'), 'utf8')
-    await expect(todoUpdate('task', { status, pr: 42, branch: 'changed', note: 'Must not be saved' }, 'owner/repo'))
+    await expect(todoUpdate('task', { status, pr: 42, branch: 'changed', note: 'Must not be saved' }, testRepository))
       .rejects.toThrow(/status/i)
     expect(readFileSync(join(directory, 'todos.yaml'), 'utf8')).toBe(before)
   })

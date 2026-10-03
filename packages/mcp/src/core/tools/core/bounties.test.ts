@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { BountyStore } from '../../storage/bounty-store.js'
+import { RepoConfig } from '../../storage/repo-config.js'
+import { projectDirectory, type RepositoryRef } from '../../utils/repository-ref.js'
 import {
   bountyClaim,
   bountyCreate,
@@ -12,6 +14,18 @@ import {
   bountyMarkReady,
   bountySettle,
 } from './bounties.js'
+
+const fixture = vi.hoisted(() => ({ home: '' }))
+vi.mock('node:os', async original => ({
+  ...await original<typeof import('node:os')>(),
+  homedir: () => fixture.home,
+}))
+
+const repository: RepositoryRef = {
+  platform: 'github',
+  instance: 'https://github.com',
+  path: 'darkingtail/contribbot',
+}
 
 describe('bounty tools', () => {
   let dir: string
@@ -32,19 +46,19 @@ describe('bounty tools', () => {
       currency: 'USDC',
       rail: 'arc-usdc',
       creator: 'maintainer',
-    }, 'darkingtail/contribbot', dir)
+    }, repository, dir)
 
     expect(created).toContain('Created bounty **bounty-1**')
-    const list = bountyList('darkingtail/contribbot', undefined, dir)
+    const list = bountyList(repository, undefined, dir)
     expect(list).toContain('## Bounties — darkingtail/contribbot')
     expect(list).toContain('bounty-1')
     expect(list).toContain('arc-usdc')
   })
 
   it('shows bounty detail', () => {
-    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'manual' }, 'darkingtail/contribbot', dir)
+    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'manual' }, repository, dir)
 
-    const detail = bountyDetail('bounty-1', 'darkingtail/contribbot', dir)
+    const detail = bountyDetail('bounty-1', repository, dir)
 
     expect(detail).toContain('## Bounty bounty-1')
     expect(detail).toContain('Fix issue')
@@ -52,13 +66,13 @@ describe('bounty tools', () => {
   })
 
   it('claims a bounty', () => {
-    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'arc-usdc' }, 'darkingtail/contribbot', dir)
+    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'arc-usdc' }, repository, dir)
 
     const result = bountyClaim('bounty-1', {
       claimant: 'contributor',
       claimant_wallet: '0xabc',
       claim_note: 'I will handle the tests',
-    }, 'darkingtail/contribbot', dir)
+    }, repository, dir)
 
     expect(result).toContain('Claimed bounty **bounty-1**')
     expect(result).toContain('0xabc')
@@ -66,24 +80,24 @@ describe('bounty tools', () => {
   })
 
   it('links a PR and marks ready', () => {
-    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'manual' }, 'darkingtail/contribbot', dir)
-    bountyClaim('bounty-1', { claimant: 'contributor' }, 'darkingtail/contribbot', dir)
+    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'manual' }, repository, dir)
+    bountyClaim('bounty-1', { claimant: 'contributor' }, repository, dir)
 
-    expect(bountyLinkPr('bounty-1', 456, 'darkingtail/contribbot', dir)).toContain('Linked bounty **bounty-1** to PR [#456]')
-    expect(bountyMarkReady('bounty-1', 'darkingtail/contribbot', dir)).toContain('marked ready for settlement')
+    expect(bountyLinkPr('bounty-1', 456, repository, dir)).toContain('Linked bounty **bounty-1** to PR [#456]')
+    expect(bountyMarkReady('bounty-1', repository, dir)).toContain('marked ready for settlement')
     expect(new BountyStore(dir).resolve('bounty-1')?.status).toBe('ready')
   })
 
   it('settles an Arc USDC bounty with an instruction', () => {
-    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'arc-usdc' }, 'darkingtail/contribbot', dir)
-    bountyClaim('bounty-1', { claimant: 'contributor', claimant_wallet: '0xabc' }, 'darkingtail/contribbot', dir)
-    bountyMarkReady('bounty-1', 'darkingtail/contribbot', dir)
+    bountyCreate({ ref: '#123', title: 'Fix issue', amount: '25', currency: 'USDC', rail: 'arc-usdc' }, repository, dir)
+    bountyClaim('bounty-1', { claimant: 'contributor', claimant_wallet: '0xabc' }, repository, dir)
+    bountyMarkReady('bounty-1', repository, dir)
 
     const result = bountySettle('bounty-1', {
       rail: 'arc-usdc',
       tx: '0xtx',
       note: 'Arc testnet transfer',
-    }, 'darkingtail/contribbot', dir)
+    }, repository, dir)
 
     expect(result).toContain('Settled bounty **bounty-1**')
     expect(result).toContain('Arc USDC settlement')
@@ -92,6 +106,59 @@ describe('bounty tools', () => {
   })
 
   it('returns a useful message for missing bounties', () => {
-    expect(() => bountyDetail('missing', 'darkingtail/contribbot', dir)).toThrow('Bounty not found')
+    expect(() => bountyDetail('missing', repository, dir)).toThrow('Bounty not found')
+  })
+})
+
+describe('bounty v3 project boundary', () => {
+  const input = { title: 'Fix issue', amount: '25', rail: 'manual' as const }
+
+  beforeEach(() => {
+    fixture.home = mkdtempSync(join(tmpdir(), 'bounty-project-'))
+  })
+
+  afterEach(() => {
+    rmSync(fixture.home, { recursive: true, force: true })
+  })
+
+  it('does not initialize a project by creating a bounty', async () => {
+    await expect(bountyCreate(input, repository)).rejects.toThrow(/not initialized/i)
+    expect(existsSync(projectDirectory(repository))).toBe(false)
+  })
+
+  it('does not read orphaned bounties without a v3 config', async () => {
+    const directory = projectDirectory(repository)
+    new BountyStore(directory).add({ ...input, ref: null, currency: 'USDC', creator: null })
+
+    await expect(bountyList(repository)).rejects.toThrow(/not initialized/i)
+    await expect(bountyDetail('bounty-1', repository)).rejects.toThrow(/not initialized/i)
+  })
+
+  it('rejects a config for a different repository in the same directory', async () => {
+    const other = { ...repository, path: 'darkingtail/other' }
+    const otherDirectory = projectDirectory(other)
+    new RepoConfig(otherDirectory).save({
+      schema_version: 3, repository: other, lifecycle: { status: 'active' },
+      parent: { status: 'unknown' }, tracking: { status: 'pending' },
+    })
+    const directory = projectDirectory(repository)
+    mkdirSync(directory, { recursive: true })
+    copyFileSync(join(otherDirectory, 'config.yaml'), join(directory, 'config.yaml'))
+
+    await expect(bountyList(repository)).rejects.toThrow(/identity does not match/i)
+    await expect(bountyCreate(input, repository)).rejects.toThrow(/identity does not match/i)
+    expect(existsSync(join(directory, 'bounties.yaml'))).toBe(false)
+  })
+
+  it('creates and reads bounties in an initialized project', async () => {
+    const directory = projectDirectory(repository)
+    new RepoConfig(directory).save({
+      schema_version: 3, repository, lifecycle: { status: 'active' },
+      parent: { status: 'unknown' }, tracking: { status: 'pending' },
+    })
+
+    expect(await bountyCreate(input, repository)).toContain('Created bounty **bounty-1**')
+    expect(await bountyList(repository)).toContain('bounty-1')
+    expect(new BountyStore(directory).resolve('bounty-1')?.title).toBe(input.title)
   })
 })

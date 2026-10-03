@@ -1,88 +1,102 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { projectInit } from './project-init.js'
 import { repoConfig } from './repo-config-tool.js'
 import { RepoConfig } from '../../storage/repo-config.js'
+import { projectDirectory, type RepositoryRef } from '../../utils/repository-ref.js'
 
 vi.mock('../../clients/github.js', () => ({
-  parseRepo: (repo: string) => { const [owner, name] = repo.split('/'); return { owner, name } },
-  ghApi: vi.fn().mockResolvedValue({ fork: false, permissions: {} }),
-  getCurrentUser: vi.fn().mockResolvedValue({ login: 'user' }),
+  ghApi: vi.fn().mockResolvedValue({ full_name: 'owner/repo', fork: false }),
 }))
+
+const repository: RepositoryRef = { platform: 'github', instance: 'https://github.com', path: 'owner/repo' }
+const source: RepositoryRef = { platform: 'github', instance: 'https://github.com', path: 'other/repo' }
+const fork: RepositoryRef = { platform: 'github', instance: 'https://github.com', path: 'user/fork' }
+const pending = '<!-- contribbot:tracking-status=pending -->'
+
 let home: string
 let dir: string
 let store: RepoConfig
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), 'init-upstream-'))
+  home = mkdtempSync(join(tmpdir(), 'init-tracking-'))
   vi.stubEnv('HOME', home)
   vi.stubEnv('USERPROFILE', home)
-  dir = join(home, '.contribbot', 'owner', 'repo')
+  dir = projectDirectory(repository)
   store = new RepoConfig(dir)
 })
 afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }) })
-const pending = '<!-- contribbot:upstream-status=pending -->'
 
-describe('upstream confirmation', () => {
-  it('new config requires an explicit external upstream decision', async () => {
-    const result = await projectInit('owner/repo')
+function saveActive(): void {
+  store.save({
+    schema_version: 3,
+    repository,
+    lifecycle: { status: 'active' },
+    parent: { status: 'unknown' },
+    tracking: { status: 'pending' },
+  })
+}
+
+describe('tracking confirmation', () => {
+  it('new config requires an explicit tracking decision', async () => {
+    const result = await projectInit(repository)
     expect(result).toContain(pending)
-    expect(result).toContain('Ask the user')
+    expect(result).toContain('Ask whether to track')
     expect(result).toContain('repo_config')
-    expect(store.load()?.upstream).toBeNull()
-    expect(await projectInit('owner/repo')).toContain(pending)
+    expect(result).toContain(`Pass repo: ${JSON.stringify(repository)}`)
+    expect(result).not.toContain('Use the canonical repo `github://')
+    expect(store.load()?.tracking).toEqual({ status: 'pending' })
+    expect(await projectInit(repository)).toContain(pending)
   })
 
-  it('legacy null remains pending without any byte rewrite or data changes', async () => {
-    store.save({ role: 'admin', org: null, fork: null, upstream: null })
-    const file = join(dir, 'config.yaml')
-    writeFileSync(file, readFileSync(file, 'utf8') + 'custom: keep\n')
-    const before = readFileSync(file, 'utf8')
-    expect(await projectInit('owner/repo')).toContain(pending)
-    expect(await repoConfig('owner/repo')).toContain(pending)
-    expect(readFileSync(file, 'utf8')).toBe(before)
-    expect(store.load()).not.toHaveProperty('upstream_confirmed')
+  it.each([
+    { selection: [source], expected: { status: 'configured', sources: [source] } },
+    { selection: '', expected: { status: 'none' } },
+  ] as const)('persists explicit choice $expected.status and stops asking', async ({ selection, expected }) => {
+    saveActive()
+    const update = await repoConfig(repository, selection === '' ? '' : [...selection])
+    expect(update).toContain(`<!-- contribbot:tracking-status=${expected.status} -->`)
+    expect(store.load()?.tracking).toEqual(expected)
+    const result = await projectInit(repository)
+    expect(result).toContain(`<!-- contribbot:tracking-status=${expected.status} -->`)
+    expect(result).not.toContain('Ask whether to track')
   })
 
-  it.each(['other/repo', ''])('explicit choice %s persists and stops asking', async (upstream) => {
-    const status = upstream ? 'configured' : 'none'
-    const update = await repoConfig('owner/repo', upstream)
-    expect(update).toContain('<!-- contribbot:upstream-status=' + status + ' -->')
-    expect(store.load()).toMatchObject({ upstream: upstream || null, upstream_confirmed: true })
-    const result = await projectInit('owner/repo')
-    expect(result).toContain('<!-- contribbot:upstream-status=' + status + ' -->')
-    expect(result).not.toContain('Ask the user')
+  it('keeps a fork separate from its parent, including tracking and archived state', async () => {
+    store.save({
+      schema_version: 3,
+      repository,
+      lifecycle: { status: 'archived', archived_at: '2026-09-16T00:00:00.000Z' },
+      parent: { status: 'unknown' },
+      tracking: { status: 'pending' },
+    })
+    const forkStore = new RepoConfig(projectDirectory(fork))
+    forkStore.save({
+      schema_version: 3,
+      repository: fork,
+      lifecycle: { status: 'active' },
+      parent: { status: 'confirmed', repository, relation_verified_at: '2026-09-16T00:00:00.000Z' },
+      tracking: { status: 'pending' },
+    })
+    expect(await projectInit(fork)).toContain(pending)
+    await repoConfig(fork, '')
+    expect(forkStore.load()?.tracking).toEqual({ status: 'none' })
+    expect(store.load()?.tracking).toEqual({ status: 'pending' })
+    expect(store.load()?.lifecycle.status).toBe('archived')
+    expect(await projectInit(repository)).toContain(pending)
   })
 
-  it('legacy nonempty upstream is configured without migration', async () => {
-    store.save({ role: 'read', org: null, fork: null, upstream: 'other/repo' })
-    const before = readFileSync(join(dir, 'config.yaml'), 'utf8')
-    expect(await projectInit('owner/repo')).toContain('<!-- contribbot:upstream-status=configured -->')
-    expect(readFileSync(join(dir, 'config.yaml'), 'utf8')).toBe(before)
-  })
-
-  it('fork and canonical share confirmation, archived and unknown fields survive', async () => {
-    store.save({ role: 'admin', org: 'owner', fork: 'user/fork', upstream: null, status: 'archived', archived_at: '2026-09-16' })
-    const file = join(dir, 'config.yaml')
-    writeFileSync(file, readFileSync(file, 'utf8') + 'custom: {nested: keep}\n')
-    expect(await projectInit('user/fork')).toContain(pending)
-    await repoConfig('user/fork', '')
-    expect(store.load()).toMatchObject({ upstream: null, upstream_confirmed: true, status: 'archived', archived_at: '2026-09-16', custom: { nested: 'keep' } })
-    const result = await projectInit('owner/repo')
-    expect(result).toContain('<!-- contribbot:upstream-status=none -->')
-    expect(result).toContain('does not reactivate')
-    expect(result).not.toContain('patrol owner/repo')
-    expect(existsSync(join(home, '.contribbot', 'user', 'fork'))).toBe(false)
-  })
-
-  it.each([' ', 'invalid', '../repo', 'owner/repo/extra'])('rejects malformed explicit upstream %s without writes', async (upstream) => {
-    await expect(repoConfig('owner/repo', upstream)).rejects.toThrow()
-    expect(store.exists()).toBe(false)
+  it('rejects malformed tracking without changing the stored decision', async () => {
+    saveActive()
+    const before = store.load()
+    await expect(repoConfig(repository, [{ ...source, path: '../repo' }])).rejects.toThrow()
+    await expect(repoConfig(repository, [repository])).rejects.toThrow()
+    expect(store.load()).toEqual(before)
   })
 
   it('renders current execution phase and next for session recovery', async () => {
-    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    saveActive()
     writeFileSync(join(dir, 'todos.yaml'), `todos:
   - id: t-phase3
     ref: phase3
@@ -107,8 +121,7 @@ describe('upstream confirmation', () => {
         outcome: null
         outcome_note: ""
 `)
-
-    const result = await projectInit('owner/repo')
+    const result = await projectInit(repository)
     expect(result).toContain('## Active Todo Recovery')
     expect(result).toContain('Build Phase 3')
     expect(result).toContain('Phase: `execute`')
@@ -116,10 +129,10 @@ describe('upstream confirmation', () => {
   })
 
   it('makes active todos without an execution explicit', async () => {
-    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    saveActive()
     writeFileSync(join(dir, 'todos.yaml'), `todos:
   - ref: legacy-active
-    title: Legacy active todo
+    title: Active todo
     type: chore
     status: active
     difficulty: null
@@ -128,43 +141,60 @@ describe('upstream confirmation', () => {
     created: "2026-01-01"
     updated: "2026-01-01"
 `)
-
-    const result = await projectInit('owner/repo')
-    expect(result).toContain('Legacy active todo')
+    const result = await projectInit(repository)
+    expect(result).toContain('Active todo')
     expect(result).toContain('No open execution')
   })
 
-  it.each(['idea', 'backlog', 'paused', 'done', 'cancelled'])('does not treat %s as active because it has a linked PR', async (status) => {
-    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+  it.each(['idea', 'backlog', 'paused', 'done', 'cancelled'])('does not treat %s as active because it has a linked PR', async status => {
+    saveActive()
     writeFileSync(join(dir, 'todos.yaml'), JSON.stringify({ todos: [{
       ref: 'linked', title: 'Linked PR work', type: 'feature', status, pr: 42,
       difficulty: null, branch: null, claimed_items: null, executions: [],
       created: '2026-09-19', updated: '2026-09-19',
     }] }))
-
-    const result = await projectInit('owner/repo')
+    const result = await projectInit(repository)
     expect(result).toContain('_No active todos._')
     expect(result).not.toContain('Linked PR work')
   })
 
-  it('keeps a healthy target init working when another tracked project has invalid Todo data', async () => {
-    store.save({ role: 'admin', org: null, fork: null, upstream: null })
-    const sibling = join(home, '.contribbot', 'other', 'broken')
-    mkdirSync(sibling, { recursive: true })
-    writeFileSync(join(sibling, 'config.yaml'), 'role: read\norg: null\nfork: null\nupstream: null\nupstream_confirmed: true\n', 'utf-8')
-    writeFileSync(join(sibling, 'todos.yaml'), 'todos:\n  - ref: old\n    title: Legacy state\n    type: chore\n    status: pr_submitted\n', 'utf-8')
+  it('keeps a healthy target init working when another project has invalid Todo data', async () => {
+    saveActive()
+    const sibling = new RepoConfig(projectDirectory(source))
+    sibling.save({
+      schema_version: 3,
+      repository: source,
+      lifecycle: { status: 'active' },
+      parent: { status: 'unknown' },
+      tracking: { status: 'none' },
+    })
+    writeFileSync(join(projectDirectory(source), 'todos.yaml'), 'todos:\n  - ref: old\n    title: Legacy state\n    type: chore\n    status: pr_submitted\n', 'utf-8')
+    const result = await projectInit(repository)
+    expect(result).toContain('# Contribbot Context')
+    expect(result).toContain('other/repo')
+    expect(result).toContain('Todo data unreadable')
+  })
 
-    const result = await projectInit('owner/repo')
+  it('keeps a healthy target init working when another project config is invalid', async () => {
+    saveActive()
+    const sibling = new RepoConfig(projectDirectory(source))
+    sibling.save({
+      schema_version: 3,
+      repository: source,
+      lifecycle: { status: 'active' },
+      parent: { status: 'unknown' },
+      tracking: { status: 'none' },
+    })
+    writeFileSync(join(projectDirectory(source), 'config.yaml'), 'schema_version: 2\n', 'utf-8')
 
-    expect(result).toContain('# Contribbot Context — owner/repo')
-    expect(result).toContain('other/broken')
-    expect(result).toContain('unknown / unknown')
+    const result = await projectInit(repository)
+    expect(result).toContain('# Contribbot Context')
+    expect(result).toContain('config_invalid')
   })
 
   it('still rejects when the current init target has invalid Todo data', async () => {
-    store.save({ role: 'admin', org: null, fork: null, upstream: null })
+    saveActive()
     writeFileSync(join(dir, 'todos.yaml'), 'todos:\n  - ref: old\n    title: Legacy state\n    type: chore\n    status: pr_submitted\n', 'utf-8')
-
-    await expect(projectInit('owner/repo')).rejects.toThrow('Unsupported Todo status')
+    await expect(projectInit(repository)).rejects.toThrow('Unsupported Todo status')
   })
 })

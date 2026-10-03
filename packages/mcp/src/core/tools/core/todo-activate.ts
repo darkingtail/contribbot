@@ -2,8 +2,8 @@ import { getIssue, getIssueComments } from '../../clients/github.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { currentTodoExecution, TodoStore } from '../../storage/todo-store.js'
 import type { TodoDifficulty } from '../../enums.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 import { difficultyLabel, todayDate } from '../../utils/format.js'
 
 export function generateDefaultBranchName(todo: { ref: string | null; title: string; type: string }): string {
@@ -36,13 +36,17 @@ function resolveActivatedExecution(store: TodoStore, todoId: string, executionId
   return resolved
 }
 
-export async function todoActivate(item: string, branch?: string, repo?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+export async function todoActivate(item: string, branch?: string, repo?: RepositoryInput): Promise<string> {
+  const { owner, name, repository, directory: contribDir } = await resolveRepo(repo)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
 
   const { resolved, executionState } = store.transaction(() => {
+    const selected = store.resolveItemFromAll(item)
+    if (selected?.ref?.startsWith('#')
+      && (repository.platform !== 'github' || repository.instance !== 'https://github.com')) {
+      throw new Error('Issue-backed Todo activation supports GitHub.com repositories only; no Todo state or remote data was changed.')
+    }
     const resolved = store.resolveItemForActivation(item)
     if (!resolved) throw new Error(`Todo not found: "${item}". Use todo_list to see available items.`)
     const executionState = store.activateExecution(resolved.storeIndex)

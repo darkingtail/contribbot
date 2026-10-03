@@ -1,10 +1,10 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TodoStore } from '../../storage/todo-store.js'
 import { RecordFiles } from '../../storage/record-files.js'
-import { getContribDir } from '../../utils/config.js'
 import { generateDefaultBranchName, todoActivate } from './todo-activate.js'
 import { todoDone } from './todos.js'
 
@@ -15,7 +15,10 @@ const github = vi.hoisted(() => ({
 
 vi.mock('../../clients/github.js', () => github)
 vi.mock('../../utils/resolve-repo.js', () => ({
-  resolveRepo: vi.fn().mockResolvedValue({ owner: 'owner', name: 'repo' }),
+  resolveRepo: vi.fn().mockImplementation(async () => ({
+    owner: 'owner', name: 'repo', directory: testProjectDirectory(),
+    repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+  })),
 }))
 
 describe('generateDefaultBranchName', () => {
@@ -77,7 +80,7 @@ describe('todoActivate concurrency', () => {
   })
 
   it('re-resolves the activated todo by stable id after GitHub awaits', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     store.add({ ref: 'earlier', title: 'Earlier', type: 'chore' })
     store.add({ ref: '#2', title: 'Target issue', type: 'bug' })
     store.add({ ref: 'following', title: 'Following', type: 'feature' })
@@ -86,7 +89,7 @@ describe('todoActivate concurrency', () => {
     github.getIssue.mockReturnValue(new Promise(resolve => { releaseIssue = resolve }))
     github.getIssueComments.mockResolvedValue([])
 
-    const activation = todoActivate('#2', undefined, 'owner/repo')
+    const activation = todoActivate('#2', undefined, testRepository)
     await vi.waitFor(() => expect(store.resolveItem('#2')!.item.executions).toHaveLength(1))
     store.delete(0)
 
@@ -108,7 +111,7 @@ describe('todoActivate concurrency', () => {
   })
 
   it('does not fall back to a title match when the activated todo disappears', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     const target = store.add({ ref: '#2', title: 'Target issue', type: 'bug' })
     store.add({ ref: 'shadow', title: `Follow up ${target.id}`, type: 'feature' })
 
@@ -116,7 +119,7 @@ describe('todoActivate concurrency', () => {
     github.getIssue.mockReturnValue(new Promise(resolve => { releaseIssue = resolve }))
     github.getIssueComments.mockResolvedValue([])
 
-    const activation = todoActivate('#2', undefined, 'owner/repo')
+    const activation = todoActivate('#2', undefined, testRepository)
     await vi.waitFor(() => expect(store.resolveItem('#2')!.item.executions).toHaveLength(1))
     const targetIndex = store.resolveItem(target.id!)!.storeIndex
     store.delete(targetIndex, { force: true })
@@ -138,7 +141,7 @@ describe('todoActivate concurrency', () => {
   })
 
   it('retries legacy record adoption after the todo id was already persisted', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'todos.yaml'), `todos:
   - ref: legacy-active
@@ -157,20 +160,20 @@ describe('todoActivate concurrency', () => {
     appendFileSync(recordPath, '\nLegacy note.\n', 'utf-8')
     mkdirSync(`${recordPath}.tmp`)
 
-    await expect(todoActivate('legacy-active', undefined, 'owner/repo')).rejects.toThrow()
+    await expect(todoActivate('legacy-active', undefined, testRepository)).rejects.toThrow()
     const store = new TodoStore(dir)
     const todoId = store.findByRef('legacy-active')!.id!
     expect(todoId).toMatch(/^t-/)
 
     rmSync(`${recordPath}.tmp`, { recursive: true, force: true })
-    await todoActivate(todoId, undefined, 'owner/repo')
+    await todoActivate(todoId, undefined, testRepository)
 
     expect(records.readRecord('legacy-active', todoId)).toContain('Legacy note.')
     expect(readFileSync(recordPath, 'utf-8')).toContain(`contribbot:todo-id ${todoId}`)
   })
 
   it('updates one managed issue-details section across repeated execution cycles', async () => {
-    const dir = getContribDir('owner', 'repo')
+    const dir = testProjectDirectory()
     const store = new TodoStore(dir)
     const todo = store.add({ ref: '#2', title: 'Repeated issue', type: 'bug' })
     github.getIssue.mockResolvedValue({
@@ -186,9 +189,9 @@ describe('todoActivate concurrency', () => {
     })
     github.getIssueComments.mockResolvedValue([])
 
-    await todoActivate(todo.id!, undefined, 'owner/repo')
-    await todoDone(todo.id!, 'owner/repo')
-    await todoActivate(todo.id!, undefined, 'owner/repo')
+    await todoActivate(todo.id!, undefined, testRepository)
+    await todoDone(todo.id!, testRepository)
+    await todoActivate(todo.id!, undefined, testRepository)
 
     const content = new RecordFiles(dir).readRecord('#2', todo.id)!
     expect(content.match(/## Issue Details/g)).toHaveLength(1)

@@ -1,46 +1,12 @@
-import { execFileSync } from 'node:child_process'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createServer } from './server.js'
 
-function checkAuth(): 'token' | 'gh-cli' {
-  if (process.env.GITHUB_TOKEN) {
-    return 'token'
-  }
-
-  try {
-    execFileSync('gh', ['auth', 'status'], { stdio: 'ignore' })
-    return 'gh-cli'
-  }
-  catch {
-    console.error(`
-[contribbot] GitHub auth not configured. Please set up one of:
-
-  Option A - gh CLI (recommended):
-    gh auth login
-
-  Option B - GitHub Token:
-    Set GITHUB_TOKEN environment variable in .mcp.json:
-    {
-      "mcpServers": {
-        "contribbot": {
-          "command": "npx",
-          "args": ["tsx", "packages/contribbot/src/mcp/index.ts"],
-          "env": { "GITHUB_TOKEN": "<your-token>" }
-        }
-      }
-    }
-`)
-    process.exit(1)
-  }
-}
-
 async function main() {
-  const authMode = checkAuth()
   const server = createServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
   if (process.env.CONTRIBBOT_QUIET !== '1') {
-    console.error(`contribbot MCP server running (auth: ${authMode})`)
+    console.error('contribbot MCP server running (platform authentication is checked on use)')
   }
 }
 

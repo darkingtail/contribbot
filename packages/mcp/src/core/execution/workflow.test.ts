@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { assertClosureCoverage, completionCoverage, createWorkflow, normalizeWorkflow, planDigest, transitionWorkflow, workflowReadiness } from './workflow.js'
 import type { ClosureIntent, WorkflowCommand, WorkflowPlanInput, WorkflowState } from './contracts.js'
+import { fixtureRepository } from './__fixtures__/repository.js'
 
 const sha = 'a'.repeat(64)
 const workspace = {
-  repo: 'fixture/repo', root: 'fixture-root', git_dir: 'fixture-git', common_dir: 'fixture-git',
+  repo: { platform: 'github' as const, instance: 'https://github.com', path: 'fixture/repo' },
+  root: 'fixture-root', git_dir: 'fixture-git', common_dir: 'fixture-git',
   baseline: sha,
 }
 const candidate = { digest: sha, root: workspace.root, git_dir: workspace.git_dir, common_dir: workspace.common_dir }
@@ -113,7 +115,7 @@ describe('managed Todo workflow', () => {
       const intent: ClosureIntent = {
         id: `closure-${mode}`, mode, decision: 'fixture:whole-task-acceptance',
         note: 'No inference of full coverage', acknowledged_gaps: ['coverage'],
-        target: { kind: 'issue', repo: 'fixture/repo', issue_number: 1 },
+        target: { kind: 'issue', repo: fixtureRepository('fixture/repo'), issue_number: 1 },
       }
       expect(() => act(state, { action: 'reserve_closure', intent })).toThrow(/stage|coverage|completion_scope/i)
       if (scope === 'stage') {

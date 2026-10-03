@@ -1,3 +1,4 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -6,9 +7,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TodoStore } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
+import { RepoConfig } from '../../storage/repo-config.js'
+import { getProjectDir } from '../../utils/config.js'
+import { resolveRepo } from '../../utils/resolve-repo.js'
 import { todoClaim, withClaimLock } from './todo-claim.js'
 import { runLocalCommand } from '../../execution/local.js'
+import { fixtureRepository } from '../../execution/__fixtures__/repository.js'
 import { prepareClosure } from '../../execution/closure.js'
 import { RemoteEffects } from '../../storage/remote-effects.js'
 
@@ -57,7 +61,10 @@ function runClaimIdentityWorker(args: string[]): Promise<void> {
 
 vi.mock('../../clients/github.js', () => github)
 vi.mock('../../utils/resolve-repo.js', () => ({
-  resolveRepo: vi.fn().mockResolvedValue({ owner: 'owner', name: 'repo' }),
+  resolveRepo: vi.fn().mockImplementation(async () => ({
+    owner: 'owner', name: 'repo', directory: testProjectDirectory(),
+    repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+  })),
 }))
 
 describe('todoClaim', () => {
@@ -78,15 +85,32 @@ describe('todoClaim', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
+  it.each([
+    { platform: 'gitlab', instance: 'https://code.example.com/gitlab', path: 'owner/repo' },
+    { platform: 'github', instance: 'https://github.example.com', path: 'owner/repo' },
+  ] as const)('rejects unsupported $platform instance before assigning Todo identity or contacting GitHub', async (repository) => {
+    const directory = getProjectDir(repository)
+    vi.mocked(resolveRepo).mockResolvedValueOnce({ repository, directory, owner: 'owner', name: 'repo' })
+
+    await expect(todoClaim('t-unknown', ['Work'], repository))
+      .rejects.toThrow(/GitHub\.com issues only; no local or remote changes/)
+
+    expect(github.createComment).not.toHaveBeenCalled()
+    expect(github.getIssue).not.toHaveBeenCalled()
+    expect(github.getIssueComments).not.toHaveBeenCalled()
+    expect(github.getCurrentUser).not.toHaveBeenCalled()
+    expect(existsSync(directory)).toBe(false)
+  })
+
   it('updates the claimed todo by stable identity after GitHub awaits', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     store.add({ ref: '#1', title: 'Earlier', type: 'chore' })
     const target = store.add({ ref: '#2', title: 'Target', type: 'feature' })
     store.add({ ref: '#3', title: 'Following', type: 'bug' })
 
     let releaseIssue!: (value: { state: string }) => void
     github.getIssue.mockReturnValue(new Promise(resolve => { releaseIssue = resolve }))
-    const claiming = todoClaim(target.id!, ['Implement target'], 'owner/repo')
+    const claiming = todoClaim(target.id!, ['Implement target'], testRepository)
     await vi.waitFor(() => expect(github.getIssue).toHaveBeenCalled())
     store.delete(0)
     releaseIssue({ state: 'open' })
@@ -101,7 +125,7 @@ describe('todoClaim', () => {
   })
 
   it('suppresses a duplicate remote comment when retrying a failed local claim update', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const store = new TodoStore(contribDir)
     const target = store.add({ ref: '#2', title: 'Target', type: 'feature' })
     github.getIssue.mockResolvedValue({ state: 'open' })
@@ -112,8 +136,10 @@ describe('todoClaim', () => {
       return { id: 501, body }
     })
 
-    await expect(todoClaim(target.id!, ['Implement target'], 'owner/repo'))
-      .rejects.toThrow(/comment.*posted.*Retry the same todo_claim/is)
+    const failure = await todoClaim(target.id!, ['Implement target'], testRepository).catch(error => error as Error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toMatch(/comment.*posted.*Retry the same todo_claim/is)
+    expect((failure as Error).message).toContain(`repo=${JSON.stringify(testRepository)}`)
     expect(github.createComment).toHaveBeenCalledTimes(1)
 
     rmSync(join(contribDir, 'todos.yaml.tmp'), { recursive: true, force: true })
@@ -123,7 +149,7 @@ describe('todoClaim', () => {
     github.getCurrentUser.mockRejectedValue(new Error('Offline after original success.'))
     github.getIssueComments.mockRejectedValue(new Error('Offline after original success.'))
 
-    await todoClaim(target.id!, ['Implement target'], 'owner/repo')
+    await todoClaim(target.id!, ['Implement target'], testRepository)
 
     expect(github.createComment).not.toHaveBeenCalled()
     expect(store.resolveItemById(target.id!)!.item).toMatchObject({
@@ -134,18 +160,25 @@ describe('todoClaim', () => {
   })
 
   it('keeps an admitted claim unresolved until its late response and local linkage are saved', async () => {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
+    new RepoConfig(directory).save({
+      schema_version: 3,
+      repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+      lifecycle: { status: 'active' },
+      parent: { status: 'unknown' },
+      tracking: { status: 'pending' },
+    })
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#2', title: 'Claim', type: 'feature' })
     const execution = store.activateExecution(0).execution
     github.getIssue.mockResolvedValue({ state: 'open' })
     let release!: (value: { id: number; body: string }) => void
     github.createComment.mockReturnValue(new Promise(resolve => { release = resolve }))
-    const claiming = todoClaim(todo.id!, ['Implement'], 'owner/repo')
+    const claiming = todoClaim(todo.id!, ['Implement'], testRepository)
     await vi.waitFor(() => expect(github.createComment).toHaveBeenCalledTimes(1))
     store.applyWorkflow(todo.id!, execution.id, { request_id: 'pause', expected_revision: 0,
       command: { action: 'request_control', control_id: 'pause', kind: 'pause', decision: 'user:pause', note: 'Stop.' } })
-    const input = { repo: 'owner/repo', data_root: join(home, '.contribbot'), todo_id: todo.id,
+    const input = { repo: fixtureRepository('owner/repo'), data_root: join(home, '.contribbot'), todo_id: todo.id,
       execution_id: execution.id, control_id: 'pause', actor: 'primary', expected_revision: 1 }
     try {
       await expect(runLocalCommand({ ...input, action: 'settle-pause', request_id: 'settle' })).rejects.toThrow(/remote effects/i)
@@ -162,7 +195,7 @@ describe('todoClaim', () => {
   })
 
   it('blocks new claim dispatch while a local closure is prepared', async () => {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#2', title: 'Claim', type: 'feature' })
     const execution = store.activateExecution(0).execution
@@ -178,28 +211,28 @@ describe('todoClaim', () => {
       closure_id: 'close', mode: 'stopped', decision: 'user:stop', note: 'Stop locally', acknowledged_gaps: [], target: { kind: 'local' } })
     expect(store.get(0)?.executions.at(-1)?.workflow?.closing_id).toBe('close')
     github.getIssue.mockResolvedValue({ state: 'open' })
-    await expect(todoClaim(todo.id!, ['Implement'], 'owner/repo')).rejects.toThrow(/closing|closed|cancel requested/i)
+    await expect(todoClaim(todo.id!, ['Implement'], testRepository)).rejects.toThrow(/closing|closed|cancel requested/i)
     expect(github.createComment).not.toHaveBeenCalled()
   })
 
   it('recovers the original marker after timeout even if the Issue closed, without reposting', async () => {
-    const directory = getContribDir('owner', 'repo')
+    const directory = testProjectDirectory()
     const store = new TodoStore(directory)
     const todo = store.add({ ref: '#2', title: 'Claim', type: 'feature' })
     github.getIssue.mockResolvedValue({ state: 'open' })
     github.createComment.mockRejectedValue(new Error('Response lost'))
-    await expect(todoClaim(todo.id!, ['Implement'], 'owner/repo')).rejects.toThrow('Response lost')
+    await expect(todoClaim(todo.id!, ['Implement'], testRepository)).rejects.toThrow('Response lost')
     const body = github.createComment.mock.calls[0]![3]
     github.getIssue.mockResolvedValue({ state: 'closed' })
-    await expect(todoClaim(todo.id!, ['Implement'], 'owner/repo')).rejects.toThrow(/remains unresolved/i)
+    await expect(todoClaim(todo.id!, ['Implement'], testRepository)).rejects.toThrow(/remains unresolved/i)
     github.getIssueComments.mockResolvedValue([{ id: 602, body }])
-    await todoClaim(todo.id!, ['Implement'], 'owner/repo')
+    await todoClaim(todo.id!, ['Implement'], testRepository)
     expect(new RemoteEffects(directory, todo.id!).list()[0]?.state).toBe('linked')
     expect(github.createComment).toHaveBeenCalledTimes(1)
   })
 
   it('serializes overlapping identical claims so only one comment is posted', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     const target = store.add({ ref: '#2', title: 'Target', type: 'feature' })
     github.getIssue.mockResolvedValue({ state: 'open' })
     const comments: Array<{ id: number; body: string; user: { login: string } }> = []
@@ -212,8 +245,8 @@ describe('todoClaim', () => {
       return comment
     })
 
-    const first = todoClaim(target.id!, ['Same item'], 'owner/repo')
-    const second = todoClaim(target.id!, ['Same item'], 'owner/repo')
+    const first = todoClaim(target.id!, ['Same item'], testRepository)
+    const second = todoClaim(target.id!, ['Same item'], testRepository)
     await vi.waitFor(() => expect(github.createComment).toHaveBeenCalledTimes(1))
     releaseComment()
     await Promise.all([first, second])
@@ -222,7 +255,7 @@ describe('todoClaim', () => {
   })
 
   it('serializes different claims for the same todo so local claimed items cannot be lost', async () => {
-    const store = new TodoStore(getContribDir('owner', 'repo'))
+    const store = new TodoStore(testProjectDirectory())
     const target = store.add({ ref: '#2', title: 'Target', type: 'feature' })
     github.getIssue.mockResolvedValue({ state: 'open' })
     const comments: Array<{ id: number; body: string; user: { login: string } }> = []
@@ -237,9 +270,9 @@ describe('todoClaim', () => {
       return comment
     })
 
-    const first = todoClaim(target.id!, ['First item'], 'owner/repo')
+    const first = todoClaim(target.id!, ['First item'], testRepository)
     await vi.waitFor(() => expect(github.createComment).toHaveBeenCalledTimes(1))
-    const second = todoClaim(target.id!, ['Second item'], 'owner/repo')
+    const second = todoClaim(target.id!, ['Second item'], testRepository)
     await new Promise(resolve => setTimeout(resolve, 75))
     expect(github.createComment).toHaveBeenCalledTimes(1)
 
@@ -251,7 +284,7 @@ describe('todoClaim', () => {
   })
 
   it('ignores an abandoned legacy lock without deleting its replaceable path', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const store = new TodoStore(contribDir)
     const target = store.add({ ref: '#2', title: 'Target', type: 'feature' })
     github.getIssue.mockResolvedValue({ state: 'open' })
@@ -263,7 +296,7 @@ describe('todoClaim', () => {
     mkdirSync(lockPath, { recursive: true })
     writeFileSync(join(lockPath, 'owner.json'), JSON.stringify({ token: 'abandoned', pid: 2_147_483_647 }), 'utf-8')
 
-    await todoClaim(target.id!, ['Recovered item'], 'owner/repo')
+    await todoClaim(target.id!, ['Recovered item'], testRepository)
 
     expect(existsSync(lockPath)).toBe(true)
     expect(github.createComment).toHaveBeenCalledTimes(1)
@@ -271,7 +304,7 @@ describe('todoClaim', () => {
   })
 
   it('serializes two processes without reclaiming a shared legacy path', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const digest = 'multiprocess-regression'
     const lockPath = join(contribDir, '.locks', `claim-${digest}.lock`)
     const logPath = join(contribDir, 'claim-lock.log')
@@ -296,7 +329,7 @@ describe('todoClaim', () => {
   })
 
   it('waits for an old malformed publication owned by a live process', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const digest = 'publication-pause'
     const lockRoot = join(contribDir, '.locks')
     const malformedPath = join(lockRoot, `claim-${digest}.${process.pid}.paused.choosing.json`)
@@ -318,7 +351,7 @@ describe('todoClaim', () => {
   })
 
   it('ignores a stale contender after its pid is reused by a newer process instance', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const digest = 'pid-reuse'
     const lockRoot = join(contribDir, '.locks')
     const token = 'stale-owner'
@@ -345,7 +378,7 @@ describe('todoClaim', () => {
   })
 
   it('converges two processes on one stable id for a legacy todo', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     mkdirSync(contribDir, { recursive: true })
     writeFileSync(join(contribDir, 'todos.yaml'), `todos:
   - ref: "#7"
@@ -373,7 +406,7 @@ describe('todoClaim', () => {
   })
 
   it('names the stable todo id in recovery guidance after an index shifts', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const store = new TodoStore(contribDir)
     store.add({ ref: '#1', title: 'Earlier', type: 'chore' })
     const target = store.add({ ref: '#2', title: 'Target', type: 'feature' })
@@ -385,7 +418,7 @@ describe('todoClaim', () => {
       return { id: 701, body }
     })
 
-    const claiming = todoClaim('2', ['Target item'], 'owner/repo')
+    const claiming = todoClaim('2', ['Target item'], testRepository)
     await vi.waitFor(() => expect(github.getIssue).toHaveBeenCalled())
     store.delete(0)
     releaseIssue({ state: 'open' })

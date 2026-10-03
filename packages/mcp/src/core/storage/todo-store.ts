@@ -16,6 +16,7 @@ import { normalizeTodoPulls } from './todo-pulls.js'
 import type { WorkflowState } from '../execution/contracts.js'
 import { workflowRequestSchema } from '../execution/contracts.js'
 import { activeControl, controlIsPaused, createWorkflow, transitionWorkflow, unresolvedOperations } from '../execution/workflow.js'
+import { readTodoItems } from 'contribbot-core/todo/file-read'
 import {
   currentTodoExecution, isTerminalTodo, normalizeEvidence, normalizeTodo,
   requireNonEmpty, todoArrayFromDocument, validateTodoIds,
@@ -136,10 +137,9 @@ export class TodoStore {
         let allowed: AllowedIssueCloseJournal | undefined
         // Only the exact managed Issue closure may account for its own retained journal.
         if (intent?.target.kind === 'issue') {
-          const [owner, repo, extra] = intent.target.repo.split('/')
-          if (owner && repo && extra === undefined) {
+          if (intent.target.repo.platform === 'github' && intent.target.repo.instance === 'https://github.com') {
             allowed = {
-              owner, repo, issueNumber: intent.target.issue_number, todoId, executionId,
+              repository: intent.target.repo, issueNumber: intent.target.issue_number, todoId, executionId,
               closureId: intent.id, lifecycleRevision: todo.lifecycle_revision ?? 0,
               commentDigest: intent.target.comment_digest,
             }
@@ -191,11 +191,7 @@ export class TodoStore {
   }
 
   list(): TodoItem[] {
-    if (!existsSync(this.yamlPath)) return []
-    const content = readFileSync(this.yamlPath, 'utf-8')
-    const todos = todoArrayFromDocument(parse(content), 'todos.yaml').map(item => normalizeTodo(item as TodoItem))
-    validateTodoIds(todos)
-    return todos
+    return readTodoItems(this.baseDir)
   }
 
   listSorted(): TodoItem[] {

@@ -61,15 +61,18 @@ function currentState(directory: string, todoId: string, executionId: string): W
 }
 
 async function observe(target: RemoteTarget, candidate: Candidate, local: CommitObservation) {
+  if (target.repo.platform !== 'github' || target.repo.instance !== 'https://github.com') {
+    return { endpoint: 'not_observed' as const, note: 'Remote delivery reads support GitHub.com repositories only.', local: local.commit, facts: null }
+  }
   if (local.endpoint !== 'present') return {
     endpoint: local.endpoint, note: local.note, local: local.commit, facts: null,
   }
-  const [owner, name] = target.repo.split('/') as [string, string]
+  const [owner, name] = target.repo.path.split('/') as [string, string]
   const readIdentity = async () => target.kind === 'remote_ref'
     ? refSchema.parse(await getGitReference(owner, name, target.ref))
     : pullSchema.parse(await getPull(owner, name, target.number))
   const first = await readIdentity()
-  let sourceRepo = target.repo
+  let sourceRepo = target.repo.path
   let sha: string
   let stateMatches = true
   if ('object' in first) {
@@ -78,7 +81,7 @@ async function observe(target: RemoteTarget, candidate: Candidate, local: Commit
   }
   else {
     if (target.kind !== 'remote_pull' || first.number !== target.number
-      || !sameRepo(first.base.repo.full_name, target.repo) || first.base.ref !== target.base) {
+      || !sameRepo(first.base.repo.full_name, target.repo.path) || first.base.ref !== target.base) {
       throw new Error('Remote PR identity mismatch.')
     }
     if (first.merged && (first.state !== 'closed' || !first.merged_at || !first.merge_commit_sha)) {

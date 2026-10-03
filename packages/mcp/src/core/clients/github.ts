@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { validatePathSegment } from '../utils/config.js'
+import { parseRepositoryInput, type RepositoryInput } from '../utils/repository-ref.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -99,13 +100,14 @@ export async function ghApi<T>(path: string, params: Record<string, string | num
 
 // --- Exported helpers ---
 
-export function parseRepo(repo?: string): { owner: string, name: string } {
-  if (!repo) throw new Error('repo is required. Pass owner/name.')
-  const parts = repo.split('/')
-  if (parts.length === 2 && parts[0] && parts[1]) {
-    return { owner: validatePathSegment(parts[0]), name: validatePathSegment(parts[1]) }
+export function parseRepo(repo?: RepositoryInput): { owner: string, name: string } {
+  if (!repo) throw new Error('repo is required. Pass a complete { platform, instance, path } repository object.')
+  const repository = parseRepositoryInput(repo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error(`GitHub operation does not support ${repository.platform} instance ${repository.instance}.`)
   }
-  throw new Error('repo is required. Pass owner/name.')
+  const [owner, name] = repository.path.split('/')
+  return { owner: validatePathSegment(owner!), name: validatePathSegment(name!) }
 }
 
 // GitHub REST API response types (minimal)

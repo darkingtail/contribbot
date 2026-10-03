@@ -2,8 +2,9 @@ import { parseRepo, getCompareCommits, listReleases, listTags, searchIssues } fr
 import { UpstreamStore } from '../../storage/upstream-store.js'
 import { DAILY_COMMIT_ACTIONS, validateEnum } from '../../enums.js'
 import type { DailyCommitAction } from '../../enums.js'
-import { getContribDir } from '../../utils/config.js'
-import { resolveRepo } from '../../utils/resolve-repo.js'
+import { markdownTable } from '../../utils/format.js'
+import { resolveRepo, resolveRepoIdentity } from '../../utils/resolve-repo.js'
+import { repositoryDisplay, repositoryRefSchema, type RepositoryInput, type RepositoryRef } from '../../utils/repository-ref.js'
 
 function parseCommitType(message: string): string {
   const firstLine = message.split('\n')[0] ?? ''
@@ -90,18 +91,27 @@ function formatDate(isoDate: string): string {
 
 // ── Main Functions ──────────────────────────────────────
 
+async function resolveGithubDailyRepo(repo?: RepositoryInput) {
+  const { repository } = await resolveRepoIdentity(repo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error('upstream_daily currently supports only repositories on GitHub.com.')
+  }
+  return resolveRepo(repository)
+}
+
 export async function upstreamDaily(
-  upstreamRepo: string,
-  repo?: string,
+  upstreamRepo: RepositoryRef,
+  repo?: RepositoryInput,
   sinceTag?: string,
 ): Promise<string> {
-  const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = await resolveRepo(repo)
-  const contribDir = getContribDir(tgtOwner, tgtName)
+  const source = repositoryRefSchema.parse(upstreamRepo)
+  const { owner: upOwner, name: upName } = parseRepo(source)
+  const { owner: tgtOwner, name: tgtName, directory: contribDir, repository } = await resolveGithubDailyRepo(repo)
   const store = new UpstreamStore(contribDir)
 
 
-  const upstreamRepoKey = `${upOwner}/${upName}`
+  const upstreamRepoKey = source
+  const identityArgs = `repo=${JSON.stringify(repository)}, upstream_repo=${JSON.stringify(source)}`
   let anchorTag = store.getLatestVersionTag(upstreamRepoKey)
 
   // ── State 1: No anchor, no sinceTag — show releases/tags for selection ──
@@ -118,7 +128,7 @@ export async function upstreamDaily(
           `No releases or tags found for ${upOwner}/${upName}.`,
           '',
           'You can use a specific commit SHA as the tracking anchor:',
-          `\`upstream_daily(upstream_repo="${upOwner}/${upName}", since_tag="<commit-sha>")\``,
+          `\`upstream_daily(${identityArgs}, since_tag="<commit-sha>")\``,
           '',
           'The anchor marks the starting point — only commits after it will be tracked.',
         ].join('\n')
@@ -129,17 +139,17 @@ export async function upstreamDaily(
         '',
         `No releases for ${upOwner}/${upName}. Showing tags instead:`,
         '',
-        '| # | Tag |',
-        '|---|-----|',
+        '| # | Tag | 备注 |',
+        '|---|-----|------|',
       ]
 
       tags.forEach((tag, i) => {
-        lines.push(`| ${i + 1} | ${tag.name} |`)
+        lines.push(`| ${i + 1} | ${tag.name} | ${repositoryDisplay(source)} |`)
       })
 
       lines.push('')
       lines.push('Select your current aligned version:')
-      lines.push(`\`upstream_daily(upstream_repo="${upOwner}/${upName}", since_tag="${tags[0]?.name ?? ''}")\``)
+      lines.push(`\`upstream_daily(${identityArgs}, since_tag=${JSON.stringify(tags[0]?.name ?? '')})\``)
 
       return lines.join('\n')
     }
@@ -149,18 +159,18 @@ export async function upstreamDaily(
       '',
       `No tracked versions for ${upOwner}/${upName}.`,
       '',
-      '| # | Version | Date |',
-      '|---|---------|------|',
+      '| # | Version | Date | 备注 |',
+      '|---|---------|------|------|',
     ]
 
     releases.forEach((release, i) => {
       const date = release.published_at ? release.published_at.slice(0, 10) : '—'
-      lines.push(`| ${i + 1} | ${release.tag_name} | ${date} |`)
+      lines.push(`| ${i + 1} | ${release.tag_name} | ${date} | ${repositoryDisplay(source)} |`)
     })
 
     lines.push('')
     lines.push('Select your current aligned version:')
-    lines.push(`\`upstream_daily(upstream_repo="${upOwner}/${upName}", since_tag="${releases[0]?.tag_name ?? ''}")\``)
+    lines.push(`\`upstream_daily(${identityArgs}, since_tag=${JSON.stringify(releases[0]?.tag_name ?? '')})\``)
 
     return lines.join('\n')
   }
@@ -300,7 +310,7 @@ export async function upstreamDaily(
   const syncedCount = allCommits.filter(c => c.action === 'synced').length
 
   const lines: string[] = [
-    `## Daily — ${upOwner}/${upName}`,
+    `## Daily — ${repositoryDisplay(source)}`,
     `> Anchor: ${anchorTag} · 最后检查: ${allDaily.last_checked ?? '—'} · ${newEntries.length} new · ${linkedCount} 已关联 · ${pendingRelevant.length} 待处理${pendingNoise.length > 0 ? ` · ${pendingNoise.length} 建议skip` : ''}${skippedCount > 0 ? ` · ${skippedCount} skipped` : ''}${syncedCount > 0 ? ` · ${syncedCount} synced` : ''}`,
     '',
   ]
@@ -314,36 +324,37 @@ export async function upstreamDaily(
     lines.push('_All commits processed. No pending items._')
   }
   else {
-    lines.push('| # | SHA | Date | Type | Commit | Suggest | Action | Ref |')
-    lines.push('|---|-----|------|------|--------|---------|--------|-----|')
-
-    sorted.forEach((commit, i) => {
-      const refText = commit.ref
-        ? `[${commit.ref}](https://github.com/${tgtOwner}/${tgtName}/issues/${commit.ref.replace('#', '')})`
-        : '—'
-      const suggest = suggestAction(commit.type, commit.message) ?? '—'
-      lines.push(
-        `| ${i + 1} | ${commit.sha.slice(0, 7)} | ${formatDate(commit.date)} | ${commit.type} | ${commit.message} | ${suggest} | ${actionLabel(commit.action)} | ${refText} |`,
-      )
-    })
+    lines.push(markdownTable(
+      ['#', 'SHA', 'Date', 'Type', 'Commit', 'Suggest', 'Action', 'Ref', '备注'],
+      sorted.map((commit, i) => {
+        const refText = commit.ref
+          ? `[${commit.ref}](https://github.com/${tgtOwner}/${tgtName}/issues/${commit.ref.replace('#', '')})`
+          : '—'
+        const suggest = suggestAction(commit.type, commit.message) ?? '—'
+        return [
+          String(i + 1), commit.sha.slice(0, 7), formatDate(commit.date), commit.type,
+          commit.message, suggest, actionLabel(commit.action), refText, repositoryDisplay(source),
+        ]
+      }),
+    ))
   }
 
   return lines.join('\n')
 }
 
 export async function upstreamDailyAct(
-  upstreamRepo: string,
+  upstreamRepo: RepositoryRef,
   sha: string,
   action: string,
   ref?: string,
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
-  const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = await resolveRepo(repo)
-  const contribDir = getContribDir(tgtOwner, tgtName)
+  const source = repositoryRefSchema.parse(upstreamRepo)
+  const label = repositoryDisplay(source)
+  const { directory: contribDir } = await resolveGithubDailyRepo(repo)
   const store = new UpstreamStore(contribDir)
 
-  const daily = store.getDaily(`${upOwner}/${upName}`)
+  const daily = store.getDaily(source)
   // Support matching by SHA prefix or PR number (e.g. "#57223" or "57223")
   const prMatch = sha.match(/^#?(\d{4,})$/)
   const commit = prMatch
@@ -351,41 +362,41 @@ export async function upstreamDailyAct(
     : daily.commits.find(c => c.sha === sha || c.sha.startsWith(sha))
 
   if (!commit) {
-    throw new Error(`Commit "${sha}" not found in daily data for ${upOwner}/${upName}. Use SHA prefix or PR number (e.g. "#57223").`)
+    throw new Error(`Commit "${sha}" not found in daily data for ${label}. Use SHA prefix or PR number (e.g. "#57223").`)
   }
 
-  store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {
+  store.updateDailyCommit(source, commit.sha, {
     action: validateEnum(DAILY_COMMIT_ACTIONS, action, 'action'),
     ref: ref ?? null,
   })
 
-  return `Updated ${upOwner}/${upName} commit ${commit.sha.slice(0, 7)}: action → ${action}${ref ? `, ref → ${ref}` : ''}`
+  return `Updated ${label} commit ${commit.sha.slice(0, 7)}: action → ${action}${ref ? `, ref → ${ref}` : ''}`
 }
 
 /**
  * Batch skip all commits that are suggested as noise.
  */
 export async function upstreamDailySkipNoise(
-  upstreamRepo: string,
-  repo?: string,
+  upstreamRepo: RepositoryRef,
+  repo?: RepositoryInput,
 ): Promise<string> {
-  const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = await resolveRepo(repo)
-  const contribDir = getContribDir(tgtOwner, tgtName)
+  const source = repositoryRefSchema.parse(upstreamRepo)
+  const label = repositoryDisplay(source)
+  const { directory: contribDir } = await resolveGithubDailyRepo(repo)
   const store = new UpstreamStore(contribDir)
 
 
-  const daily = store.getDaily(`${upOwner}/${upName}`)
+  const daily = store.getDaily(source)
 
   const updates = daily.commits
     .filter(c => c.action === null && suggestAction(c.type, c.message) === 'skip')
     .map(c => ({ sha: c.sha, fields: { action: 'skip' as const } }))
 
   if (updates.length === 0) {
-    return `No noise commits to skip for ${upOwner}/${upName}.`
+    return `No noise commits to skip for ${label}.`
   }
 
-  store.updateDailyCommitBatch(`${upOwner}/${upName}`, updates)
+  store.updateDailyCommitBatch(source, updates)
 
-  return `Skipped **${updates.length}** noise commits for ${upOwner}/${upName}. Use \`upstream_daily\` to see remaining.`
+  return `Skipped **${updates.length}** noise commits for ${label}. Use \`upstream_daily\` to see remaining.`
 }

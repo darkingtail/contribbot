@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { RepoConfig } from '../../storage/repo-config.js'
+import { projectDirectory, type RepositoryRef } from '../../utils/repository-ref.js'
 import {
   knowledgeProposeUpdate,
   knowledgeProposals,
@@ -10,6 +12,7 @@ import {
   knowledgeRollbackUpdate,
   countPendingProposals,
 } from './knowledge-evolution.js'
+import { knowledgeList, knowledgeRead } from './knowledge.js'
 
 let home: string
 let repoCounter = 0
@@ -20,21 +23,20 @@ const origHome = process.env.HOME
 const origUserProfile = process.env.USERPROFILE
 
 function knowledgePath(target: string): string {
-  return join(home, '.contribbot', owner, name, 'knowledge', target, 'README.md')
+  return join(projectDirectory(repo()), 'knowledge', target, 'README.md')
 }
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'kp-tool-home-'))
   process.env.HOME = home
   process.env.USERPROFILE = home
-  // Unique repo per test so resolveRepo's in-process cache never collides.
   repoCounter += 1
   owner = `owner${repoCounter}`
   name = `repo${repoCounter}`
-  // Seed config.yaml so resolveRepo resolves offline (no GitHub API call).
-  const repoDir = join(home, '.contribbot', owner, name)
-  mkdirSync(repoDir, { recursive: true })
-  writeFileSync(join(repoDir, 'config.yaml'), 'fork: null\nupstream: null\n', 'utf-8')
+  new RepoConfig(projectDirectory(repo())).save({
+    schema_version: 3, repository: repo(), lifecycle: { status: 'active' },
+    parent: { status: 'unknown' }, tracking: { status: 'pending' },
+  })
 })
 
 afterEach(() => {
@@ -43,7 +45,7 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true })
 })
 
-const repo = () => `${owner}/${name}`
+const repo = (): RepositoryRef => ({ platform: 'github', instance: 'https://github.com', path: `${owner}/${name}` })
 
 async function propose(overrides: Record<string, unknown> = {}) {
   return knowledgeProposeUpdate({
@@ -65,7 +67,7 @@ describe('knowledge evolution tools', () => {
     expect(out).toContain('# Arch')
     expect(out).toContain('Layered.')
     expect(() => readFileSync(knowledgePath('arch'), 'utf-8')).toThrow()
-    expect(countPendingProposals(owner, name)).toBe(1)
+    expect(countPendingProposals(repo())).toBe(1)
   })
 
   it('apply create writes README with provenance footer', async () => {
@@ -77,7 +79,7 @@ describe('knowledge evolution tools', () => {
     expect(content).toContain('<!-- contribbot:provenance -->')
     expect(content).toContain('via kp-1')
     expect(content).toContain('issue#42')
-    expect(countPendingProposals(owner, name)).toBe(0)
+    expect(countPendingProposals(repo())).toBe(0)
   })
 
   it('apply create fails when target already exists', async () => {
@@ -145,7 +147,7 @@ describe('knowledge evolution tools', () => {
     expect(first).toContain('created')
     expect(second).toContain('refreshed')
     expect(second).toContain('2 observation(s)')
-    expect(countPendingProposals(owner, name)).toBe(1)
+    expect(countPendingProposals(repo())).toBe(1)
   })
 
   it('rolls back a created knowledge entry', async () => {
@@ -166,5 +168,37 @@ describe('knowledge evolution tools', () => {
     const content = readFileSync(knowledgePath('arch'), 'utf-8')
     expect(content).toContain('Layered.')
     expect(content).not.toContain('Changed.')
+  })
+
+  it('isolates proposals and canonical knowledge across instances with the same path', async () => {
+    const other: RepositoryRef = { platform: 'gitlab', instance: 'https://code.example.com/gitlab', path: repo().path }
+    const anotherInstance: RepositoryRef = { ...other, instance: 'https://gitlab.com' }
+    new RepoConfig(projectDirectory(other)).save({
+      schema_version: 3, repository: other, lifecycle: { status: 'active' },
+      parent: { status: 'unknown' }, tracking: { status: 'pending' },
+    })
+    new RepoConfig(projectDirectory(anotherInstance)).save({
+      schema_version: 3, repository: anotherInstance, lifecycle: { status: 'active' },
+      parent: { status: 'unknown' }, tracking: { status: 'pending' },
+    })
+
+    await propose()
+    expect(await knowledgeProposals(other)).toContain('No proposals')
+    expect(await knowledgeProposals(anotherInstance)).toContain('No proposals')
+    expect(countPendingProposals(other)).toBe(0)
+    await knowledgeApplyUpdate(repo(), 'kp-1')
+    expect(() => readFileSync(join(projectDirectory(other), 'knowledge', 'arch', 'README.md'), 'utf-8')).toThrow()
+
+    await knowledgeProposeUpdate({
+      repo: other, target: 'arch', action: 'create', source_type: 'todo',
+      title: 'Other architecture', rationale: 'different instance', proposed_content: '# Other',
+    })
+    await knowledgeApplyUpdate(other, 'kp-1')
+    expect(readFileSync(knowledgePath('arch'), 'utf-8')).toContain('Layered.')
+    expect(readFileSync(join(projectDirectory(other), 'knowledge', 'arch', 'README.md'), 'utf-8')).toContain('# Other')
+    expect(await knowledgeRead('arch', other)).toContain('# Other')
+    expect(await knowledgeRead('arch', anotherInstance)).toContain('not found')
+    expect(await knowledgeList(anotherInstance)).toContain('No knowledge')
+    expect(await knowledgeProposals(anotherInstance)).toContain('No proposals')
   })
 })

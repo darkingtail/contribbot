@@ -15,7 +15,14 @@ const fixture = fileURLToPath(new URL('./__fixtures__/dispatch-race-worker.ts', 
 const tsx = fileURLToPath(new URL('../../../node_modules/tsx/dist/cli.mjs', import.meta.url))
 
 let directory: string
-beforeEach(() => { directory = mkdtempSync(join(tmpdir(), 'consult-dispatch-race-')) })
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'consult-dispatch-race-'))
+  writeFileSync(join(directory, 'config.yaml'), JSON.stringify({
+    schema_version: 3,
+    repository: { platform: 'github', instance: 'https://github.com', path: 'fixture/runner' },
+    lifecycle: { status: 'active' }, parent: { status: 'unknown' }, tracking: { status: 'pending' },
+  }))
+})
 afterEach(() => { rmSync(directory, { recursive: true, force: true }) })
 
 function reserve(store: ConsultStore) {

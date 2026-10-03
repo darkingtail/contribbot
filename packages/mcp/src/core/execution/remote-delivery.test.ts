@@ -12,6 +12,7 @@ import { prepareClosureWithReadback, finalizeClosureWithReadback } from './closu
 import { captureCandidate } from './candidate.js'
 import { verifyReadiness } from './verification.js'
 import * as commits from './commit-delivery.js'
+import { fixtureProjectDirectory, fixtureRepository, saveFixtureProjectConfig } from './__fixtures__/repository.js'
 
 const api = vi.hoisted(() => ({
   getPull: vi.fn(), getGitReference: vi.fn(), getGitCommit: vi.fn(), getGitTree: vi.fn(),
@@ -19,7 +20,7 @@ const api = vi.hoisted(() => ({
 vi.mock('../clients/github.js', () => api)
 
 const remoteTarget = () => ({
-  kind: 'remote_pull' as const, repo: 'fixture/delivery', number: 7, base: 'main',
+  kind: 'remote_pull' as const, repo: fixtureRepository('fixture/delivery'), number: 7, base: 'main',
   endpoint: 'merged' as const, scope: ['src'], allow_draft: false,
 })
 const planFor = (target: unknown = remoteTarget(), required = true): WorkflowPlanInput => ({
@@ -33,7 +34,7 @@ const planFor = (target: unknown = remoteTarget(), required = true): WorkflowPla
 describe('explicit remote delivery declarations', () => {
   it('accepts exact scoped PR and remote ref declarations as part of the plan digest', () => {
     expect(() => planDigest(planFor())).not.toThrow()
-    expect(() => planDigest(planFor({ kind: 'remote_ref', repo: 'fixture/delivery', ref: 'refs/heads/main', scope: ['src'] }))).not.toThrow()
+    expect(() => planDigest(planFor({ kind: 'remote_ref', repo: fixtureRepository('fixture/delivery'), ref: 'refs/heads/main', scope: ['src'] }))).not.toThrow()
     expect(planDigest(planFor())).not.toBe(planDigest(planFor({ ...remoteTarget(), number: 8 })))
   })
 
@@ -61,7 +62,7 @@ describe('fresh remote readback for the current delivery candidate', () => {
   let tree: { sha: string; truncated: boolean; tree: { path: string; mode: string; type: string; sha: string }[] }
   const state = () => store.get(0)!.executions[0]!.workflow!
   const local = (action: string, payload: Record<string, unknown> = {}) => runLocalCommand({
-    action, repo: 'fixture/delivery', data_root: join(home, 'data'),
+    action, repo: fixtureRepository('fixture/delivery'), data_root: join(home, 'data'),
     todo_id: todoId, execution_id: executionId, ...payload,
   })
   const mutation = () => ({ request_id: `fixture-${++serial}`, expected_revision: state()?.revision ?? 0 })
@@ -93,7 +94,7 @@ describe('fresh remote readback for the current delivery candidate', () => {
     vi.resetAllMocks()
     home = mkdtempSync(join(tmpdir(), 'contribbot-remote-delivery-'))
     workspace = join(home, 'workspace')
-    directory = join(home, 'data/fixture/delivery')
+    directory = fixtureProjectDirectory(join(home, 'data'), 'fixture/delivery')
     mkdirSync(join(workspace, 'src'), { recursive: true })
     git('init', '--quiet', '--initial-branch=fixture')
     git('config', 'user.name', 'Fixture')
@@ -102,10 +103,10 @@ describe('fresh remote readback for the current delivery candidate', () => {
     writeFileSync(join(workspace, 'src/index.txt'), 'implemented\n')
     git('add', '.')
     git('commit', '--quiet', '-m', 'fixture')
+    saveFixtureProjectConfig(directory, 'fixture/delivery')
     store = new TodoStore(directory)
     todoId = store.add({ ref: 'remote', title: 'Remote delivery', type: 'feature' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
     serial = 0
     const remoteSha = 'a'.repeat(40)
     pull = {
@@ -179,7 +180,12 @@ describe('fresh remote readback for the current delivery candidate', () => {
   }, 30_000)
 
   it('checks the current remote branch contents without pushing or changing the local branch', async () => {
-    await setup(planFor({ kind: 'remote_ref', repo: 'fixture/delivery', ref: 'refs/heads/main', scope: ['src'] }))
+    await setup(planFor({
+      kind: 'remote_ref',
+      repo: fixtureRepository('fixture/delivery'),
+      ref: 'refs/heads/main',
+      scope: ['src'],
+    }))
     const head = git('rev-parse', 'HEAD')
     expect((await local('inspect')).readiness).toMatchObject({ ready: true, deliveries: [{ endpoint: 'present' }] })
     expect(api.getGitReference).toHaveBeenCalledWith('fixture', 'delivery', 'refs/heads/main')

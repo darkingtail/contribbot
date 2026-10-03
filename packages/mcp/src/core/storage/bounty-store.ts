@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
 import { todayDate } from '../utils/format.js'
-import { safeWriteFileSync } from '../utils/fs.js'
+import { assertNoSymlinks, safeWriteFileSync } from '../utils/fs.js'
 
 export const BOUNTY_RAILS = ['arc-usdc', 'github-sponsors', 'manual'] as const
 export type BountyRail = typeof BOUNTY_RAILS[number]
@@ -49,6 +49,7 @@ export class BountyStore {
   }
 
   list(): BountyItem[] {
+    assertNoSymlinks(this.yamlPath)
     if (!existsSync(this.yamlPath)) return []
     const content = readFileSync(this.yamlPath, 'utf-8')
     const data = parse(content) as BountiesFile | null
@@ -164,7 +165,9 @@ export class BountyStore {
   }
 
   private save(bounties: BountyItem[]): void {
+    assertNoSymlinks(this.yamlPath)
     if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
+    assertNoSymlinks(this.yamlPath)
     safeWriteFileSync(this.yamlPath, stringify({ bounties }))
   }
 }

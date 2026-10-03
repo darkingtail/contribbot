@@ -201,7 +201,7 @@ export function interruptedIssueCloseMessage(accounted: AccountedIssueClose): st
       : effect.result?.kind === 'close' ? 'close returned closed' : 'unknown')
   const failedReads = record.reads.filter(read => read.kind === 'read-failed')
     .map(read => `${read.method} GET failed`).join(', ')
-  return `Plain issue_close for ${journal.owner}/${journal.repo}#${journal.issueNumber} was interrupted by `
+  return `Plain issue_close for ${journal.repository.path}#${journal.issueNumber} was interrupted by `
     + `${request.kind} control ${request.id} (${request.decision}). `
     + `Original effects accounted: ${effects.join(', ') || 'no POST admitted'}. Receipt: ${accounted.digest}. `
     + (record.basis === 'zero-admission-recovery' ? 'Zero-admission recovery; previous GET outcomes were not recovered. ' : '')

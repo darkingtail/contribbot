@@ -99,7 +99,8 @@ describe('Todo managed workflow persistence', () => {
     git('init', '--quiet')
     git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '--quiet', '-m', 'fixture')
     const snapshot = captureCandidate(root)
-    const workspace = { repo: 'fixture/repo', root: snapshot.root, git_dir: snapshot.git_dir,
+    const workspace = { repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+      root: snapshot.root, git_dir: snapshot.git_dir,
       common_dir: snapshot.common_dir, baseline: snapshot.digest, machine: localMachine() }
     const bind = (id: string, execution: string) => {
       store.applyWorkflow(id, execution, proposal)

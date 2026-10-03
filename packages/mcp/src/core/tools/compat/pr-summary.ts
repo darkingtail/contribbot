@@ -1,5 +1,6 @@
 import { getPull, getPullChecks, getPullFiles, getPullReviews, parseRepo } from '../../clients/github.js'
 import { markdownTable, relativeTime } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 function groupFilesByComponent(files: { filename: string, status: string, additions: number, deletions: number }[]): Map<string, typeof files> {
   const groups = new Map<string, typeof files>()
@@ -13,7 +14,7 @@ function groupFilesByComponent(files: { filename: string, status: string, additi
   return groups
 }
 
-export async function prSummary(prNumber: number, repo?: string): Promise<string> {
+export async function prSummary(prNumber: number, repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
   const [pr, files, reviews] = await Promise.all([

@@ -1,10 +1,12 @@
 import { getLatestRelease, getRepoCommits, getRepoIssues, getRepoPulls, parseRepo } from '../../clients/github.js'
 import { markdownTable, relativeTime, truncate } from '../../utils/format.js'
-import { listAllKnowledge } from '../core/knowledge-resources.js'
+import { listProjectKnowledge } from '../core/knowledge.js'
 import { countPendingProposals } from '../core/knowledge-evolution.js'
+import type { RepositoryInput, RepositoryRef } from '../../utils/repository-ref.js'
 
-export async function projectDashboard(repo?: string): Promise<string> {
+export async function projectDashboard(repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
+  const repository: RepositoryRef = { platform: 'github', instance: 'https://github.com', path: `${owner}/${name}` }
 
   const [issues, pulls, commits, release] = await Promise.all([
     getRepoIssues(owner, name, 'open', 100),
@@ -96,19 +98,18 @@ export async function projectDashboard(repo?: string): Promise<string> {
   }
 
   // Project knowledge
-  const repoKey = `${owner}/${name}`
-  const knowledge = listAllKnowledge().filter(k => k.repo === repoKey)
+  const knowledge = listProjectKnowledge(repository)
   if (knowledge.length > 0) {
     lines.push('')
     lines.push(`### Knowledge (${knowledge.length})`)
     const headers = ['Name', 'Description']
     const rows = knowledge.map(k => [k.name, k.description])
     lines.push(markdownTable(headers, rows))
-    lines.push(`> Read details: \`knowledge://${repoKey}/{name}\``)
+    lines.push('> Read details with `knowledge_list` for this repository.')
   }
 
   // Pending knowledge proposals
-  const pendingProposals = countPendingProposals(owner, name)
+  const pendingProposals = countPendingProposals(repository)
   if (pendingProposals > 0) {
     lines.push('')
     lines.push(`> 📝 待审知识提案: ${pendingProposals} 条 — 运行 \`knowledge_proposals\` 查看`)

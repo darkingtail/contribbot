@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { projectDirectory } from 'contribbot-core/repository/ref'
+import { stringify } from 'yaml'
 import { consultDecide, consultPrepare, consultRead, consultRequest, consultStatus, createConsultStore } from '../dist/index.js'
 
 const execute = promisify(execFile)
@@ -25,8 +27,8 @@ process.env.CODEX_HOME ??= join(originalHome, '.codex')
 process.env.HOME = home
 process.env.USERPROFILE = home
 
-const repo = 'consult-smoke/synthetic'
-const dataDirectory = join(home, '.contribbot', 'consult-smoke', 'synthetic')
+const repo = { platform: 'github', instance: 'https://github.com', path: 'consult-smoke/synthetic' }
+const dataDirectory = projectDirectory(repo, join(home, '.contribbot'))
 const runnerCli = fileURLToPath(new URL('../../runner/dist/cli.js', import.meta.url))
 const question = 'A synthetic counter displays 0 initially, increments to 1, and reset returns it to 0. Give one short suggested test. Do not use tools or read any files.'
 const authorization = {
@@ -48,6 +50,11 @@ async function runRunner(args) {
 const inspected = await runRunner(['provider', 'inspect', '--runtime', runtime, '--executable', executable])
 assert.ok(inspected.binding)
 assert.equal(existsSync(join(home, '.contribbot')), false, 'Provider inspection must not create Consult records.')
+mkdirSync(dataDirectory, { recursive: true })
+writeFileSync(join(dataDirectory, 'config.yaml'), stringify({
+  schema_version: 3, repository: repo, lifecycle: { status: 'active' },
+  parent: { status: 'unknown' }, tracking: { status: 'pending' },
+}))
 const input = {
   repo, request_id: 'smoke-one', purpose: 'research', mode: 'fresh', binding: inspected.binding,
   packet: { workspace, question },

@@ -3,8 +3,8 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import { TodoStore } from '../../storage/todo-store.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { TODO_UPDATABLE_STATUSES, validateEnum } from '../../enums.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 import { todayDate } from '../../utils/format.js'
 import { linkTodoPull } from '../../storage/todo-pulls.js'
 
@@ -16,14 +16,16 @@ function noteMarker(ref: string, note: string): string {
 export async function todoUpdate(
   item: string,
   fields: { status?: string; pr?: number; branch?: string; note?: string },
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
   if (fields.status === 'done') {
     throw new Error('Use todo_done to close the execution and complete the Todo without archiving.')
   }
   const status = fields.status === undefined ? undefined : validateEnum(TODO_UPDATABLE_STATUSES, fields.status, 'status')
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+  const { repository, directory: contribDir } = await resolveRepo(repo)
+  if (fields.pr !== undefined && (repository.platform !== 'github' || repository.instance !== 'https://github.com')) {
+    throw new Error('Implicit PR associations support GitHub.com repositories only; no Todo or remote data was changed.')
+  }
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
 
@@ -49,7 +51,7 @@ export async function todoUpdate(
 
     // Association is metadata, not a lifecycle transition or acceptance result.
     if (fields.pr !== undefined) {
-      Object.assign(updateFields, linkTodoPull(resolved.item, `${owner}/${name}`, fields.pr))
+      Object.assign(updateFields, linkTodoPull(resolved.item, repository, fields.pr))
       changes.push(`PR → #${fields.pr}`)
     }
 

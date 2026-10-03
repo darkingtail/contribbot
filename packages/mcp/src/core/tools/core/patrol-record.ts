@@ -1,5 +1,6 @@
 import { PatrolStore } from '../../storage/patrol-store.js'
-import { getContribDir } from '../../utils/config.js'
+import { markdownTable } from '../../utils/format.js'
+import { repositoryDisplay, type RepositoryInput } from '../../utils/repository-ref.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
 
 function parseJson(value: string, label: string): unknown {
@@ -12,7 +13,7 @@ function parseJson(value: string, label: string): unknown {
 }
 
 export async function patrolRecord(args: {
-  repo?: string
+  repo?: RepositoryInput
   run_id: string
   report: string
   snapshot_json: string
@@ -21,7 +22,7 @@ export async function patrolRecord(args: {
   run_json?: string
   actions_json?: string
 }): Promise<string> {
-  const { owner, name } = await resolveRepo(args.repo)
+  const { repository, directory } = await resolveRepo(args.repo)
   const snapshot = parseJson(args.snapshot_json, 'snapshot_json')
   const analysis = parseJson(args.analysis_json, 'analysis_json')
   const trace = parseJson(args.trace_json, 'trace_json')
@@ -30,8 +31,8 @@ export async function patrolRecord(args: {
   const actions = args.actions_json ? parseJson(args.actions_json, 'actions_json') : undefined
   if (actions !== undefined && !Array.isArray(actions)) throw new Error('actions_json must contain a JSON array.')
 
-  const store = new PatrolStore(getContribDir(owner, name))
-  store.writeRun({
+  const store = new PatrolStore(directory)
+  const paths = store.writeRun({
     runId: args.run_id,
     report: args.report,
     snapshot,
@@ -44,18 +45,18 @@ export async function patrolRecord(args: {
   return [
     `## Patrol run recorded — \`${args.run_id}\``,
     '',
-    `| Field | Value |`,
-    `| --- | --- |`,
-    `| Repo | ${owner}/${name} |`,
-    `| Report | \`~/.contribbot/${owner}/${name}/patrol/runs/${args.run_id}/report.md\` |`,
-    `| Latest | \`~/.contribbot/${owner}/${name}/patrol/latest.md\` |`,
+    markdownTable(['Field', 'Value', 'Remark'], [
+      ['Repo', repositoryDisplay(repository), 'Managed project'],
+      ['Report', `\`${paths.reportPath}\``, 'This run'],
+      ['Latest', `\`${paths.latestReportPath}\``, 'Most recent report'],
+    ]),
     '',
     'Snapshot, structured analysis, and execution trace were saved with the report.',
   ].join('\n')
 }
 
-export async function patrolRunGet(repo: string | undefined, runId: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = new PatrolStore(getContribDir(owner, name))
+export async function patrolRunGet(repo: RepositoryInput | undefined, runId: string): Promise<string> {
+  const { directory } = await resolveRepo(repo)
+  const store = new PatrolStore(directory)
   return JSON.stringify(store.readRun(runId))
 }

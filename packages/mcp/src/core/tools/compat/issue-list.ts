@@ -1,8 +1,9 @@
 import { parseRepo, searchIssues } from '../../clients/github.js'
 import { markdownTable } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 export async function issueList(
-  repo?: string,
+  repo?: RepositoryInput,
   state?: string,
   labels?: string,
   query?: string,
@@ -40,7 +41,7 @@ export async function issueList(
 }
 
 export async function prList(
-  repo?: string,
+  repo?: RepositoryInput,
   state?: string,
   query?: string,
 ): Promise<string> {

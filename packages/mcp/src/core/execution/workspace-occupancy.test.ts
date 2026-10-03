@@ -10,6 +10,7 @@ import { runLocalCommand } from './local.js'
 import type { WorkflowCommand } from './contracts.js'
 import { captureCandidate } from './candidate.js'
 import { localMachine } from './processes.js'
+import { fixtureProjectDirectory, saveFixtureProjectConfig } from './__fixtures__/repository.js'
 
 describe('physical workspace occupancy across task stores', () => {
   let home: string
@@ -19,14 +20,15 @@ describe('physical workspace occupancy across task stores', () => {
   ], { cwd: workspace, windowsHide: true, stdio: 'pipe' })
 
   async function participant(dataRoot: string, repo: string, actor: string, root = workspace) {
-    const directory = join(dataRoot, ...repo.split('/'))
+    const directory = fixtureProjectDirectory(dataRoot, repo)
+    saveFixtureProjectConfig(directory, repo)
     const store = new TodoStore(directory)
     const todoId = store.add({ ref: 'edit', title: 'Edit the actual file', type: 'feature' }).id!
     const executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(directory, 'config.yaml'), 'fork: fixture/repo\nupstream: null\n')
     const state = () => store.list()[0]!.executions[0]!.workflow!
     const local = (action: string, payload: Record<string, unknown> = {}) => runLocalCommand({
-      action, repo, data_root: dataRoot, todo_id: todoId, execution_id: executionId, ...payload,
+      action, repo: { platform: 'github', instance: 'https://github.com', path: repo },
+      data_root: dataRoot, todo_id: todoId, execution_id: executionId, ...payload,
     })
     await local('apply', { request_id: 'plan', expected_revision: 0, command: {
       action: 'propose_plan', plan_id: 'plan', plan: {
@@ -73,12 +75,14 @@ describe('physical workspace occupancy across task stores', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  it.each(['different projects', 'independent data roots'])('prevents a second writer from %s changing an occupied file', async mode => {
+  it('rejects a different project identity for the same workspace origin', async () => {
+    await expect(participant(join(home, 'data'), 'fixture/alias', 'primary-b'))
+      .rejects.toThrow(/origin.*repository/i)
+  }, 20_000)
+
+  it('prevents a second writer from an independent data root changing an occupied file', async () => {
     const first = await participant(join(home, 'data'), 'fixture/repo', 'primary-a')
-    const second = await participant(
-      join(home, mode === 'independent data roots' ? 'other-data' : 'data'),
-      mode === 'different projects' ? 'fixture/alias' : 'fixture/repo', 'primary-b',
-    )
+    const second = await participant(join(home, 'other-data'), 'fixture/repo', 'primary-b')
     await first.begin()
     writeFileSync(join(workspace, 'source.txt'), 'primary-a unfinished work')
     const before = second.state()
@@ -153,7 +157,8 @@ describe('physical workspace occupancy across task stores', () => {
     first.apply({
       action: 'begin_delegation', operation_id: 'child', actor: 'primary-a', token: 'token',
       step_id: 'edit', scope: ['source.txt'], purpose: 'Isolated implementation', launch: 'a'.repeat(64),
-      workspace: { repo: 'fixture/repo', root: candidate.root, git_dir: candidate.git_dir,
+      workspace: { repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+        root: candidate.root, git_dir: candidate.git_dir,
         common_dir: candidate.common_dir, baseline: candidate.digest, machine: localMachine() },
     })
     await expect(main.begin()).rejects.toThrow(/occupied/i)

@@ -1,13 +1,14 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  getContribDir,
-} from '../../utils/config.js'
-import { resolveRepo } from '../../utils/resolve-repo.js'
+import { resolveRepo, resolveRepoIdentity } from '../../utils/resolve-repo.js'
+import { projectDirectory, repositoryDisplay, type RepositoryInput, type RepositoryRef } from '../../utils/repository-ref.js'
 import { markdownTable } from '../../utils/format.js'
 import { getReleaseByTag, getLatestRelease, searchCommits, parseRepo } from '../../clients/github.js'
+import { RepoConfig } from '../../storage/repo-config.js'
 import { UpstreamStore } from '../../storage/upstream-store.js'
+import { SyncReportStore } from '../../storage/sync-report-store.js'
+import { assertNoSymlinks } from '../../utils/fs.js'
 import type { PRType } from '../../enums.js'
+import { repositoryRefSchema } from '../../utils/repository-ref.js'
 
 interface SyncItem {
   prNumber: number
@@ -60,8 +61,8 @@ function extractComponent(title: string): string | null {
   return match?.[1] ?? null
 }
 
-function getSyncDir(owner: string, repo: string): string {
-  return join(getContribDir(owner, repo), 'sync')
+function getSyncDir(repository: RepositoryRef): string {
+  return join(projectDirectory(repository), 'sync')
 }
 
 const statusIcon = (s: SyncItem['status']) => {
@@ -99,7 +100,7 @@ function buildOutput(
     `## Upstream Sync: ${upOwner}/${upName} ${releaseTag} → ${tgtRef}`,
     '',
     `**Release**: [${releaseTag}](${releaseUrl})`,
-    `**Branch**: ${targetBranch ?? '(default)'}`,
+    `**Branch**: ${targetBranch ?? '(all branches)'}`,
     `**Total**: ${results.length} | ✅ Synced: ${synced} | ❌ Not synced: ${notSynced}`,
     '',
   ]
@@ -136,15 +137,25 @@ function buildOutput(
 
 export async function upstreamSyncCheck(
   version?: string,
-  upstreamRepo?: string,
-  targetRepo?: string,
+  upstreamRepo?: RepositoryRef,
+  targetRepo?: RepositoryInput,
   save = false,
   targetBranch?: string,
 ): Promise<string> {
-  if (!upstreamRepo) return 'Error: upstream_repo is required. Pass "owner/name".'
-  if (!targetRepo) return 'Error: target_repo is required. Pass "owner/name".'
-  const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
-  const { owner: tgtOwner, name: tgtName } = await resolveRepo(targetRepo)
+  if (!upstreamRepo) return 'Error: upstream_repo is required. Pass a complete { platform, instance, path } object.'
+  if (!targetRepo) return 'Error: target_repo is required. Pass a complete { platform, instance, path } object.'
+  const source = repositoryRefSchema.parse(upstreamRepo)
+  const { owner: upOwner, name: upName } = parseRepo(source)
+  const { owner: tgtOwner, name: tgtName, repository, directory } = await (save ? resolveRepo : resolveRepoIdentity)(targetRepo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error('upstream_sync_check currently supports only repositories on GitHub.com.')
+  }
+  if (save) {
+    if (!new RepoConfig(directory).load()) {
+      throw new Error(`Project ${repository.platform}:${repository.instance}/${repository.path} is not initialized.`)
+    }
+    assertNoSymlinks(getSyncDir(repository))
+  }
 
   let release = null
 
@@ -201,63 +212,47 @@ export async function upstreamSyncCheck(
   const output = buildOutput(results, upOwner, upName, tgtOwner, tgtName, release.tag_name, release.html_url, targetBranch)
 
   if (save) {
-    const dir = getSyncDir(tgtOwner, tgtName)
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    const filePath = join(dir, `${release.tag_name}.md`)
-    writeFileSync(filePath, output, 'utf-8')
+    const filePath = new SyncReportStore(directory).save(source, release.tag_name, targetBranch ?? null, output)
 
     // Auto-mark daily commits before this release date as 'synced'
     const releaseDate = release.published_at?.slice(0, 10)
     let syncedMsg = ''
     if (releaseDate) {
-      const contribDir = getContribDir(tgtOwner, tgtName)
-      const store = new UpstreamStore(contribDir)
-      const count = store.markDailyAsSynced(`${upOwner}/${upName}`, releaseDate)
-      if (count > 0) {
-        syncedMsg = `\n> ✓ Marked ${count} daily commits (≤ ${releaseDate}) as synced`
+      try {
+        const count = new UpstreamStore(directory).markDailyAsSynced(source, releaseDate)
+        if (count > 0) {
+          syncedMsg = `\n> ✓ Marked ${count} daily commits (≤ ${releaseDate}) as synced`
+        }
+      }
+      catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        syncedMsg = `\n> Warning: Report saved, but daily commit marking failed: ${message}`
       }
     }
 
-    return `${output}\n\n> 📁 Saved to ~/.contribbot/${tgtOwner}/${tgtName}/sync/${release.tag_name}.md${syncedMsg}`
+    return `${output}\n\n> 📁 Saved to ${filePath}${syncedMsg}`
   }
 
   return output
 }
 
-export async function syncHistory(targetRepo?: string): Promise<string> {
-  if (!targetRepo) return 'Error: repo is required. Pass "owner/name".'
-  const { owner: tgtOwner, name: tgtName } = await resolveRepo(targetRepo)
-  const dir = getSyncDir(tgtOwner, tgtName)
-
-  if (!existsSync(dir)) {
-    return `## Sync History — ${tgtOwner}/${tgtName}\n\n_No records yet. Run \`upstream_sync_check\` with \`save: true\`._`
-  }
-
-  const files = readdirSync(dir)
-    .filter(f => f.endsWith('.md'))
-    .sort()
-    .reverse()
-
-  if (files.length === 0) {
-    return `## Sync History — ${tgtOwner}/${tgtName}\n\n_No records yet._`
-  }
-
-  const lines = [
-    `## Sync History — ${tgtOwner}/${tgtName}`,
-    '',
-    '| Version | 备注 |',
-    '| --- | --- |',
-  ]
-
-  for (const file of files) {
-    const version = file.replace('.md', '')
-    const content = readFileSync(join(dir, file), 'utf-8')
+export async function syncHistory(targetRepo?: RepositoryInput): Promise<string> {
+  if (!targetRepo) return 'Error: repo is required. Pass the full platform, instance, and path.'
+  const { owner: tgtOwner, name: tgtName, directory } = await resolveRepo(targetRepo)
+  const { reports, legacyCount } = new SyncReportStore(directory).list()
+  const lines = [`## Sync History — ${tgtOwner}/${tgtName}`, '']
+  if (reports.length === 0) lines.push('_No records yet. Run `upstream_sync_check` with `save: true`._')
+  else lines.push('| Source | Version | Target branch | 备注 |', '| --- | --- | --- | --- |')
+  const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/[\r\n]/g, ' ')
+  for (const report of reports.sort((a, b) => a.path.localeCompare(b.path))) {
+    const { content } = report
     const totalMatch = content.match(/\*\*Total\*\*: (\d+)/)
     const notSyncedMatch = content.match(/❌ Not synced: (\d+)/)
     const total = totalMatch?.[1] ?? '?'
     const notSynced = notSyncedMatch?.[1] ?? '?'
-    lines.push(`| ${version} | ${total} PRs，${notSynced} 未对齐 |`)
+    lines.push(`| ${cell(repositoryDisplay(report.source))} | ${cell(report.version)} | ${cell(report.targetBranch ?? '(all)')} | ${total} PRs，${notSynced} 未对齐 |`)
   }
+  if (legacyCount) lines.push('', `${legacyCount} legacy sync/*.md report(s) were not imported or read.`)
 
   return lines.join('\n')
 }

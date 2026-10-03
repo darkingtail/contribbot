@@ -1,6 +1,12 @@
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import {
+  parseRepositoryInput,
+  projectDataRoot,
+  projectDirectory,
+  type RepositoryInput,
+  type RepositoryRef,
+} from './repository-ref.js'
 
 export function getGitHubToken(): string | undefined {
   return process.env.GITHUB_TOKEN
@@ -33,6 +39,14 @@ export function validatePathSegment(segment: string): string {
   return trimmed
 }
 
-export function getContribDir(owner: string, name: string): string {
-  return join(homedir(), '.contribbot', validatePathSegment(owner), validatePathSegment(name))
+export function getProjectDir(repository: RepositoryInput, dataRoot?: string): string {
+  return projectDirectory(parseRepositoryInput(repository), dataRoot)
+}
+
+export function getProjectRootDir(dataRoot?: string): string {
+  return projectDataRoot(dataRoot)
+}
+
+export function getRepositoryProjectDir(repository: RepositoryRef, dataRoot?: string): string {
+  return projectDirectory(repository, dataRoot)
 }

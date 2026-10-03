@@ -22,6 +22,11 @@ const repository = {
   default_branch: 'main',
   fork: false,
 }
+const repositoryRef = (path: string) => ({
+  platform: 'github' as const,
+  instance: 'https://github.com',
+  path,
+})
 
 beforeEach(() => { vi.resetAllMocks() })
 
@@ -31,7 +36,7 @@ describe('repoInfo upstream candidate identity', () => {
       path.endsWith('/contributors') ? [] : repository
     ))
 
-    const result = await repoInfo('old-name/library')
+    const result = await repoInfo(repositoryRef('old-name/library'))
 
     expect(ghApi).toHaveBeenCalledWith('/repos/old-name/library')
     expect(result).toContain(`[${repository.full_name}](${repository.html_url})`)
@@ -44,11 +49,11 @@ describe('repoInfo upstream candidate identity', () => {
       if (path.endsWith('/contributors')) throw new Error('Forbidden')
       return repository
     })
-    expect(await repoInfo('verified/component-library')).toContain(repository.html_url)
+    expect(await repoInfo(repositoryRef('verified/component-library'))).toContain(repository.html_url)
   })
 
   it('does not produce a verified candidate when repository lookup fails', async () => {
     vi.mocked(ghApi).mockRejectedValue(new Error('Repository lookup unavailable'))
-    await expect(repoInfo('unknown/library')).rejects.toThrow('Repository lookup unavailable')
+    await expect(repoInfo(repositoryRef('unknown/library'))).rejects.toThrow('Repository lookup unavailable')
   })
 })

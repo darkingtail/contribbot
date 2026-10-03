@@ -6,9 +6,9 @@ import { createComment, getCurrentUser, getIssue, getIssueComments } from '../..
 import { RecordFiles } from '../../storage/record-files.js'
 import type { TodoItem } from '../../storage/todo-store.js'
 import { currentTodoExecution, TodoStore } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
 import { todayDate } from '../../utils/format.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import { sameRepository, type RepositoryInput } from '../../utils/repository-ref.js'
 import { assertDispatchAllowed } from '../../execution/workflow.js'
 import { isTerminalTodo } from '../../storage/todo-store.js'
 import { RemoteEffects } from '../../storage/remote-effects.js'
@@ -358,10 +358,12 @@ export async function ensureClaimTodoIdentity(
 export async function todoClaim(
   item: string,
   items: string[],
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+  const { owner, name, directory: contribDir, repository } = await resolveRepo(repo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error('todo_claim supports GitHub.com issues only; no local or remote changes were attempted.')
+  }
   const store = new TodoStore(contribDir)
 
   const resolved = store.resolveItem(item)
@@ -400,7 +402,7 @@ export async function todoClaim(
   const effects = new RemoteEffects(contribDir, todoId)
   const normalizedItems = JSON.stringify(items.map(item => item.trim()).sort())
   const saved = effects.list().find(effect => effect.request.kind === 'claim'
-    && effect.request.repo === `${owner}/${name}` && effect.request.payload.issue_number === issueNumber
+    && sameRepository(effect.request.repo, repository) && effect.request.payload.issue_number === issueNumber
     && (effect.request.execution_id === executionId || effect.state !== 'linked')
     && Array.isArray(effect.request.payload.items)
     && JSON.stringify((effect.request.payload.items as string[]).map(item => item.trim()).sort()) === normalizedItems)
@@ -476,7 +478,7 @@ export async function todoClaim(
 
     // Keep the original marker for activation-time claim discovery and add an idempotency marker for retries.
     const body = `${rendered}\n\n<!-- contribbot:claim @${user.login} -->\n${operationMarker}`
-    const request: RemoteEffectRequest = { kind: 'claim', execution_id: executionId, repo: `${owner}/${name}`,
+    const request: RemoteEffectRequest = { kind: 'claim', execution_id: executionId, repo: repository,
       payload: { issue_number: issueNumber, marker: operationMarker, items, user: user.login, body } }
     let effect = effects.list().find(effect => effect.request.kind === 'claim'
       && effect.request.execution_id === executionId && effect.request.payload.marker === operationMarker)
@@ -516,7 +518,7 @@ export async function todoClaim(
       const commentLabel = commentId == null ? 'Claim comment' : `Claim comment #${commentId}`
       throw new Error(
         `${commentLabel} ${commentState} on ${owner}/${name}#${issueNumber}, but the local claim update failed: ${message}. `
-        + `Retry the same todo_claim request as todo_claim(item="${todoId}", items=${JSON.stringify(items)}, repo="${owner}/${name}"); its operation marker prevents a duplicate comment.`,
+        + `Retry the same todo_claim request as todo_claim(item="${todoId}", items=${JSON.stringify(items)}, repo=${JSON.stringify(repository)}); its operation marker prevents a duplicate comment.`,
       )
     }
 

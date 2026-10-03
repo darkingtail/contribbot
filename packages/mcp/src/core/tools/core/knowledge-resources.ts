@@ -1,61 +1,47 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { lstatSync, readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { RepoConfig } from '../../storage/repo-config.js'
+import { assertNoSymlinks } from '../../utils/fs.js'
 import { validatePathSegment } from '../../utils/config.js'
-import { parseFrontmatter } from '../../utils/frontmatter.js'
+import { projectDataRoot, repositoryDisplay } from '../../utils/repository-ref.js'
+import { listStoredProjects } from './project-list.js'
+import { listProjectKnowledge } from './knowledge.js'
 
 interface KnowledgeEntry {
+  digest: string
   repo: string
   name: string
   description: string
 }
 
+const digestPattern = /^[a-f0-9]{64}$/
+
 export function listAllKnowledge(): KnowledgeEntry[] {
-  const baseDir = join(homedir(), '.contribbot')
-  if (!existsSync(baseDir)) return []
-
-  const results: KnowledgeEntry[] = []
-
-  for (const ownerEntry of readdirSync(baseDir, { withFileTypes: true })) {
-    if (!ownerEntry.isDirectory()) continue
-    const ownerDir = join(baseDir, ownerEntry.name)
-
-    for (const repoEntry of readdirSync(ownerDir, { withFileTypes: true })) {
-      if (!repoEntry.isDirectory()) continue
-      const repo = `${ownerEntry.name}/${repoEntry.name}`
-      const knowledgeDir = join(ownerDir, repoEntry.name, 'knowledge')
-      if (!existsSync(knowledgeDir)) continue
-
-      for (const entry of readdirSync(knowledgeDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue
-        const docPath = join(knowledgeDir, entry.name, 'README.md')
-        if (!existsSync(docPath)) continue
-
-        const content = readFileSync(docPath, 'utf-8')
-        const meta = parseFrontmatter(content)
-        results.push({
-          repo,
-          name: entry.name,
-          description: meta.description || meta.name || entry.name,
-        })
-      }
-    }
-  }
-
-  return results
+  return (listStoredProjects() ?? []).flatMap(({ directory, config }) =>
+    listProjectKnowledge(config.repository).map(entry => ({
+      digest: basename(directory),
+      repo: repositoryDisplay(config.repository),
+      name: entry.name,
+      description: entry.description,
+    })),
+  )
 }
 
-export function readKnowledge(repo: string, knowledgeName: string): string | null {
-  const parts = repo.split('/')
-  const owner = parts[0] ?? ''
-  const name = parts[1] ?? ''
-  if (!owner || !name) return null
-
-  validatePathSegment(owner)
-  validatePathSegment(name)
+export function readKnowledge(digest: string, knowledgeName: string): string | null {
+  if (!digestPattern.test(digest)) throw new Error('Invalid project digest in knowledge URI.')
   validatePathSegment(knowledgeName)
-
-  const docPath = join(homedir(), '.contribbot', owner, name, 'knowledge', knowledgeName, 'README.md')
-  if (!existsSync(docPath)) return null
-  return readFileSync(docPath, 'utf-8')
+  const directory = join(projectDataRoot(), 'projects', 'v1', digest)
+  assertNoSymlinks(directory)
+  const stat = lstatSync(directory, { throwIfNoEntry: false })
+  if (!stat) return null
+  if (!stat.isDirectory()) throw new Error(`Invalid knowledge project directory: ${directory}`)
+  if (!new RepoConfig(directory).load()) {
+    throw new Error(`Missing schema v3 repository config: ${directory}`)
+  }
+  const docPath = join(directory, 'knowledge', knowledgeName, 'README.md')
+  assertNoSymlinks(docPath)
+  const docStat = lstatSync(docPath, { throwIfNoEntry: false })
+  if (!docStat) return null
+  if (!docStat.isFile()) throw new Error(`Invalid project knowledge document: ${docPath}`)
+  return readFileSync(docPath, 'utf8')
 }

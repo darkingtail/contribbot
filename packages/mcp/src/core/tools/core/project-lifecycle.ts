@@ -1,31 +1,36 @@
 import { RepoConfig } from '../../storage/repo-config.js'
 import type { ProjectStatus } from '../../enums.js'
-import { getContribDir } from '../../utils/config.js'
-import { resolveRepo } from '../../utils/resolve-repo.js'
+import { resolveRepo, resolveRepoIdentity } from '../../utils/resolve-repo.js'
+import { repositoryDisplay, type RepositoryInput } from '../../utils/repository-ref.js'
 
 /** Read-only, including for an unconfigured repository. Never initializes/reactivates it. */
-export async function projectStatus(repo: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const config = new RepoConfig(getContribDir(owner, name)).load()
+export async function projectStatus(repo: RepositoryInput): Promise<string> {
+  const { repository, directory } = await resolveRepoIdentity(repo)
+  const config = new RepoConfig(directory).load()
   return JSON.stringify({
-    repo: `${owner}/${name}`,
+    repo: repositoryDisplay(repository),
     configured: config !== null,
-    status: config?.status ?? 'active',
-    archived_at: config?.archived_at ?? null,
+    status: config?.lifecycle.status ?? 'not_initialized',
+    archived_at: config?.lifecycle.archived_at ?? null,
   })
 }
 
-async function setStatus(repo: string, status: ProjectStatus): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = new RepoConfig(getContribDir(owner, name))
+async function setStatus(repo: RepositoryInput, status: ProjectStatus): Promise<string> {
+  const { repository, directory } = await resolveRepo(repo)
+  const label = repositoryDisplay(repository)
+  const store = new RepoConfig(directory)
   const config = store.load()
-  if (!config) throw new Error(`Project ${owner}/${name} has no config. Use project_init first.`)
-  const before = config.status ?? 'active'
-  if (before === status) return `## Project — ${owner}/${name}\n\nAlready **${status}**. No data changed.`
-  store.update({ status, archived_at: status === 'archived' ? new Date().toISOString() : null })
-  if (store.load()?.status !== status) throw new Error('Project status verification failed.')
+  if (!config) throw new Error(`Project ${label} has no config. Use project_init first.`)
+  const before = config.lifecycle.status
+  if (before === status) return `## Project — ${label}\n\nAlready **${status}**. No data changed.`
+  store.update({
+    lifecycle: status === 'archived'
+      ? { status, archived_at: new Date().toISOString() }
+      : { status },
+  }, config)
+  if (store.load()?.lifecycle.status !== status) throw new Error('Project status verification failed.')
   return [
-    `## Project — ${owner}/${name}`, '',
+    `## Project — ${label}`, '',
     `**${before} → ${status}**`, '',
     'Todos, knowledge, upstream tracking and patrol history are preserved. GitHub is unchanged.',
     status === 'archived'
@@ -34,5 +39,5 @@ async function setStatus(repo: string, status: ProjectStatus): Promise<string> {
   ].join('\n')
 }
 
-export const projectArchive = (repo: string): Promise<string> => setStatus(repo, 'archived')
-export const projectRestore = (repo: string): Promise<string> => setStatus(repo, 'active')
+export const projectArchive = (repo: RepositoryInput): Promise<string> => setStatus(repo, 'archived')
+export const projectRestore = (repo: RepositoryInput): Promise<string> => setStatus(repo, 'active')

@@ -1,4 +1,5 @@
 import { ghApi, parseRepo } from '../../clients/github.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 import { relativeTime } from '../../utils/format.js'
 
 interface RepoData {
@@ -28,7 +29,7 @@ interface ContributorsResponse {
   contributions: number
 }
 
-export async function repoInfo(repo?: string): Promise<string> {
+export async function repoInfo(repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
   const [repoData, contributors] = await Promise.all([

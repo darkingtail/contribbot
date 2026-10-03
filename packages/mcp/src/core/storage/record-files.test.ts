@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { repositoryDigest, type RepositoryRef } from '../utils/repository-ref.js'
 import { RecordFiles } from './record-files.js'
 
 describe('RecordFiles', () => {
@@ -96,6 +97,24 @@ describe('RecordFiles', () => {
     expect(content).toContain('Detailed description here')
     expect(content).toContain('## Comments Summary')
     expect(content).toContain('needs fix')
+  })
+
+  it('escapes issue labels that contain a table separator', () => {
+    records.createTodoRecord('#204', 'Pipe label', 'bug', '2026-03-14')
+    records.enrichWithIssueDetails(204, {
+      title: 'Pipe label',
+      link: 'https://github.com/org/repo/issues/204',
+      labels: 'bug | needs-triage',
+      author: 'testuser',
+      createdAt: '2026-03-10',
+      commentsSummary: '',
+      body: '',
+    })
+
+    const content = records.readRecord('#204')!
+    const labelsRow = content.split('\n').find(line => line.startsWith('| Labels |'))
+    expect(labelsRow).toBe('| Labels | bug \\| needs-triage |')
+    expect([...labelsRow!.matchAll(/(?<!\\)\|/g)]).toHaveLength(3)
   })
 
   it('does nothing if record file does not exist', () => {
@@ -313,10 +332,55 @@ Custom prose after an interrupted update.
   })
 
   it('confines upstream record refs to one owner, repo and version filename', () => {
-    expect(records.resolveUpstreamRefPath('owner/repo@v1.2.3')).toBe(join(dir, 'upstream', 'owner', 'repo', 'v1.2.3.md'))
-    expect(() => records.resolveUpstreamRefPath('owner/repo@../escape')).toThrow('Invalid upstream version')
-    expect(() => records.resolveUpstreamRefPath('../repo@v1')).toThrow('Invalid upstream owner')
-    expect(() => records.resolveUpstreamRefPath('owner/nested/repo@v1')).toThrow('Invalid upstream ref')
+    const repository: RepositoryRef = {
+      platform: 'github',
+      instance: 'https://github.com',
+      path: 'owner/repo',
+    }
+    const digest = repositoryDigest(repository)
+    expect(records.resolveUpstreamRefPath(repository, 'v1.2.3'))
+      .toBe(join(dir, 'upstream', digest, 'v1.2.3.md'))
+    expect(() => records.resolveUpstreamRefPath(repository, '../escape')).toThrow('Invalid upstream version')
+    expect(() => records.resolveUpstreamRefPath(repository, 'release/v1')).toThrow('Invalid upstream version')
+    expect(() => records.resolveUpstreamRefPath(repository, 'release\\v1')).toThrow('Invalid upstream version')
+    expect(() => records.resolveUpstreamRefPath({ ...repository, path: '../repo' }, 'v1')).toThrow(/Invalid github repository path|repository path/i)
+    expect(() => records.resolveUpstreamRefPath({ ...repository, path: 'owner/nested/repo' }, 'v1'))
+      .toThrow(/Invalid github repository path|repository path/i)
+  })
+
+  it('keeps same-path upstream records from different instances separate', () => {
+    const first: RepositoryRef = {
+      platform: 'gitlab',
+      instance: 'https://first.example.com/gitlab',
+      path: 'team/sub/ui',
+    }
+    const second: RepositoryRef = { ...first, instance: 'https://second.example.com/gitlab' }
+    const firstPath = records.resolveUpstreamRefPath(first, 'v1')
+    const secondPath = records.resolveUpstreamRefPath(second, 'v1')
+    expect(firstPath).not.toBe(secondPath)
+    mkdirSync(join(dir, 'upstream', repositoryDigest(first)), { recursive: true })
+    mkdirSync(join(dir, 'upstream', repositoryDigest(second)), { recursive: true })
+    writeFileSync(firstPath, '# first')
+    writeFileSync(secondPath, '# second')
+    expect(records.readUpstreamRecord(first, 'v1')).toBe('# first')
+    expect(records.readUpstreamRecord(second, 'v1')).toBe('# second')
+  })
+
+  it('does not read an upstream record through a linked source directory', () => {
+    const repository: RepositoryRef = {
+      platform: 'github',
+      instance: 'https://github.com',
+      path: 'owner/repo',
+    }
+    const outside = join(dir, 'outside')
+    const upstream = join(dir, 'upstream')
+    mkdirSync(outside)
+    mkdirSync(upstream)
+    writeFileSync(join(outside, 'v1.md'), 'outside record')
+    symlinkSync(outside, join(upstream, repositoryDigest(repository)), process.platform === 'win32' ? 'junction' : 'dir')
+
+    expect(() => records.readUpstreamRecord(repository, 'v1')).toThrow(/symbolic link/i)
+    expect(readFileSync(join(outside, 'v1.md'), 'utf8')).toBe('outside record')
   })
 
   // --- appendPRFeedback ---

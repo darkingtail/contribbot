@@ -4,14 +4,14 @@ import { TodoStore } from '../../storage/todo-store.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { currentTodoExecution } from '../../storage/todo-store.js'
 import type { TodoItem } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import type { RepositoryInput, RepositoryRef } from '../../utils/repository-ref.js'
 import { todayDate } from '../../utils/format.js'
 import { formatTodoPullLinks, todoPulls } from '../../storage/todo-pulls.js'
 import { formatTodoPullProgress, observeTodoPulls } from './todo-pr-progress.js'
 import { formatConsultations } from '../../consult/projection.js'
 
-function formatTodoBasicInfo(todo: TodoItem, owner: string, name: string): string {
+function formatTodoBasicInfo(todo: TodoItem, repository: RepositoryRef): string {
   const lines: string[] = [
     `## ${todo.title}`,
     '',
@@ -21,7 +21,7 @@ function formatTodoBasicInfo(todo: TodoItem, owner: string, name: string): strin
     `| Type | ${todo.type} | |`,
     `| Status | ${todo.status} | Independent of PR progress |`,
     `| Difficulty | ${todo.difficulty ?? '—'} | |`,
-    `| PR | ${formatTodoPullLinks(todo, `${owner}/${name}`)} | Associations, not acceptance |`,
+    `| PR | ${formatTodoPullLinks(todo, repository)} | Associations, not acceptance |`,
     `| Claimed | ${todo.claimed_items?.length ? `${todo.claimed_items.length} item(s)` : '—'} | |`,
     `| Created | ${todo.created} | |`,
     `| Updated | ${todo.updated} | |`,
@@ -122,9 +122,8 @@ function isCacheStale(filePath: string): boolean {
   }
 }
 
-export async function todoDetail(item: string, repo?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+export async function todoDetail(item: string, repo?: RepositoryInput): Promise<string> {
+  const { owner, name, repository, directory: contribDir } = await resolveRepo(repo)
   const store = new TodoStore(contribDir)
   const records = new RecordFiles(contribDir)
 
@@ -134,6 +133,9 @@ export async function todoDetail(item: string, repo?: string): Promise<string> {
   if (!selected) {
     throw new Error(`Todo not found: "${item}". Use todo_list to see available items.`)
   }
+  if (selected.pr !== null && (repository.platform !== 'github' || repository.instance !== 'https://github.com')) {
+    throw new Error('Implicit PR associations support GitHub.com repositories only; no GitHub request or Todo change was attempted.')
+  }
   const readCurrent = (): TodoItem => {
     const current = store.resolveItemFromAll(selected.id ?? item)
     if (!current || (!selected.id && JSON.stringify(current) !== JSON.stringify(selected))) {
@@ -141,9 +143,9 @@ export async function todoDetail(item: string, repo?: string): Promise<string> {
     }
     return current
   }
-  const observedPulls = await observeTodoPulls(todoPulls(selected, `${owner}/${name}`))
+  const observedPulls = await observeTodoPulls(todoPulls(selected, repository))
   let todo = readCurrent()
-  const pullProgress = () => `\n\n${formatTodoPullProgress(todo, `${owner}/${name}`, observedPulls)}`
+  const pullProgress = () => `\n\n${formatTodoPullProgress(todo, repository, observedPulls)}`
     + (todo.id ? formatConsultations(contribDir, todo.id) : '')
 
   let projection = store.recordProjection(todo)
@@ -151,7 +153,7 @@ export async function todoDetail(item: string, repo?: string): Promise<string> {
     : `\n\nDocument projection: ${projection.status}. ${projection.note} Use todo_resume after resolving document errors; do not replay task operations.`
   const recordRef = todo.ref ?? (projection.status === 'not_applicable' ? undefined : todo.id)
   if (!recordRef || projection.status === 'blocked') {
-    return formatTodoBasicInfo(todo, owner, name) + projectionNote() + pullProgress()
+    return formatTodoBasicInfo(todo, repository) + projectionNote() + pullProgress()
   }
 
   // An id-less generation cannot safely claim prose while another generation owns the same ref.
@@ -214,7 +216,7 @@ export async function todoDetail(item: string, repo?: string): Promise<string> {
   }
 
   if (!content) {
-    return formatTodoBasicInfo(todo, owner, name) + projectionNote() + pullProgress()
+    return formatTodoBasicInfo(todo, repository) + projectionNote() + pullProgress()
   }
 
   return `${formatExecutionContext(todo)}${projectionNote()}${pullProgress()}\n\n---\n\n${content}`

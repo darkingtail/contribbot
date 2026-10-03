@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkflowCommand, WorkflowState } from './contracts.js'
 import { createWorkflow, normalizeWorkflow, transitionWorkflow } from './workflow.js'
+import { fixtureRepository } from './__fixtures__/repository.js'
 
 const stop = { action: 'request_control', control_id: 'pause', kind: 'pause',
   decision: 'user:pause-this-task', note: 'Continue tomorrow.' } as const
@@ -17,7 +18,8 @@ function boundState() {
   let state = send(createWorkflow(), { action: 'propose_plan', plan_id: 'plan', plan })
   state = send(state, { action: 'confirm_plan', plan_id: 'plan', digest: state.plans[0]!.digest, confirmation: 'user:plan' })
   state = send(state, { action: 'start_attempt', attempt_id: 'attempt', owner: 'owner',
-    workspace: { repo: 'fixture/repo', root: 'root', git_dir: 'git', common_dir: 'git', baseline: sha } })
+    workspace: { repo: fixtureRepository('fixture/repo'),
+      root: 'root', git_dir: 'git', common_dir: 'git', baseline: sha } })
   return send(state, { action: 'yield', actor: 'owner', candidate, observed_operations: [], note: 'Settled' })
 }
 
@@ -69,7 +71,7 @@ describe('durable workflow stop intent', () => {
   it.each(['cancel', 'pause'] as const)('keeps a prepared Issue reservation until reconciliation names the exact %s', kind => {
     let state = send(boundState(), { action: 'reserve_closure', intent: { id: 'issue-close', mode: 'with_gaps',
       decision: 'user:original', note: 'Original Issue operation', acknowledged_gaps: ['acceptance:manual'],
-      target: { kind: 'issue', repo: 'fixture/repo', issue_number: 1 } } })
+      target: { kind: 'issue', repo: fixtureRepository('fixture/repo'), issue_number: 1 } } })
     state = send(state, { action: 'prepare_closure', closure_id: 'issue-close', candidate, verification: sha, gaps: ['acceptance:manual'] })
     state = send(state, { ...stop, kind, control_id: kind })
     state = send(state, { action: 'closure_remote_receipt', closure_id: 'issue-close', receipt: sha })
@@ -91,7 +93,7 @@ describe('durable workflow stop intent', () => {
 
   it('does not prepare unbound Issue effects while still allowing unbound local cancellation', () => {
     const intent = { id: 'unbound', mode: 'stopped', decision: 'user:cancel', note: 'No work started',
-      acknowledged_gaps: [], target: { kind: 'issue', repo: 'fixture/repo', issue_number: 1 } }
+      acknowledged_gaps: [], target: { kind: 'issue', repo: fixtureRepository('fixture/repo'), issue_number: 1 } }
     expect(() => send(createWorkflow(), { action: 'reserve_closure', intent })).toThrow(/bound|local/i)
     const cancelled = send(createWorkflow(), { ...stop, kind: 'cancel', control_id: 'cancel', decision: intent.decision })
     expect(send(cancelled, { action: 'reserve_closure', intent: { ...intent, target: { kind: 'local' } } })

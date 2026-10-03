@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -7,10 +7,14 @@ import { digest } from '../../consult/contracts.js'
 import { todoConsultations } from '../../consult/projection.js'
 import { localMachine } from '../../execution/processes.js'
 import { TodoStore } from '../../storage/todo-store.js'
+import { RepoConfig } from '../../storage/repo-config.js'
+import { projectDirectory, type RepositoryRef } from '../../utils/repository-ref.js'
 import { consultPrepare, consultRequest, consultStatus, consultRead, consultControl, consultDecide, consultPurgeRaw, consultStart, consultStore } from './consult.js'
 
 let home: string
-const repo = 'consult-fixture/repo'
+const repo: RepositoryRef = {
+  platform: 'github', instance: 'https://github.com', path: 'consult-fixture/repo',
+}
 const decision = { source: 'fixture:user', statement: 'Ask this advisor once with these materials and disclosure.' }
 const binding = {
   runtime: 'claude' as const, executable: process.execPath, executable_digest: digest('fixture'),
@@ -21,10 +25,18 @@ const binding = {
   disclosure: 'Fixture disclosure', disclosure_digest: digest('Fixture disclosure'),
 }
 
+function initializeProject(repository = repo) {
+  new RepoConfig(projectDirectory(repository)).save({
+    schema_version: 3, repository, lifecycle: { status: 'active' },
+    parent: { status: 'unknown' }, tracking: { status: 'pending' },
+  })
+}
+
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'consult-service-'))
   vi.stubEnv('HOME', home)
   vi.stubEnv('USERPROFILE', home)
+  initializeProject()
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -61,7 +73,35 @@ it('prepares and requests without inspecting or launching a Provider', async () 
   expect(preview.dispatched).toBe(false)
   expect(receipt).toMatchObject({ status: 'pending', replayed: false })
   expect(receipt.runner).toMatchObject({ command: 'contribbot-run' })
-  expect(existsSync(join(home, '.contribbot', 'consult-fixture', 'repo', 'consult', 'discussions.yaml'))).toBe(true)
+  expect(existsSync(join(projectDirectory(repo), 'consult', 'discussions.yaml'))).toBe(true)
+})
+
+it('isolates discussions with the same path across instances and platforms', async () => {
+  const github = await reserve()
+  const selfHosted: RepositoryRef = {
+    platform: 'gitlab', instance: 'https://code.example.test/gitlab', path: repo.path,
+  }
+  const anotherInstance: RepositoryRef = {
+    ...selfHosted, instance: 'https://other.example.test/gitlab',
+  }
+  initializeProject(selfHosted)
+  initializeProject(anotherInstance)
+  const gitlab = await reserve({ repo: selfHosted, request_id: 'request-gitlab' })
+  await reserve({ repo: anotherInstance, request_id: 'request-gitlab' })
+
+  expect(gitlab.receipt.discussion_id).not.toBe(github.receipt.discussion_id)
+  expect(consultStore(repo).directory).not.toBe(consultStore(selfHosted).directory)
+  expect(consultStore(selfHosted).directory).not.toBe(consultStore(anotherInstance).directory)
+  expect((await consultStatus({ repo })).discussions).toHaveLength(1)
+  expect((await consultStatus({ repo: selfHosted })).discussions).toHaveLength(1)
+  expect((await consultStatus({ repo: anotherInstance })).discussions).toHaveLength(1)
+  await expect(consultRead({ repo: selfHosted, discussion_id: github.receipt.discussion_id! }))
+    .rejects.toThrow(/not found/i)
+})
+
+it('requires an explicit repository identity for Consult', async () => {
+  await expect(consultPrepare({ ...input(), repo: repo.path })).rejects.toThrow()
+  expect(() => consultStore(repo.path as unknown as RepositoryRef)).toThrow()
 })
 
 it('releases an explicitly abandoned reservation that was never dispatched', async () => {
@@ -87,12 +127,16 @@ it('releases an explicitly abandoned reservation that was never dispatched', asy
 })
 
 it('keeps the old consult_start name as a non-executing migration response', async () => {
+  const directory = projectDirectory(repo)
+  const beforeConfig = readFileSync(join(directory, 'config.yaml'))
+  const beforeEntries = readdirSync(directory).sort()
   const result = await consultStart({
     repo, request_id: 'legacy-request', advisor: { runtime: 'claude', executable: process.execPath },
     packet: { workspace: home, question: 'Legacy request' }, authorization: { explicit_once: decision },
   })
   expect(result).toMatchObject({ unsupported: true, replacement: { prepare_tool: 'consult_prepare', request_tool: 'consult_request' } })
-  expect(existsSync(join(home, '.contribbot'))).toBe(false)
+  expect(readFileSync(join(directory, 'config.yaml'))).toEqual(beforeConfig)
+  expect(readdirSync(directory).sort()).toEqual(beforeEntries)
 })
 
 it('returns the original reservation for an identical request and rejects changed content', async () => {

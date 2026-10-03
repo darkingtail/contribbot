@@ -8,6 +8,7 @@ import * as candidates from './candidate.js'
 import { observeCommitDelivery } from './commit-delivery.js'
 import { runLocalCommand } from './local.js'
 import { planDigest } from './workflow.js'
+import { fixtureProjectDirectory, fixtureRepository, saveFixtureProjectConfig } from './__fixtures__/repository.js'
 
 const plan = () => ({
   goal: 'Commit the accepted source', completion_scope: 'task', remaining_scope: [], non_goals: [], scope: ['src'], risk: 'normal',
@@ -46,7 +47,7 @@ describe('actual local commit delivery', () => {
   let serial: number
   const state = () => store.get(0)!.executions[0]!.workflow!
   const local = (action: string, payload: Record<string, unknown> = {}) => runLocalCommand({
-    action, repo: 'fixture/commit', data_root: join(home, 'data'), todo_id: todoId, execution_id: executionId, ...payload,
+    action, repo: fixtureRepository('fixture/commit'), data_root: join(home, 'data'), todo_id: todoId, execution_id: executionId, ...payload,
   })
   const mutation = () => ({ request_id: `fixture-${++serial}`, expected_revision: state()?.revision ?? 0 })
   const git = (...args: string[]) => execFileSync('git', [
@@ -89,11 +90,11 @@ describe('actual local commit delivery', () => {
     vi.stubEnv('XDG_CONFIG_HOME', join(home, 'xdg'))
     workspace = join(home, 'workspace')
     mkdirSync(workspace)
-    const directory = join(home, 'data/fixture/commit')
+    const directory = fixtureProjectDirectory(join(home, 'data'), 'fixture/commit')
+    saveFixtureProjectConfig(directory, 'fixture/commit')
     store = new TodoStore(directory)
     todoId = store.add({ ref: 'commit', title: 'Commit accepted content', type: 'feature' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
     serial = 0
   })
   afterEach(() => {

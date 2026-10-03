@@ -1,5 +1,6 @@
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -10,8 +11,8 @@ import { TodoStore } from '../storage/todo-store.js'
 import type { TodoItem } from '../storage/todo-store.js'
 import { ExecutionArtifacts } from './artifacts.js'
 import { captureCandidate } from './candidate.js'
-import { runCheck, recoverCheck, observeCheck, executeReservedCheck } from './checks.js'
-import type { CheckReceipt } from './checks.js'
+import { runCheck, recoverCheck, observeCheck, executeReservedCheck, terminateProcessTree } from './checks.js'
+import type { CheckReceipt, CheckRunResult } from './checks.js'
 import { launchCheckSupervisor } from './supervisor.js'
 import { planDigest, workflowReadiness } from './workflow.js'
 import type { WorkflowCommand, WorkflowPlanInput } from './contracts.js'
@@ -72,7 +73,9 @@ describe('real local workflow checks', () => {
       action: 'start_attempt', attempt_id: 'attempt', owner: 'primary',
       workspace: {
         root: snapshot.root, git_dir: snapshot.git_dir, common_dir: snapshot.common_dir,
-        baseline: snapshot.digest, repo: 'fixture/repo', machine: processes.localMachine(),
+        baseline: snapshot.digest,
+        repo: { platform: 'github', instance: 'https://github.com', path: 'fixture/repo' },
+        machine: processes.localMachine(),
       },
     })
     yieldNow()
@@ -466,49 +469,190 @@ describe('real local workflow checks', () => {
     expect(workflowReadiness(state(), reference()).ready).toBe(false)
   }, 20_000)
 
-  it('enforces the command timeout even when OS process identity lookup is slow', async () => {
-    const lateEffect = join(directory, 'must-be-stopped-before-this-write')
-    setup(`setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(lateEffect)}, 'late'), 700); setInterval(() => {}, 100)`, 150)
-    const describe = processes.describeProcess
-    vi.spyOn(processes, 'describeProcess').mockImplementation((pid) => {
-      if (pid !== process.pid) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500)
-      return describe(pid)
-    })
+  it('requests termination while OS process identity lookup is still pending', async () => {
+    setup('setInterval(() => {}, 100)', 150)
+    let releaseIdentity: (() => void) | undefined
+    let identityPending = true
+    const identity = new Promise<void>(resolve => { releaseIdentity = () => { identityPending = false; resolve() } })
     vi.spyOn(processes, 'describeProcessAsync').mockImplementation(async (pid) => {
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      await identity
       return { pid, machine: processes.localMachine(), started_at: null, observed_at: new Date().toISOString() }
     })
-    const result = await runCheck(request('slow-identity'), executeReservedCheck)
-    expect(result.receipt.process?.timed_out).toBe(true)
-    expect(result.outcome).toBe('blocked')
-    expect(existsSync(lateEffect)).toBe(false)
+    let terminationStarted = false
+    let running!: Promise<CheckRunResult>
+    try {
+      running = runCheck(request('slow-identity'), input => executeReservedCheck(input, async child => {
+        terminationStarted = true
+        child.kill('SIGKILL')
+      }))
+      await vi.waitFor(() => expect(terminationStarted).toBe(true), { timeout: 5000, interval: 20 })
+      expect(identityPending).toBe(true)
+      const early = await Promise.race([
+        running.then(() => 'published', () => 'rejected'),
+        new Promise<string>(resolve => setTimeout(() => resolve('pending'), 100)),
+      ])
+      expect(early).toBe('pending')
+      expect(new ExecutionArtifacts(storage, executionId).getReceipt('slow-identity')).toBeUndefined()
+      releaseIdentity?.()
+      const result = await running
+      expect(result.receipt.process?.timed_out).toBe(true)
+      expect(result.receipt.process?.process_stopped).toBe(false)
+      expect(result.outcome).toBe('blocked')
+      expect(state().operations.at(-1)?.status).toBe('unknown')
+      await expect(runCheck(request('slow-identity-retry'))).rejects.toThrow(/unknown|unresolved|yield/i)
+    }
+    finally {
+      releaseIdentity?.()
+      await running?.catch(() => undefined)
+    }
   }, 15_000)
 
-  it('enforces the command timeout while process-record publication is slow', async () => {
-    const lateEffect = join(directory, 'must-not-write-during-storage-stall')
-    setup(`setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(lateEffect)}, 'late'), 700); setInterval(() => {}, 100)`, 150)
+  it('does not report unsettled termination when tracking finishes after the watchdog window', async () => {
+    setup('setInterval(() => {}, 100)', 150)
+    vi.spyOn(processes, 'describeProcessAsync').mockImplementation(async (pid) => {
+      await new Promise(resolve => setTimeout(resolve, 2200))
+      return { pid, machine: processes.localMachine(), started_at: null, observed_at: new Date().toISOString() }
+    })
+    const result = await runCheck(request('slow-tracking'), input => executeReservedCheck(input, async child => {
+      child.kill('SIGKILL')
+    }))
+    expect(result.outcome).toBe('blocked')
+    expect(result.receipt.process).toMatchObject({ timed_out: true, process_stopped: false })
+    expect(result.receipt.process?.error ?? '').not.toMatch(/termination did not settle/i)
+    expect(state().operations.at(-1)?.status).toBe('unknown')
+  }, 15_000)
+
+  it('requests termination while process-record publication is still pending', async () => {
+    setup('setInterval(() => {}, 100)', 150)
     vi.spyOn(processes, 'describeProcessAsync').mockImplementation(async (pid) => ({
       pid, machine: processes.localMachine(), started_at: null, observed_at: new Date().toISOString(),
     }))
-    const describe = processes.describeProcess
-    vi.spyOn(processes, 'describeProcess').mockImplementation((pid) => pid === process.pid ? describe(pid) : {
-      pid, machine: processes.localMachine(), started_at: null, observed_at: new Date().toISOString(),
-    })
-    const syncPublish = ExecutionArtifacts.prototype.putReceipt
-    vi.spyOn(ExecutionArtifacts.prototype, 'putReceipt').mockImplementation(function (this: ExecutionArtifacts, ...args) {
-      if (args[2] === 'process') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500)
-      return syncPublish.apply(this, args)
-    })
+    let releasePublication: (() => void) | undefined
+    let publicationStarted = false
+    let publicationPending = true
+    const publication = new Promise<void>(resolve => { releasePublication = () => { publicationPending = false; resolve() } })
     const asyncPublish = ExecutionArtifacts.prototype.putReceiptAsync
     vi.spyOn(ExecutionArtifacts.prototype, 'putReceiptAsync').mockImplementation(async function (this: ExecutionArtifacts, ...args) {
-      if (args[2] === 'process') await new Promise(resolve => setTimeout(resolve, 1500))
+      if (args[2] === 'process') {
+        publicationStarted = true
+        await publication
+      }
       return asyncPublish.apply(this, args)
     })
-    const result = await runCheck(request('slow-storage'), executeReservedCheck)
-    expect(result.receipt.process?.timed_out).toBe(true)
-    expect(existsSync(lateEffect)).toBe(false)
-    expect(result.outcome).toBe('blocked')
+    let terminationStarted = false
+    let running!: Promise<CheckRunResult>
+    try {
+      running = runCheck(request('slow-storage'), input => executeReservedCheck(input, async child => {
+        terminationStarted = true
+        child.kill('SIGKILL')
+      }))
+      await vi.waitFor(() => expect(publicationStarted).toBe(true), { timeout: 5000, interval: 20 })
+      await vi.waitFor(() => expect(terminationStarted).toBe(true), { timeout: 5000, interval: 20 })
+      expect(publicationPending).toBe(true)
+      const early = await Promise.race([
+        running.then(() => 'published', () => 'rejected'),
+        new Promise<string>(resolve => setTimeout(() => resolve('pending'), 100)),
+      ])
+      expect(early).toBe('pending')
+      releasePublication?.()
+      const result = await running
+      expect(result.receipt.process?.timed_out).toBe(true)
+      expect(result.receipt.process?.process_stopped).toBe(false)
+      expect(result.outcome).toBe('blocked')
+      expect(state().operations.at(-1)?.status).toBe('unknown')
+      await expect(runCheck(request('slow-storage-retry'))).rejects.toThrow(/unknown|unresolved|yield/i)
+    }
+    finally {
+      releasePublication?.()
+      await running?.catch(() => undefined)
+    }
   }, 15_000)
+
+  it('does not publish a timed-out result before the tree termination attempt settles', async () => {
+    setup('setInterval(() => {}, 100)', 150)
+    let releaseTermination: (() => void) | undefined
+    let terminationStarted = false
+    const input = request('delayed-termination')
+    const running = runCheck(input, request => executeReservedCheck(request, child => {
+      child.kill('SIGKILL')
+      terminationStarted = true
+      return new Promise<void>(resolve => { releaseTermination = resolve })
+    }))
+    try {
+      await vi.waitFor(() => expect(terminationStarted).toBe(true), { timeout: 5000, interval: 20 })
+      const early = await Promise.race([
+        running.then(() => 'published', () => 'rejected'),
+        new Promise<string>(resolve => setTimeout(() => resolve('pending'), 100)),
+      ])
+      expect(early).toBe('pending')
+      expect(new ExecutionArtifacts(storage, executionId).getReceipt(input.operation_id)).toBeUndefined()
+    }
+    finally {
+      releaseTermination?.()
+    }
+    const result = await running
+    expect(result.outcome).toBe('blocked')
+    expect(result.receipt.process?.timed_out).toBe(true)
+    expect(result.receipt.process?.process_stopped).toBe(false)
+    expect(state().operations.at(-1)?.status).toBe('unknown')
+    expect(new ExecutionArtifacts(storage, executionId).getReceipt(input.operation_id)).toBeDefined()
+  }, 15_000)
+
+  it('records an unconfirmed timeout when tree termination never settles', async () => {
+    setup('setInterval(() => {}, 100)', 150)
+    const input = request('stalled-termination')
+    const result = await runCheck(input, request => executeReservedCheck(request, () => new Promise<void>(() => {})))
+    expect(result.outcome).toBe('blocked')
+    expect(result.receipt.process).toMatchObject({
+      timed_out: true, process_stopped: false,
+      error: expect.stringMatching(/termination did not settle/i),
+    })
+    expect(state().operations.at(-1)?.status).toBe('unknown')
+    await expect(runCheck(request('after-stalled-termination'))).rejects.toThrow(/unknown|unresolved|yield/i)
+    expect((await runCheck(input)).artifact).toBe(result.artifact)
+  }, 15_000)
+
+  it.each(['exit', 'close'] as const)('falls back when taskkill reports a failed %s', async event => {
+    const child = Object.assign(new EventEmitter(), { pid: 1234, kill: vi.fn() }) as unknown as ChildProcess
+    const killer = new EventEmitter()
+    const launch = vi.fn(() => killer as unknown as ChildProcess)
+
+    const termination = terminateProcessTree(child, { platform: 'win32', spawn: launch as typeof spawn })
+    killer.emit(event, 1, null)
+    await termination
+
+    expect(launch).toHaveBeenCalledWith('taskkill.exe', ['/PID', '1234', '/T', '/F'], {
+      windowsHide: true, stdio: 'ignore',
+    })
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL')
+  })
+
+  it('does not fall back when taskkill reports success', async () => {
+    const child = Object.assign(new EventEmitter(), { pid: 1234, kill: vi.fn() }) as unknown as ChildProcess
+    const killer = new EventEmitter()
+    const launch = vi.fn(() => killer as unknown as ChildProcess)
+
+    const termination = terminateProcessTree(child, { platform: 'win32', spawn: launch as typeof spawn })
+    killer.emit('exit', 0, null)
+    killer.emit('close', 0, null)
+    await termination
+
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('keeps the Windows termination attempt pending until taskkill reports a result', async () => {
+    const child = Object.assign(new EventEmitter(), { pid: 1234, kill: vi.fn() }) as unknown as ChildProcess
+    const killer = new EventEmitter()
+    const launch = vi.fn(() => killer as unknown as ChildProcess)
+    let settled = false
+    const termination = terminateProcessTree(child, { platform: 'win32', spawn: launch as typeof spawn })
+      .then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    killer.emit('close', 0, null)
+    await termination
+    expect(settled).toBe(true)
+  })
 
   it('does not identify a replacement PID as the command after the original child exited', async () => {
     setup("console.log('command finished')")

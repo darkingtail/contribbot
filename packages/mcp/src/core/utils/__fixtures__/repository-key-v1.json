@@ -1,0 +1,62 @@
+{
+  "canonical": [
+    {
+      "input": { "platform": "github", "instance": "https://GitHub.com", "path": "Owner/Repo" },
+      "expected": { "platform": "github", "instance": "https://github.com", "path": "Owner/Repo" }
+    },
+    {
+      "input": { "platform": "github", "instance": "https://github.com:443/", "path": "Owner/Repo" },
+      "expected": { "platform": "github", "instance": "https://github.com", "path": "Owner/Repo" }
+    },
+    {
+      "input": { "platform": "gitlab", "instance": "https://gitlab.com", "path": "team/subgroup/app" },
+      "expected": { "platform": "gitlab", "instance": "https://gitlab.com", "path": "team/subgroup/app" }
+    },
+    {
+      "input": { "platform": "gitlab", "instance": "http://code.example.com:8080/gitlab", "path": "team/subgroup/app" },
+      "expected": { "platform": "gitlab", "instance": "http://code.example.com:8080/gitlab", "path": "team/subgroup/app" }
+    },
+    {
+      "input": { "platform": "gitlab", "instance": "https://code.example.com:8443/gitlab", "path": "team/subgroup/app" },
+      "expected": { "platform": "gitlab", "instance": "https://code.example.com:8443/gitlab", "path": "team/subgroup/app" }
+    },
+    {
+      "input": { "platform": "gitlab", "instance": "HTTPS://CODE.example.com:443/GitLab/", "path": "Team/Subgroup/App" },
+      "expected": { "platform": "gitlab", "instance": "https://code.example.com/GitLab", "path": "Team/Subgroup/App" }
+    },
+    {
+      "input": { "platform": "gitlab", "instance": "https://bücher.example/GitLab/", "path": "team/subgroup/repo" },
+      "expected": { "platform": "gitlab", "instance": "https://xn--bcher-kva.example/GitLab", "path": "team/subgroup/repo" }
+    },
+    {
+      "input": { "platform": "gitlab", "instance": "http://code.example.com:80/GitLab/", "path": "team/repo" },
+      "expected": { "platform": "gitlab", "instance": "http://code.example.com/GitLab", "path": "team/repo" }
+    },
+    {
+      "input": { "platform": "gitlab", "instance": "http://127.0.0.1/gitlab", "path": "team/repo" },
+      "expected": { "platform": "gitlab", "instance": "http://127.0.0.1/gitlab", "path": "team/repo" }
+    }
+  ],
+  "invalid": [
+    { "platform": "gitlab", "instance": "http://0x7f.1/gitlab", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "http://0x7f000001/gitlab", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab/../other", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab//other", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab\\other", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab/%2e%2e", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/%67itlab", "path": "team/app" },
+    { "platform": "gitlab", "instance": "https://code.example.com/git lab", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/中文", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://user@code.example.com/gitlab", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab?secret=1", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab#fragment", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://co\nde.example.com/gitlab", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/git\tlab", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "\thttps://code.example.com/gitlab", "path": "team/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab", "path": "team/repo\t" },
+    { "platform": "github", "instance": "https://gitlab.com", "path": "team/repo" },
+    { "platform": "github", "instance": "https://github.com", "path": "team/subgroup/repo" },
+    { "platform": "gitlab", "instance": "https://code.example.com/gitlab", "path": "team%2Fsubgroup/app" },
+    { "platform": "gitlab", "instance": "https://code.example.com", "path": "team/repo.git" }
+  ]
+}

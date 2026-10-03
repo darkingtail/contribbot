@@ -1,135 +1,144 @@
-import { ghApi, getCurrentUser, parseRepo } from '../../clients/github.js'
-import { RepoConfig, upstreamStatus, upstreamStatusMarker } from '../../storage/repo-config.js'
-import type { RepoConfigData, RepoRole } from '../../storage/repo-config.js'
-import { getContribDir } from '../../utils/config.js'
-import { resolveRepo } from '../../utils/resolve-repo.js'
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { ghApi } from '../../clients/github.js'
+import { verifyGitLabIdentity } from '../../clients/gitlab.js'
+import {
+  RepoConfig, inferMode, trackingStatus, trackingStatusMarker,
+  type RepoConfigData,
+} from '../../storage/repo-config.js'
+import { getProjectRootDir } from '../../utils/config.js'
+import { markdownTable } from '../../utils/format.js'
+import {
+  parseRepositoryInput, projectDirectory, repositoryDisplay, repositoryWebUrl,
+  type RepositoryInput, type RepositoryRef,
+} from '../../utils/repository-ref.js'
 
-/**
- * Auto-detect repo config by querying GitHub API.
- */
-async function detectConfig(owner: string, name: string): Promise<RepoConfigData> {
-  const user = await getCurrentUser()
-  const login = user?.login ?? 'unknown'
+interface GitHubIdentity {
+  full_name?: string
+}
 
-  // 1. Check owner type (org or user)
-  let org: string | null = null
-  try {
-    const ownerInfo = await ghApi<{ type: string }>(`/users/${owner}`)
-    if (ownerInfo.type === 'Organization') {
-      org = owner
-    }
+function storeFor(repository: RepositoryRef): RepoConfig {
+  return new RepoConfig(projectDirectory(repository))
+}
+
+function assertNoLegacyData(repository: RepositoryRef): void {
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') return
+  const legacy = join(getProjectRootDir(), ...repository.path.split('/'))
+  if (existsSync(legacy)) {
+    throw new Error(`Legacy project data at ${legacy} has not been handled. Back up or explicitly resolve it before initializing schema v3.`)
   }
-  catch { /* ignore */ }
+}
 
-  // 2. Check permissions (GitHub standard: admin > maintain > write > triage > read)
-  let role: RepoRole = 'read'
-  try {
-    const repo = await ghApi<{ permissions: { admin: boolean, maintain: boolean, push: boolean, triage: boolean } }>(`/repos/${owner}/${name}`)
-    if (repo.permissions.admin) {
-      role = 'admin'
-    }
-    else if (repo.permissions.maintain) {
-      role = 'maintain'
-    }
-    else if (repo.permissions.push) {
-      role = 'write'
-    }
-    else if (repo.permissions.triage) {
-      role = 'triage'
-    }
+async function verifyGitHubIdentity(requested: RepositoryRef): Promise<RepositoryRef> {
+  if (requested.instance !== 'https://github.com') {
+    throw new Error(`GitHub instance ${requested.instance} has no verified identity adapter yet.`)
   }
-  catch { /* ignore */ }
-
-  // 3. Check fork
-  let fork: string | null = null
-  try {
-    const forkRepo = await ghApi<{ fork: boolean, parent?: { full_name: string } }>(`/repos/${login}/${name}`)
-    if (forkRepo.fork && forkRepo.parent?.full_name === `${owner}/${name}`) {
-      fork = `${login}/${name}`
-    }
+  const metadata = await ghApi<GitHubIdentity>(`/repos/${requested.path}`)
+  if (typeof metadata?.full_name !== 'string') {
+    throw new Error('GitHub identity response has no full_name; no project was created.')
   }
-  catch { /* no fork */ }
+  const canonical = parseRepositoryInput({ ...requested, path: metadata.full_name })
+  if (canonical.path.toLowerCase() !== requested.path.toLowerCase()) {
+    throw new Error(`GitHub identity ${canonical.path} does not match requested ${requested.path}.`)
+  }
 
-  return { role, org, fork, upstream: null }
+  return canonical
 }
 
 /**
- * Get or initialize repo config. Auto-detects on first access.
- * If the repo is a fork, automatically resolves to parent repo.
+ * Only project_init creates a project. Existing projects remain usable offline,
+ * including when the parent is private or otherwise temporarily inaccessible.
  */
-export async function getOrInitConfig(repo?: string): Promise<{ config: RepoConfigData, owner: string, name: string }> {
-  const parsed = parseRepo(repo)
-  const resolved = await resolveRepo(repo)
-  const { owner, name } = resolved
-  const requestedFork = owner !== parsed.owner || name !== parsed.name ? `${parsed.owner}/${parsed.name}` : null
-  const configStore = new RepoConfig(getContribDir(owner, name))
-
-  let config = configStore.load()
+export async function getOrInitConfig(repo: RepositoryInput): Promise<{
+  config: RepoConfigData
+  repository: RepositoryRef
+  owner: string
+  name: string
+  directory: string
+}> {
+  const requested = parseRepositoryInput(repo)
+  const initial = storeFor(requested).load()
+  let config = initial
   if (!config) {
-    config = await detectConfig(owner, name)
-    // If we resolved from a fork, record the fork field
-    if (requestedFork) {
-      config.fork = requestedFork
+    assertNoLegacyData(requested)
+    const directory = projectDirectory(requested)
+    if (existsSync(directory) && readdirSync(directory).length > 0) {
+      throw new Error(`Project directory ${directory} contains data without a valid config; initialization stopped.`)
     }
-    configStore.save(config)
+    const canonical = requested.platform === 'gitlab'
+      ? await verifyGitLabIdentity(requested)
+      : await verifyGitHubIdentity(requested)
+    assertNoLegacyData(canonical)
+    const canonicalStore = storeFor(canonical)
+    config = canonicalStore.load()
+    if (!config) {
+      config = {
+        schema_version: 3,
+        repository: canonical,
+        lifecycle: { status: 'active' },
+        parent: { status: 'unknown' },
+        tracking: { status: 'pending' },
+      }
+      canonicalStore.save(config)
+    }
   }
-
-  return { config, owner, name }
+  const parts = config.repository.path.split('/')
+  return {
+    config,
+    repository: config.repository,
+    owner: parts.slice(0, -1).join('/'),
+    name: parts.at(-1)!,
+    directory: projectDirectory(config.repository),
+  }
 }
 
-/**
- * View or update repo config.
- */
-export async function repoConfig(repo?: string, upstream?: string): Promise<string> {
-  if (upstream !== undefined && upstream !== '' && !/^[\w][\w.-]*\/[\w][\w.-]*$/.test(upstream)) {
-    throw new Error('upstream must be owner/repo, or an empty string to explicitly confirm none.')
+/** Read or explicitly change tracking without implicit project creation or network access. */
+export async function repoConfig(repo: RepositoryInput, tracking?: RepositoryRef[] | ''): Promise<string> {
+  const repository = parseRepositoryInput(repo)
+  const store = storeFor(repository)
+  const config = store.load()
+  if (!config) {
+    if (tracking !== undefined) throw new Error('Project is not initialized. Use project_init first.')
+    return `## Config - ${repositoryDisplay(repository)}\n\nnot_initialized. Use project_init for this exact repository.`
   }
-  const parsed = parseRepo(repo)
-  const resolved = await resolveRepo(repo)
-  const { owner, name } = resolved
-  const requestedFork = owner !== parsed.owner || name !== parsed.name ? `${parsed.owner}/${parsed.name}` : null
-  const configStore = new RepoConfig(getContribDir(owner, name))
 
-  // If setting upstream, update and return
-  if (upstream !== undefined) {
-    let config = configStore.load()
-    if (!config) {
-      config = await detectConfig(owner, name)
-      if (requestedFork) config.fork = requestedFork
+  if (tracking !== undefined) {
+    const nextTracking: RepoConfigData['tracking'] = tracking === ''
+      ? { status: 'none' }
+      : { status: 'configured', sources: tracking.map(source => parseRepositoryInput(source)) }
+    const updated = store.update({ tracking: nextTracking }, config)
+    if (!updated) {
+      throw new Error('Repository config no longer exists or changed before the update could be applied.')
     }
-    config.upstream = upstream || null
-    config.upstream_confirmed = true
-    configStore.save(config)
-    return `Updated **${owner}/${name}** upstream → \`${upstream || 'null'}\`` + `\nExternal upstream status: ${upstreamStatus(config)}\n${upstreamStatusMarker(config)}`
+    return `Updated **${repositoryDisplay(repository)}** tracking to ${updated.tracking.status}`
+      + `\nTracking status: ${trackingStatus(updated)}\n${trackingStatusMarker(updated)}`
   }
 
-  // View: auto-init if needed
-  const { config } = await getOrInitConfig(repo)
+  return renderRepoConfig(config)
+}
 
-  const lines = [
-    `## Config — ${owner}/${name}`,
-    '',
+export function renderRepoConfig(config: RepoConfigData): string {
+  const rows = [
+    ['schema_version', String(config.schema_version), 'Strict schema v3'],
+    ['repository', repositoryDisplay(config.repository), 'Managed project identity'],
+    ['lifecycle.status', config.lifecycle.status, 'Local project lifecycle'],
+    ['lifecycle.archived_at', config.lifecycle.archived_at ?? '-', 'Only while archived'],
+    ['parent.status', config.parent.status, 'Observed direct fork relationship'],
+    ['parent.repository', config.parent.status === 'confirmed'
+      ? `[${repositoryDisplay(config.parent.repository)}](${repositoryWebUrl(config.parent.repository)})` : '-', 'Not a storage redirect'],
+    ['parent.relation_verified_at', config.parent.status !== 'unknown' ? config.parent.relation_verified_at : '-', 'Last verified relationship'],
+    ['tracking.status', config.tracking.status, 'User decision, independent of parent'],
+    ['tracking.sources', config.tracking.status === 'configured'
+      ? config.tracking.sources.map(source => `[${repositoryDisplay(source)}](${repositoryWebUrl(source)})`).join(', ') : '-', 'Configured sources only'],
+    ['mode', inferMode(config), 'Derived, not stored'],
   ]
-
-  if (requestedFork) {
-    lines.push(`> Resolved from fork \`${requestedFork}\` → parent \`${owner}/${name}\``, '')
-  }
-
-  lines.push(
-    '| Field | Value |',
-    '|-------|-------|',
-    `| role | \`${config.role}\` |`,
-    `| status | \`${config.status ?? 'active'}\` |`,
-    `| archived_at | ${config.archived_at ?? '—'} |`,
-    `| org | ${config.org ? `\`${config.org}\`` : '—'} |`,
-    `| fork | ${config.fork ? `[${config.fork}](https://github.com/${config.fork})` : '—'} |`,
-    `| upstream | ${config.upstream ? `[${config.upstream}](https://github.com/${config.upstream})` : '—'} |`,
+  return [
+    `## Config - ${repositoryDisplay(config.repository)}`,
     '',
-    upstreamStatusMarker(config),
-    `External upstream status: ${upstreamStatus(config)}${upstreamStatus(config) === 'pending' ? ' (未确认; null does not mean an explicit no)' : ''}`,
+    markdownTable(['Field', 'Value', 'Notes'], rows),
     '',
-    `> Config path: \`~/.contribbot/${owner}/${name}/config.yaml\``,
-  )
-
-  return lines.join('\n')
+    trackingStatusMarker(config),
+    `Tracking status: ${trackingStatus(config)}`,
+    `Config path: ${join(projectDirectory(config.repository), 'config.yaml')}`,
+  ].join('\n')
 }

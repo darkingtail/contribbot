@@ -1,5 +1,6 @@
 import { graphql, parseRepo } from '../../clients/github.js'
 import { relativeTime, truncate } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 interface DiscussionsData {
   repository: {
@@ -45,7 +46,7 @@ interface DiscussionDetailData {
   }
 }
 
-export async function discussionList(repo?: string, category?: string): Promise<string> {
+export async function discussionList(repo?: RepositoryInput, category?: string): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
   const query = `
@@ -105,7 +106,7 @@ export async function discussionList(repo?: string, category?: string): Promise<
   return lines.join('\n')
 }
 
-export async function discussionDetail(discussionNumber: number, repo?: string): Promise<string> {
+export async function discussionDetail(discussionNumber: number, repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
   const query = `

@@ -8,9 +8,10 @@ import { hostActions, hostRequestSchema, localIdentitySchema, workspaceRequestSc
 import { checkReconciliationRequestSchema } from './reconciliation.js'
 import { reportInputSchema } from './reports.js'
 import { cancelCloseRequestSchema, continueRequestSchema, pauseSettlementSchema } from './control.js'
+import { repositoryRefSchema } from '../utils/repository-ref.js'
 
-// Only these top-level fields are supplied by the CLI transport, not request.json.
-const transportFields = { directory: true, repo: true, data_root: true, action: true } as const
+// Internal/CLI fields are not part of request.json; repository identity is.
+const excludedFields = { directory: true, data_root: true, action: true } as const
 const actionSchemas = {
   context: localIdentitySchema,
   resume: localIdentitySchema,
@@ -72,19 +73,19 @@ export function assertLocalAction(action: string): asserts action is Action {
 export function describeLocalRequest(action: string) {
   assertLocalAction(action)
   const input: AnyZodObject = actionSchemas[action]
-  const schema = input.omit(transportFields)
+  const schema = input.omit(excludedFields).extend({ repo: repositoryRefSchema })
   return {
     ...zodToJsonSchema(schema, { target: 'jsonSchema7', $refStrategy: 'none', effectStrategy: 'input' }),
     title: `contribbot-exec ${action} request.json`,
     'x-contribbot': {
       action, validation: 'structure-only' as const, guidance: guidance[action], limitations,
-      transport: { repo: '--repo owner/repo', data_root: '--data-root absolute-path (optional)', request: '--request JSON-file or - for stdin' },
+      transport: { data_root: '--data-root absolute-path (optional)', request: '--request JSON-file or - for stdin' },
     },
   }
 }
 
 export function localHelp(action?: string): string {
-  const usage = 'contribbot-exec <action> --repo owner/repo --request request.json [--data-root absolute-path]'
+  const usage = 'contribbot-exec <action> --request request.json [--data-root absolute-path]'
   const discovery = 'contribbot-exec <action> --help | --schema\nDiscovery does not read requests, initialize tasks, or require a repository.'
   if (action === undefined) return [usage, discovery, `Actions: ${localActions.join(', ')}`].join('\n\n')
   const schema = describeLocalRequest(action)

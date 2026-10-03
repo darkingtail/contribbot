@@ -8,10 +8,14 @@ import { expect, it } from 'vitest'
 import { createConsultStore } from '../core/consult/composition.js'
 import { TodoStore } from '../core/storage/todo-store.js'
 import { digest } from '../core/consult/contracts.js'
+import { fixtureProjectDirectory, saveFixtureProjectConfig } from '../core/execution/__fixtures__/repository.js'
 
 it('exposes consult tools over real stdio without turning advisory records into task evidence', async () => {
   const home = mkdtempSync(join(tmpdir(), 'consult-stdio-'))
-  const directory = join(home, '.contribbot', 'consult-fixture', 'repo')
+  const repo = 'consult-fixture/repo'
+  const repoRef = { platform: 'github', instance: 'https://github.com', path: repo } as const
+  const directory = fixtureProjectDirectory(join(home, '.contribbot'), repo)
+  saveFixtureProjectConfig(directory, repo)
   const todos = new TodoStore(directory)
   const todo = todos.add({ ref: null, title: 'Fixture', type: 'feature' })
   const store = createConsultStore(directory)
@@ -54,18 +58,18 @@ it('exposes consult tools over real stdio without turning advisory records into 
     for (const name of ['consult_start', 'consult_prepare', 'consult_request', 'consult_status', 'consult_read', 'consult_control', 'consult_decide', 'consult_purge_raw']) {
       expect(listing.tools.find(tool => tool.name === name)?.inputSchema.required).toContain('repo')
     }
-    const context = await client.callTool({ name: 'todo_context', arguments: { repo: 'consult-fixture/repo', todo_id: todo.id } })
+    const context = await client.callTool({ name: 'todo_context', arguments: { repo: repoRef, todo_id: todo.id } })
     expect(context.structuredContent).toMatchObject({ consultations: { status: 'available', discussions: [{ id: 'd1' }] } })
-    const status = await client.callTool({ name: 'consult_read', arguments: { repo: 'consult-fixture/repo', discussion_id: 'd1' } })
+    const status = await client.callTool({ name: 'consult_read', arguments: { repo: repoRef, discussion_id: 'd1' } })
     expect(status.structuredContent).toMatchObject({ turns: [{ text: 'Synthetic advice' }] })
     const synthesize = await client.callTool({ name: 'consult_decide', arguments: {
-      repo: 'consult-fixture/repo', discussion_id: 'd1', expected_revision: store.get('d1').revision,
+      repo: repoRef, discussion_id: 'd1', expected_revision: store.get('d1').revision,
       command: { action: 'synthesize', id: 's1', author: 'primary', text: 'Synthesis',
         sources: [{ turn_id: turn.id, digest: turn.output_digest }] },
     } })
     expect(synthesize.isError, JSON.stringify(synthesize)).not.toBe(true)
     const forged = await client.callTool({ name: 'consult_decide', arguments: {
-      repo: 'consult-fixture/repo', discussion_id: 'd1', expected_revision: store.get('d1').revision,
+      repo: repoRef, discussion_id: 'd1', expected_revision: store.get('d1').revision,
       command: { action: 'decision', id: 'd2', outcome: 'done', note: 'Pretend accepted', decision },
     } })
     expect(forged.isError).toBe(true)
@@ -79,14 +83,20 @@ it('exposes consult tools over real stdio without turning advisory records into 
       outcome: 'returned', text: 'Late receipt', stdout: '', stderr: '', exit_code: 0, signal: null,
       integrity: 'ok', reason: null, unresolved: [],
     }))
-    const observed = await client.callTool({ name: 'consult_status', arguments: { repo: 'consult-fixture/repo', discussion_id: 'd2' } })
+    const observed = await client.callTool({ name: 'consult_status', arguments: { repo: repoRef, discussion_id: 'd2' } })
     expect(observed.structuredContent).toMatchObject({ turns: [{ lifecycle: 'reserved', outcome: null }] })
-    const recovery = await client.callTool({ name: 'consult_control', arguments: { repo: 'consult-fixture/repo', command: {
+    const recovery = await client.callTool({ name: 'consult_control', arguments: { repo: repoRef, command: {
       action: 'reconcile', id: 'release-1', discussion_id: 'd2', turn_id: pending.turn.id,
       expected_revision: store.get('d2').revision,
     } } })
     expect(recovery.isError).toBe(true)
     expect(readFileSync(join(directory, 'todos.yaml'))).toEqual(before)
+    const beforeDiscussions = readFileSync(join(directory, 'consult', 'discussions.yaml'))
+    writeFileSync(join(directory, 'config.yaml'), 'schema_version: 2\n')
+    const invalidProject = await client.callTool({ name: 'consult_status', arguments: { repo: repoRef } })
+    expect(invalidProject.isError).toBe(true)
+    expect(JSON.stringify(invalidProject)).toContain('Invalid schema v3 repository config')
+    expect(readFileSync(join(directory, 'consult', 'discussions.yaml'))).toEqual(beforeDiscussions)
   }
   finally {
     await client.close()

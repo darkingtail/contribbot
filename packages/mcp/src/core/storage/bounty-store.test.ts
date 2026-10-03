@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { BountyStore } from './bounty-store.js'
@@ -19,6 +19,20 @@ describe('BountyStore', () => {
 
   it('returns empty list when no file exists', () => {
     expect(store.list()).toEqual([])
+  })
+
+  it('rejects a linked bounty directory for reads and writes', () => {
+    const outside = join(dir, 'outside')
+    mkdirSync(outside)
+    const linked = join(dir, 'linked')
+    symlinkSync(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    const linkedStore = new BountyStore(linked)
+
+    expect(() => linkedStore.list()).toThrow(/symbolic link/i)
+    expect(() => linkedStore.add({
+      ref: null, title: 'Fix', amount: '25', currency: 'USDC', rail: 'manual', creator: null,
+    })).toThrow(/symbolic link/i)
+    expect(existsSync(join(outside, 'bounties.yaml'))).toBe(false)
   })
 
   it('adds a bounty and persists it to YAML', () => {

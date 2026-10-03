@@ -2,6 +2,7 @@ import { getPull } from '../../clients/github.js'
 import { pullIdentity, todoPulls } from '../../storage/todo-pulls.js'
 import type { TodoPull } from '../../storage/todo-pulls.js'
 import type { TodoItem } from '../../storage/todo-store.js'
+import { repositoryDisplay, repositoryWebUrl, type RepositoryRef } from '../../utils/repository-ref.js'
 
 interface PullObservation {
   progress: 'draft' | 'open' | 'closed' | 'merged' | 'unknown'
@@ -18,7 +19,10 @@ export async function observeTodoPulls(pulls: TodoPull[]): Promise<Map<string, P
       const pull = pending[next++]!
       let progress: PullObservation['progress'] = 'unknown'
       try {
-        const [owner, name] = pull.repo.split('/') as [string, string]
+        if (pull.repo.platform !== 'github' || pull.repo.instance !== 'https://github.com') {
+          throw new Error('Unsupported pull request platform.')
+        }
+        const [owner, name] = pull.repo.path.split('/') as [string, string]
         const remote = await getPull(owner, name, pull.number)
         if (remote.number === pull.number && typeof remote.merged === 'boolean'
           && typeof remote.draft === 'boolean' && ['open', 'closed'].includes(remote.state)) {
@@ -34,7 +38,7 @@ export async function observeTodoPulls(pulls: TodoPull[]): Promise<Map<string, P
   return observations
 }
 
-export function formatTodoPullProgress(todo: TodoItem, repo: string, observations: Map<string, PullObservation>): string {
+export function formatTodoPullProgress(todo: TodoItem, repo: RepositoryRef, observations: Map<string, PullObservation>): string {
   const pulls = todoPulls(todo, repo)
   const lines = ['## Linked PR Progress', '',
     'Read-only observations, not acceptance evidence or a Todo completion decision.',
@@ -48,7 +52,11 @@ export function formatTodoPullProgress(todo: TodoItem, repo: string, observation
     const note = observed?.progress === 'unknown' ? 'Read unavailable or invalid; not a closed/merged conclusion'
       : !observed ? 'Not read in this snapshot (new link or 20-PR read limit)'
         : 'Historical remote observation; no lifecycle change'
-    lines.push(`| ${pull.repo} | [#${pull.number}](https://github.com/${pull.repo}/pull/${pull.number}) | ${observed?.progress ?? 'unknown'} | ${observed?.observed_at ?? '—'} | ${observed ? 'GitHub read' : 'Not read'} | ${legacy ? 'Legacy scalar association; ' : ''}${note} |`)
+    const label = repositoryDisplay(pull.repo)
+    const pr = pull.repo.platform === 'github' && pull.repo.instance === 'https://github.com'
+      ? `[#${pull.number}](${repositoryWebUrl(pull.repo)}/pull/${pull.number})`
+      : `#${pull.number}`
+    lines.push(`| ${label} | ${pr} | ${observed?.progress ?? 'unknown'} | ${observed?.observed_at ?? '—'} | ${observed ? 'GitHub read' : 'Not read'} | ${legacy ? 'Legacy scalar association; ' : ''}${note} |`)
   }
   return lines.join('\n')
 }

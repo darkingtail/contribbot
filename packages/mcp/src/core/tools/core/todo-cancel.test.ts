@@ -1,3 +1,4 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -5,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TodoStore } from '../../storage/todo-store.js'
 import { RemoteEffects } from '../../storage/remote-effects.js'
 import { issueCloseReceiptPath, writeIssueCloseReceipt } from '../../storage/issue-close-journal.js'
-import { getContribDir } from '../../utils/config.js'
 import { archiveTodos, todoArchiveSnapshot, todoCancel, todoReopen } from './todo-lifecycle.js'
 import { todoDetail } from './todo-detail.js'
 
 vi.mock('../../utils/resolve-repo.js', () => ({
-  resolveRepo: vi.fn().mockResolvedValue({ owner: 'owner', name: 'repo' }),
+  resolveRepo: vi.fn().mockImplementation(async () => ({
+    owner: 'owner', name: 'repo', directory: testProjectDirectory(),
+    repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+  })),
 }))
 
 describe('explicit plain Todo cancellation', () => {
@@ -18,14 +21,14 @@ describe('explicit plain Todo cancellation', () => {
   let directory: string
   let store: TodoStore
   let todoId: string
-  const cancel = (revision = 0, decision = 'user:do-not-continue') => todoCancel('owner/repo', todoId, revision, decision)
+  const cancel = (revision = 0, decision = 'user:do-not-continue') => todoCancel(testRepository, todoId, revision, decision)
   const snapshot = () => readFileSync(join(directory, 'todos.yaml'), 'utf8')
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'contribbot-cancel-'))
     vi.stubEnv('HOME', home)
     vi.stubEnv('USERPROFILE', home)
-    directory = getContribDir('owner', 'repo')
+    directory = testProjectDirectory()
     store = new TodoStore(directory)
     todoId = store.add({ ref: 'cancel-me', title: 'Cancel me', type: 'chore' }).id!
   })
@@ -45,7 +48,7 @@ describe('explicit plain Todo cancellation', () => {
     expect(await cancel()).toEqual(result)
     expect(snapshot()).toBe(before)
     expect(store.listArchived()).toEqual([])
-    expect(await todoDetail(todoId, 'owner/repo')).toContain('user:do-not-continue')
+    expect(await todoDetail(todoId, testRepository)).toContain('user:do-not-continue')
   })
 
   it('closes a plain execution as abandoned while retaining its progress and evidence', async () => {
@@ -63,14 +66,14 @@ describe('explicit plain Todo cancellation', () => {
 
   it('does not require a ref or invent a document-backed execution to keep the decision', async () => {
     const todo = store.add({ ref: null, title: 'No ref', type: 'chore' })
-    expect((await todoCancel('owner/repo', todo.id!, 0, 'user:no-ref-cancel')).todo)
+    expect((await todoCancel(testRepository, todo.id!, 0, 'user:no-ref-cancel')).todo)
       .toMatchObject({ status: 'cancelled', executions: [], last_cancellation: { decision: 'user:no-ref-cancel' } })
   })
 
   it('rejects empty decisions, inexact identity and invalid revisions without mutation', async () => {
     const before = snapshot()
     await expect(cancel(0, '  ')).rejects.toThrow('decision')
-    await expect(todoCancel('owner/repo', 'cancel-me', 0, 'user:cancel')).rejects.toThrow('Exact stable')
+    await expect(todoCancel(testRepository, 'cancel-me', 0, 'user:cancel')).rejects.toThrow('Exact stable')
     for (const revision of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
       await expect(cancel(revision)).rejects.toThrow('revision')
     }
@@ -80,7 +83,7 @@ describe('explicit plain Todo cancellation', () => {
   it('rejects stale cancellation after reopening and accepts a new explicit decision', async () => {
     await cancel()
     const first = store.get(0)!.last_cancellation
-    await todoReopen(todoId, 'owner/repo')
+    await todoReopen(todoId, testRepository)
     const before = snapshot()
     await expect(cancel()).rejects.toThrow('revision changed')
     expect(snapshot()).toBe(before)
@@ -96,7 +99,7 @@ describe('explicit plain Todo cancellation', () => {
     const before = snapshot()
     await expect(cancel(0, 'user:different-decision')).rejects.toThrow('another decision')
     expect(snapshot()).toBe(before)
-    await todoReopen(todoId, 'owner/repo')
+    await todoReopen(todoId, testRepository)
     store.completeTodo(0, 'done', 'User completed the reopened task.')
     await expect(cancel(1)).rejects.toThrow('Reopen')
     expect(store.get(0)!.status).toBe('done')
@@ -116,7 +119,7 @@ describe('explicit plain Todo cancellation', () => {
 
   it('blocks pending PR effects without pretending cancellation settled them', async () => {
     new RemoteEffects(directory, todoId).reserve({
-      kind: 'pr', execution_id: null, repo: 'owner/repo',
+      kind: 'pr', execution_id: null, repo: testRepository,
       payload: { title: 'In flight', head: 'feature', base: 'main', body: '', draft: false },
     })
     const before = snapshot()
@@ -125,8 +128,8 @@ describe('explicit plain Todo cancellation', () => {
   })
 
   it.each(['pending', 'closed'] as const)('blocks a %s Issue journal until its original operation is accounted for', async state => {
-    const identity = { owner: 'owner', repo: 'repo', issueNumber: 3, todoId, executionId: null }
-    writeIssueCloseReceipt(issueCloseReceiptPath(directory, 'owner', 'repo', 3, todoId, null), {
+    const identity = { repository: testRepository, issueNumber: 3, todoId, executionId: null }
+    writeIssueCloseReceipt(issueCloseReceiptPath(directory, testRepository, 3, todoId, null), {
       ...identity, lifecycleRevision: 0, state, startedAt: new Date().toISOString(),
       dispatch: { version: 1, initializedAt: new Date().toISOString(), commentDigest: '0'.repeat(64), effects: [] },
       ...(state === 'closed' ? { remoteClosedAt: new Date().toISOString() } : {}),
@@ -137,7 +140,7 @@ describe('explicit plain Todo cancellation', () => {
   })
 
   it.each([null, '', '  ', 7, {}])('blocks cancellation when a retained Issue journal has malformed identity %j', async identity => {
-    const path = issueCloseReceiptPath(directory, 'owner', 'repo', 3, todoId, null)
+    const path = issueCloseReceiptPath(directory, testRepository, 3, todoId, null)
     mkdirSync(join(directory, '.operations'), { recursive: true })
     writeFileSync(path, JSON.stringify({ todoId: identity, state: 'pending' }))
     const before = snapshot()
@@ -150,7 +153,7 @@ describe('explicit plain Todo cancellation', () => {
     await cancel()
     const selection = { todo_id: todoId, snapshot: todoArchiveSnapshot(store.get(0)!) }
     mkdirSync(join(directory, 'todos.yaml.tmp'))
-    expect(await archiveTodos('owner/repo', [selection])).toContain('| failed |')
+    expect(await archiveTodos(testRepository, [selection])).toContain('| failed |')
     const active = snapshot()
     const archived = store.listArchived()
     await expect(cancel()).rejects.toThrow('pending archival')

@@ -1,5 +1,10 @@
-import { ghApi, parseRepo } from '../../clients/github.js'
-import { readKnowledge, listAllKnowledge } from './knowledge-resources.js'
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
+import { ghApi } from '../../clients/github.js'
+import { RepoConfig } from '../../storage/repo-config.js'
+import { resolveRepoIdentity } from '../../utils/resolve-repo.js'
+import { assertNoSymlinks } from '../../utils/fs.js'
+import { projectDirectory, repositoryDisplay, type RepositoryInput, type RepositoryRef } from '../../utils/repository-ref.js'
+import { getKnowledgeDir, getKnowledgePath } from './knowledge.js'
 
 const GUIDANCE_PATHS = [
   'AGENTS.md',
@@ -63,16 +68,31 @@ async function readRepositoryGuidance(owner: string, name: string): Promise<Guid
   return results
 }
 
-function readProjectKnowledge(repo: string): GuidanceDocument[] {
-  return listAllKnowledge()
-    .filter(entry => entry.repo === repo)
-    .map((entry): GuidanceDocument | null => {
-      const content = readKnowledge(repo, entry.name)
-      return content
-        ? { source: 'knowledge' as const, path: `knowledge/${entry.name}`, content: truncate(content, MAX_FILE_CHARS) }
-        : null
-    })
-    .filter((entry): entry is GuidanceDocument => entry !== null)
+function readProjectKnowledge(repository: RepositoryRef): GuidanceDocument[] {
+  const directory = getKnowledgeDir(repository)
+  assertNoSymlinks(directory)
+  if (!existsSync(directory)) return []
+  if (!new RepoConfig(projectDirectory(repository)).load()) return []
+  if (!lstatSync(directory).isDirectory()) {
+    throw new Error(`Project knowledge directory is not a regular directory: ${directory}`)
+  }
+
+  const documents: GuidanceDocument[] = []
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) throw new Error(`Knowledge directory contains a symbolic link: ${directory}/${entry.name}`)
+    if (!entry.isDirectory()) continue
+    const path = getKnowledgePath(repository, entry.name)
+    assertNoSymlinks(path)
+    if (!existsSync(path)) continue
+    if (!lstatSync(path).isFile()) {
+      throw new Error(`Project knowledge document is not a regular file: ${path}`)
+    }
+    const content = readFileSync(path, 'utf8')
+    if (content.trim()) {
+      documents.push({ source: 'knowledge', path: `knowledge/${entry.name}`, content: truncate(content, MAX_FILE_CHARS) })
+    }
+  }
+  return documents
 }
 
 function renderGuidance(repo: string, documents: GuidanceDocument[]): string {
@@ -127,14 +147,16 @@ function renderGuidance(repo: string, documents: GuidanceDocument[]): string {
  * knowledge. The allowlist keeps this tool focused and prevents dumping an
  * entire repository into the model context.
  */
-export async function projectGuidance(repo?: string): Promise<string> {
-  const { owner, name } = parseRepo(repo)
-  const normalizedRepo = `${owner}/${name}`
+export async function projectGuidance(repo?: RepositoryInput): Promise<string> {
+  const { repository, owner, name } = await resolveRepoIdentity(repo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error('project_guidance currently supports only repositories on GitHub.com.')
+  }
   const [repositoryDocuments, knowledgeDocuments] = await Promise.all([
     readRepositoryGuidance(owner, name),
-    Promise.resolve(readProjectKnowledge(normalizedRepo)),
+    Promise.resolve(readProjectKnowledge(repository)),
   ])
-  return renderGuidance(normalizedRepo, [...repositoryDocuments, ...knowledgeDocuments])
+  return renderGuidance(repositoryDisplay(repository), [...repositoryDocuments, ...knowledgeDocuments])
 }
 
 export { GUIDANCE_PATHS, renderGuidance }

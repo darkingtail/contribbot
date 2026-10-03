@@ -1,5 +1,6 @@
 import { ghApi, parseRepo } from '../../clients/github.js'
 import { markdownTable } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 interface DependabotAlert {
   number: number
@@ -18,7 +19,7 @@ interface CodeScanAlert {
   html_url: string
 }
 
-export async function securityOverview(repo?: string): Promise<string> {
+export async function securityOverview(repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
   const [dependabotResult, codeScanResult] = await Promise.allSettled([

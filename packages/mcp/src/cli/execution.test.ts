@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TodoStore } from '../core/storage/todo-store.js'
+import { fixtureProjectDirectory, saveFixtureProjectConfig } from '../core/execution/__fixtures__/repository.js'
 
 const tsx = fileURLToPath(new URL('../../node_modules/tsx/dist/cli.mjs', import.meta.url))
 const cli = fileURLToPath(new URL('./execution.ts', import.meta.url))
@@ -13,6 +14,7 @@ const cli = fileURLToPath(new URL('./execution.ts', import.meta.url))
 describe('execution CLI request discovery', () => {
   let home: string
   let preserveHome: boolean
+  const repository = { platform: 'github', instance: 'https://github.com', path: 'fixture/discovery' }
   const call = (...args: string[]) => spawnSync(process.execPath, [tsx, cli, ...args], {
     cwd: home, encoding: 'utf8', timeout: 15_000, windowsHide: true,
     env: { ...process.env, HOME: home, USERPROFILE: home },
@@ -33,8 +35,9 @@ describe('execution CLI request discovery', () => {
       const schema = JSON.parse(result.stdout)
       expect(schema.type).toBe('object')
       expect(schema.required).toContain('acceptance_id')
+      expect(schema.required).toContain('repo')
+      expect(schema.properties.repo.required).toEqual(['platform', 'instance', 'path'])
       expect(schema.properties).not.toHaveProperty('directory')
-      expect(schema.properties).not.toHaveProperty('repo')
       expect(schema['x-contribbot'].validation).toBe('structure-only')
     }
     else {
@@ -74,7 +77,7 @@ describe('execution CLI request discovery', () => {
       expect(await done, error + output).toBe(0)
       if (flag === '--schema') {
         const schema = JSON.parse(output)
-        expect(schema.required).toEqual(expect.arrayContaining(['candidate', 'observed_at', 'plan_id', 'attempt_id', 'epoch']))
+        expect(schema.required).toEqual(expect.arrayContaining(['repo', 'candidate', 'observed_at', 'plan_id', 'attempt_id', 'epoch']))
       }
       expect(readdirSync(home)).toEqual([])
     }
@@ -101,6 +104,7 @@ describe('execution CLI request discovery', () => {
     ['missing-action', '--help'], ['missing-action', '--schema'],
     ['--schema'], ['check', 'report', '--help'],
     ['check', '--schema', '--unknown'], ['check', '--help', '--schema'],
+    ['context', '--repo', 'fixture/discovery', '--help'],
   ])('rejects invalid discovery arguments %j', (...args) => {
     const result = call(...args)
     expect(result.status).toBe(1)
@@ -108,9 +112,35 @@ describe('execution CLI request discovery', () => {
     expect(readdirSync(home)).toEqual([])
   })
 
+  it('requires a complete repository object in the JSON request for every action', () => {
+    for (const action of ['context', 'apply', 'check', 'bind', 'report', 'close']) {
+      const result = call(action, '--schema')
+      expect(result.status, result.stderr + result.stdout).toBe(0)
+      const schema = JSON.parse(result.stdout)
+      expect(schema.required).toContain('repo')
+      expect(schema.properties.repo.type).toBe('object')
+      expect(schema.properties.repo.required).toEqual(['platform', 'instance', 'path'])
+    }
+  }, 20_000)
+
+  it.each([
+    ['missing', undefined],
+    ['legacy string', 'fixture/discovery'],
+    ['incomplete', { platform: 'github', path: 'fixture/discovery' }],
+  ])('rejects %s repository identity before accessing local data', (_label, repo) => {
+    const file = join(home, 'request.json')
+    writeFileSync(file, JSON.stringify({ todo_id: 't-1', ...(repo === undefined ? {} : { repo }) }))
+    const result = call('context', '--request', file, '--data-root', join(home, 'data'))
+    expect(result.status).toBe(1)
+    expect(JSON.parse(result.stdout).error.message).toMatch(/repo|instance/i)
+    expect(readdirSync(home)).toEqual(['request.json'])
+  })
+
   it('uses discovered structures to read, propose and replay an isolated task without Git or GitHub', () => {
     const data = join(home, 'data')
-    const store = new TodoStore(join(data, 'fixture', 'discovery'))
+    const directory = fixtureProjectDirectory(data, 'fixture/discovery')
+    saveFixtureProjectConfig(directory, 'fixture/discovery')
+    const store = new TodoStore(directory)
     const todo = store.add({ ref: 'docs', title: 'Document a function', type: 'docs' })
     const execution = store.activateExecution(0).execution
     const todo_id = todo.id!
@@ -122,13 +152,13 @@ describe('execution CLI request discovery', () => {
     }
     const run = (action: string, payload: Record<string, unknown>) => {
       const file = join(home, 'request.json')
-      writeFileSync(file, JSON.stringify(payload))
-      const result = call(action, '--repo', 'fixture/discovery', '--data-root', data, '--request', file)
+      writeFileSync(file, JSON.stringify({ repo: repository, ...payload }))
+      const result = call(action, '--data-root', data, '--request', file)
       expect(result.status, result.stderr + result.stdout).toBe(0)
       return JSON.parse(result.stdout)
     }
     const contextSchema = schemaFor('context')
-    expect(contextSchema.required).toEqual(['todo_id'])
+    expect(contextSchema.required).toEqual(expect.arrayContaining(['repo', 'todo_id']))
     const context = run('context', { todo_id })
     expect(context.workflow_revision).toBe(0)
     expect(context.execution.workflow).toBeUndefined()
@@ -155,10 +185,10 @@ describe('execution CLI request discovery', () => {
     expect(resumed.execution.workflow.plans).toHaveLength(1)
     const before = store.list()
     writeFileSync(join(home, 'request.json'), JSON.stringify({
-      ...request, request_id: 'internal', expected_revision: first.workflow.revision,
+      repo: repository, ...request, request_id: 'internal', expected_revision: first.workflow.revision,
       command: { action: 'finish_closure', closure_id: 'fake' },
     }))
-    const refused = call('apply', '--repo', 'fixture/discovery', '--data-root', data, '--request', join(home, 'request.json'))
+    const refused = call('apply', '--data-root', data, '--request', join(home, 'request.json'))
     expect(refused.status).toBe(1)
     expect(JSON.parse(refused.stdout).error.message).toMatch(/Internal\/local action/)
     expect(store.list()).toEqual(before)

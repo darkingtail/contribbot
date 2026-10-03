@@ -2,9 +2,16 @@ import { UpstreamStore } from '../../storage/upstream-store.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES, validateEnum } from '../../enums.js'
 import type { UpstreamItemStatus, TodoDifficulty } from '../../enums.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
-import { difficultyLabel } from '../../utils/format.js'
+import { difficultyLabel, markdownTable } from '../../utils/format.js'
+import {
+  repositoryDisplay,
+  repositoryIdentityKey,
+  repositoryRefSchema,
+  repositoryWebUrl,
+  type RepositoryInput,
+  type RepositoryRef,
+} from '../../utils/repository-ref.js'
 
 function statusIcon(s: string): string {
   if (s === 'done') return '✅'
@@ -12,28 +19,33 @@ function statusIcon(s: string): string {
   return '⬜'
 }
 
-export async function upstreamList(repo?: string, upstreamRepo?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+function supportsGitHubWebLinks(repository: RepositoryRef): boolean {
+  return repository.platform === 'github' && repository.instance === 'https://github.com'
+}
+
+export async function upstreamList(repo?: RepositoryInput, upstreamRepo?: RepositoryRef): Promise<string> {
+  const { directory: contribDir } = await resolveRepo(repo)
   const store = new UpstreamStore(contribDir)
 
   const allRepos = store.listRepos()
+  const sourceFilter = upstreamRepo === undefined ? undefined : repositoryRefSchema.parse(upstreamRepo)
 
   if (allRepos.length === 0) {
     return `## Upstream\n\n_No upstream data yet. Use \`upstream_sync_check\` to import versions._`
   }
 
-  const reposToShow = upstreamRepo
-    ? allRepos.filter(r => r === upstreamRepo)
+  const reposToShow = sourceFilter
+    ? allRepos.filter(r => repositoryIdentityKey(r) === repositoryIdentityKey(sourceFilter))
     : allRepos
 
   if (reposToShow.length === 0) {
-    return `## Upstream\n\n_No data for "${upstreamRepo}"._`
+    return `## Upstream\n\n_No data for "${repositoryDisplay(sourceFilter!)}"._`
   }
 
   const sections: string[] = []
 
   for (const upRepo of reposToShow) {
+    const label = repositoryDisplay(upRepo)
     const versions = store.listVersions(upRepo)
     const daily = store.getDaily(upRepo)
 
@@ -50,7 +62,7 @@ export async function upstreamList(repo?: string, upstreamRepo?: string): Promis
     }
 
     const lines: string[] = [
-      `## Upstream — ${upRepo}`,
+      `## Upstream — ${label}`,
       `> ${summaryParts.join(' | ')}`,
       '',
     ]
@@ -58,15 +70,21 @@ export async function upstreamList(repo?: string, upstreamRepo?: string): Promis
     // Version sync table
     if (versions.length > 0) {
       lines.push('### 版本同步')
-      lines.push('| Version | Status | Items | Progress |')
-      lines.push('|---------|--------|-------|----------|')
-
-      for (const ver of versions) {
+      const rows = versions.map((ver) => {
         const doneItems = ver.items.filter(i => i.status === 'done').length
         const totalItems = ver.items.length
-        const versionLink = `[${ver.version}](https://github.com/${upRepo}/releases/tag/${ver.version})`
-        lines.push(`| ${versionLink} | ${ver.status} | ${totalItems} item${totalItems !== 1 ? 's' : ''} | ${doneItems}/${totalItems} done |`)
-      }
+        const version = supportsGitHubWebLinks(upRepo)
+          ? `[${ver.version}](${repositoryWebUrl(upRepo)}/releases/tag/${encodeURIComponent(ver.version)})`
+          : ver.version
+        return [
+          version,
+          ver.status,
+          `${totalItems} item${totalItems !== 1 ? 's' : ''}`,
+          `${doneItems}/${totalItems} done`,
+          'Local tracking record',
+        ]
+      })
+      lines.push(markdownTable(['Version', 'Status', 'Items', 'Progress', 'Remark'], rows))
 
       lines.push('')
     }
@@ -85,67 +103,72 @@ export async function upstreamList(repo?: string, upstreamRepo?: string): Promis
 }
 
 export async function upstreamDetail(
-  upstreamRepo: string,
+  upstreamRepo: RepositoryRef,
   version: string,
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+  const { directory: contribDir } = await resolveRepo(repo)
+  const source = repositoryRefSchema.parse(upstreamRepo)
+  const label = repositoryDisplay(source)
 
   // Try reading record file first
   const records = new RecordFiles(contribDir)
-  const recordContent = records.readUpstreamRecord(`${upstreamRepo}@${version}`)
+  const recordContent = records.readUpstreamRecord(source, version)
   if (recordContent) {
     return recordContent
   }
 
   // No record file — render from UpstreamStore
   const store = new UpstreamStore(contribDir)
-  const versions = store.listVersions(upstreamRepo)
+  const versions = store.listVersions(source)
   const ver = versions.find(v => v.version === version)
 
   if (!ver) {
-    throw new Error(`Version "${version}" not found for ${upstreamRepo}. Use upstream_list to see available versions.`)
+    throw new Error(`Version "${version}" not found for ${label}. Use upstream_list to see available versions.`)
   }
 
-  const lines: string[] = [
-    `# ${upstreamRepo}@${version}`,
+  const rows = ver.items.map((item, i) => {
+    const prText = item.pr && supportsGitHubWebLinks(source)
+      ? `[#${item.pr}](${repositoryWebUrl(source)}/pull/${item.pr})`
+      : item.pr ? `#${item.pr}` : '—'
+    return [
+      `${i + 1}`,
+      item.title,
+      item.type,
+      difficultyLabel(item.difficulty),
+      `${statusIcon(item.status)} ${item.status}`,
+      prText,
+      'Local tracking record',
+    ]
+  })
+
+  return [
+    `# ${label}@${version}`,
     '',
     `> Status: ${ver.status} · ${ver.items.length} items`,
     '',
-    '| # | Title | Type | Difficulty | Status | PR |',
-    '|---|-------|------|------------|--------|----|',
-  ]
-
-  ver.items.forEach((item, i) => {
-    const prText = item.pr
-      ? `[#${item.pr}](https://github.com/${upstreamRepo}/pull/${item.pr})`
-      : '—'
-    lines.push(
-      `| ${i + 1} | ${item.title} | ${item.type} | ${difficultyLabel(item.difficulty)} | ${statusIcon(item.status)} ${item.status} | ${prText} |`,
-    )
-  })
-
-  return lines.join('\n')
+    markdownTable(['#', 'Title', 'Type', 'Difficulty', 'Status', 'PR', 'Remark'], rows),
+  ].join('\n')
 }
 
 export async function upstreamUpdate(
-  upstreamRepo: string,
+  upstreamRepo: RepositoryRef,
   version: string,
   itemIndex: number,
   fields: { status?: string; pr?: number; difficulty?: string },
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+  const { directory: contribDir } = await resolveRepo(repo)
+  const source = repositoryRefSchema.parse(upstreamRepo)
+  const label = repositoryDisplay(source)
   const store = new UpstreamStore(contribDir)
 
   // Validate version exists
-  const versions = store.listVersions(upstreamRepo)
+  const versions = store.listVersions(source)
   const ver = versions.find(v => v.version === version)
 
   if (!ver) {
-    throw new Error(`Version "${version}" not found for ${upstreamRepo}.`)
+    throw new Error(`Version "${version}" not found for ${label}.`)
   }
 
   // Convert 1-based index to 0-based
@@ -184,7 +207,7 @@ export async function upstreamUpdate(
     return `No changes specified for item #${itemIndex}: **${item.title}**`
   }
 
-  store.updateVersionItem(upstreamRepo, version, idx, updateFields)
+  store.updateVersionItem(source, version, idx, updateFields)
 
-  return `Updated ${upstreamRepo}@${version} #${itemIndex} **${item.title}**: ${changes.join(', ')}`
+  return `Updated ${label}@${version} #${itemIndex} **${item.title}**: ${changes.join(', ')}`
 }

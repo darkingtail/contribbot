@@ -1,5 +1,6 @@
 import { getPull, getPullChecks, ghApi, parseRepo } from '../../clients/github.js'
 import { markdownTable, relativeTime, truncate } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 interface WorkflowRun {
   id: number
@@ -30,7 +31,7 @@ function conclusionIcon(run: WorkflowRun): string {
   }
 }
 
-export async function actionsStatus(repo?: string, branch?: string, prNumber?: number): Promise<string> {
+export async function actionsStatus(repo?: RepositoryInput, branch?: string, prNumber?: number): Promise<string> {
   const { owner, name } = parseRepo(repo)
 
   const params: Record<string, string | number> = { per_page: 20 }

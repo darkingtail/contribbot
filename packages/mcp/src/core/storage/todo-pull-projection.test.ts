@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { renderTodoWorkflow } from './todo-projection.js'
 import type { TodoItem } from './todo-store.js'
+import { fixtureRepository } from '../execution/__fixtures__/repository.js'
+
+const repository = fixtureRepository('owner/repo')
+const externalRepository = fixtureRepository('other/project')
 
 function todo(fields: Partial<TodoItem> = {}): TodoItem {
   return { id: 't-fixture', ref: 'projection', title: 'Projection', type: 'docs',
@@ -10,7 +14,7 @@ function todo(fields: Partial<TodoItem> = {}): TodoItem {
 
 describe('compatibility PR document projection', () => {
   it('does not omit a scalar-only association when explicit relations also exist', () => {
-    const item = todo({ pull_requests: [{ repo: 'owner/repo', number: 41 }, { repo: 'owner/repo', number: 42 }] })
+    const item = todo({ pull_requests: [{ repo: repository, number: 41 }, { repo: repository, number: 42 }] })
     const before = structuredClone(item)
     const document = renderTodoWorkflow(item)
     for (const number of [41, 42, 43]) expect(document).toContain(`#${number}`)
@@ -27,7 +31,7 @@ describe('compatibility PR document projection', () => {
   })
 
   it('does not conflate an explicit external PR with the same-number legacy project PR', () => {
-    const document = renderTodoWorkflow(todo({ pull_requests: [{ repo: 'other/project', number: 43 }] }))
+    const document = renderTodoWorkflow(todo({ pull_requests: [{ repo: externalRepository, number: 43 }] }))
     expect(document).toContain('other/project')
     expect(document).toContain('Legacy scalar PR')
     expect(document.match(/#43/g)).toHaveLength(2)

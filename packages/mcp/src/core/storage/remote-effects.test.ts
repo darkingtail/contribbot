@@ -4,12 +4,13 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RemoteEffects, assertRemoteEffectsSettled } from './remote-effects.js'
 import type { RemoteEffectRequest } from './remote-effects.js'
+import { fixtureRepository } from '../execution/__fixtures__/repository.js'
 
 describe('closed-kind remote effect journal', () => {
   let directory: string
   beforeEach(() => { directory = mkdtempSync(join(tmpdir(), 'contribbot-remote-effects-')) })
   afterEach(() => { rmSync(directory, { recursive: true, force: true }) })
-  const request: RemoteEffectRequest = { kind: 'pr', execution_id: null, repo: 'fixture/repo',
+  const request: RemoteEffectRequest = { kind: 'pr', execution_id: null, repo: fixtureRepository('fixture/repo'),
     payload: { title: 'Change', head: 'feature/change', base: 'main', body: '', draft: false } }
 
   it('keeps admission, receipt and local linkage separate across a new reader', () => {

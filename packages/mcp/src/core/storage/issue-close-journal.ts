@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from 'nod
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { safeWriteFileSync } from '../utils/fs.js'
+import { repositoryIdentityKey, repositoryRefSchema, sameRepository, type RepositoryRef } from '../utils/repository-ref.js'
 
 export const issueDispatchSchema = z.object({
   version: z.literal(1),
@@ -30,16 +31,14 @@ export const issueDispatchSchema = z.object({
 })
 
 export interface IssueCloseIdentity {
-  owner: string
-  repo: string
+  repository: RepositoryRef
   issueNumber: number
   todoId: string
   executionId: string | null
 }
 
 const identitySchema = z.object({
-  owner: z.string().trim().min(1),
-  repo: z.string().trim().min(1),
+  repository: repositoryRefSchema,
   issueNumber: z.number().int().positive().safe(),
   todoId: z.string().trim().min(1),
   executionId: z.string().trim().min(1).nullable(),
@@ -60,14 +59,16 @@ export interface IssueCloseReceipt extends IssueCloseIdentity {
   dispatch?: z.infer<typeof issueDispatchSchema>
 }
 
-export function issueCloseLockKey(owner: string, repo: string, issueNumber: number): string {
-  return createHash('sha256').update(`${owner}/${repo}#${issueNumber}\0issue-close`).digest('hex').slice(0, 16)
+export function issueCloseLockKey(repository: RepositoryRef, issueNumber: number): string {
+  return createHash('sha256').update(JSON.stringify([repositoryIdentityKey(repository), issueNumber, 'issue-close'])).digest('hex').slice(0, 16)
 }
 
 export function issueCloseReceiptPath(
-  directory: string, owner: string, repo: string, issueNumber: number, todoId: string, executionId: string | null,
+  directory: string, repository: RepositoryRef, issueNumber: number, todoId: string, executionId: string | null,
 ): string {
-  const digest = createHash('sha256').update(`${owner}/${repo}#${issueNumber}\0${todoId}\0${executionId ?? ''}`).digest('hex').slice(0, 24)
+  const digest = createHash('sha256').update(JSON.stringify([
+    repositoryIdentityKey(repository), issueNumber, todoId, executionId,
+  ])).digest('hex').slice(0, 24)
   return join(directory, '.operations', `issue-close-${digest}.json`)
 }
 
@@ -77,7 +78,7 @@ export function parseIssueCloseReceipt(raw: unknown, expected: IssueCloseIdentit
   identitySchema.parse(expected)
   const value = raw as Partial<IssueCloseReceipt>
   const { state, startedAt } = value
-  if (value.owner !== expected.owner || value.repo !== expected.repo || value.issueNumber !== expected.issueNumber
+  if (!value.repository || !sameRepository(value.repository, expected.repository) || value.issueNumber !== expected.issueNumber
     || value.todoId !== expected.todoId || value.executionId !== expected.executionId
     || (state !== 'pending' && state !== 'closed')
     || typeof startedAt !== 'string' || (state === 'closed' && typeof value.remoteClosedAt !== 'string')) {
@@ -102,7 +103,8 @@ export function parseIssueCloseReceipt(raw: unknown, expected: IssueCloseIdentit
 }
 
 export function readIssueCloseReceipt(path: string, expected: IssueCloseIdentity): IssueCloseReceipt {
-  return parseIssueCloseReceipt(JSON.parse(readFileSync(path, 'utf8')), expected)
+  try { return parseIssueCloseReceipt(JSON.parse(readFileSync(path, 'utf8')), expected) }
+  catch (error) { throw new Error(`Invalid Issue close receipt at ${path}: ${String(error)}`) }
 }
 
 export function writeIssueCloseReceipt(path: string, receipt: IssueCloseReceipt): void {
@@ -128,16 +130,16 @@ export function assertNoPendingIssueClose(
     let identity: IssueCloseIdentity
     try { identity = identitySchema.parse(raw) }
     catch {
-      throw new Error('Issue operation journal identity is unknown; account for the original operation before this Todo transition.')
+      throw new Error(`Issue operation journal identity is unknown at ${path}; account for the original operation before this Todo transition.`)
     }
     const receipt = parseIssueCloseReceipt(raw, identity)
-    if (path !== issueCloseReceiptPath(directory, identity.owner, identity.repo,
+    if (path !== issueCloseReceiptPath(directory, identity.repository,
       identity.issueNumber, identity.todoId, identity.executionId)) {
       throw new Error('Issue operation journal filename does not match its identity.')
     }
     if (receipt.todoId === todoId) {
       if (allowed && allowed.todoId === todoId && receipt.closureId
-        && receipt.owner === allowed.owner && receipt.repo === allowed.repo
+        && sameRepository(receipt.repository, allowed.repository)
         && receipt.issueNumber === allowed.issueNumber && receipt.todoId === allowed.todoId
         && receipt.executionId === allowed.executionId && receipt.closureId === allowed.closureId
         && receipt.lifecycleRevision === allowed.lifecycleRevision

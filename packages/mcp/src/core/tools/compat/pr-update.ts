@@ -1,9 +1,10 @@
 import { parseRepo, updatePull } from '../../clients/github.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 export async function prUpdate(
   prNumber: number,
   fields: { title?: string; body?: string; state?: string; draft?: boolean },
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
   const { owner, name } = parseRepo(repo)
 

@@ -8,6 +8,7 @@ import {
 } from '../storage/issue-close-journal.js'
 import type { IssueCloseIdentity, IssueCloseReceipt } from '../storage/issue-close-journal.js'
 import { withClaimLock } from '../tools/core/todo-claim.js'
+import { repositoryRefSchema, sameRepository } from '../utils/repository-ref.js'
 import { ExecutionArtifacts } from './artifacts.js'
 import { captureCandidate, verifyCandidateManifest } from './candidate.js'
 import { candidateReferenceSchema, closingSchema, processHandleSchema } from './contracts.js'
@@ -18,7 +19,7 @@ import { activeControl, transitionWorkflow } from './workflow.js'
 const text = z.string().trim().min(1).max(16_384)
 const digest = z.string().regex(/^[a-f0-9]{64}$/)
 const requestSchema = z.object({
-  directory: text, repo: text, todo_id: text, execution_id: text, closure_id: text,
+  directory: text, repo: repositoryRefSchema, todo_id: text, execution_id: text, closure_id: text,
   request_id: text, expected_revision: z.number().int().nonnegative(), actor: text, decision: text,
   control_id: text.optional(),
   report: z.object({
@@ -32,7 +33,7 @@ type Request = z.infer<typeof requestSchema>
 type Closing = WorkflowState['closings'][number]
 const recordedRequestSchema = requestSchema.omit({ directory: true, expected_revision: true })
 const journalSchema = z.object({
-  owner: text, repo: text, issueNumber: z.number().int().positive(), todoId: text,
+  repository: repositoryRefSchema, issueNumber: z.number().int().positive(), todoId: text,
   lifecycleRevision: z.number().int().nonnegative().safe(),
   executionId: text.nullable(), state: z.enum(['pending', 'closed']), startedAt: text,
   remoteClosedAt: text.optional(), closureId: text.optional(),
@@ -40,7 +41,7 @@ const journalSchema = z.object({
 }).strict()
 const observationSchema = z.object({
   kind: z.literal('observed_closed'), identity: journalSchema.pick({
-    owner: true, repo: true, issueNumber: true, todoId: true, executionId: true,
+    repository: true, issueNumber: true, todoId: true, executionId: true,
   }), closure_id: text, observed_at: z.string().datetime(),
   state: z.literal('closed'), source: z.literal('github:getIssue'),
 }).strict()
@@ -90,9 +91,7 @@ function storedRequest(input: Request) {
 
 function identity(input: Pick<Request, 'todo_id' | 'execution_id'>, closing: Closing): IssueCloseIdentity {
   if (closing.intent.target.kind !== 'issue') throw new Error('Only a linked Issue closure can be reconciled locally.')
-  const parts = closing.intent.target.repo.split('/')
-  if (parts.length !== 2 || parts.some(part => !/^[\w.-]+$/.test(part))) throw new Error('Invalid closure repository.')
-  return { owner: parts[0]!, repo: parts[1]!, issueNumber: closing.intent.target.issue_number,
+  return { repository: closing.intent.target.repo, issueNumber: closing.intent.target.issue_number,
     todoId: input.todo_id, executionId: input.execution_id }
 }
 
@@ -105,8 +104,9 @@ function load(store: TodoStore, input: Request) {
   if (!todo || todo.id !== input.todo_id || !state || !closing || !attempt) {
     throw new Error('Exact original Todo, execution, closure and attempt are required.')
   }
-  if (closing.intent.target.kind !== 'issue' || closing.intent.target.repo !== input.repo
-    || attempt.workspace.repo !== input.repo || attempt.owner !== input.actor) {
+  if (closing.intent.target.kind !== 'issue' || input.repo.platform !== 'github'
+    || input.repo.instance !== 'https://github.com' || !sameRepository(closing.intent.target.repo, input.repo)
+    || !sameRepository(attempt.workspace.repo, input.repo) || attempt.owner !== input.actor) {
     throw new Error('Closure reconciliation requires the original repository and accountable owner.')
   }
   return { todo, execution, state, closing, attempt }
@@ -124,7 +124,7 @@ function validateReport(input: Request, closing: Closing, candidate: CandidateRe
 }
 
 function journalPath(directory: string, value: IssueCloseIdentity) {
-  return issueCloseReceiptPath(directory, value.owner, value.repo, value.issueNumber, value.todoId, value.executionId)
+  return issueCloseReceiptPath(directory, value.repository, value.issueNumber, value.todoId, value.executionId)
 }
 
 function readJournal(directory: string, value: IssueCloseIdentity): IssueCloseReceipt | null {
@@ -193,7 +193,8 @@ function verifyRecord(record: Record, artifacts: ExecutionArtifacts, state: Work
   if (record.original.state !== 'prepared' || record.original.reconciliation
     || !isDeepStrictEqual(unchanged, original) || !attempt || request.actor !== attempt.owner
     || request.closure_id !== closing.intent.id || closing.intent.target.kind !== 'issue'
-    || request.repo !== closing.intent.target.repo || request.repo !== attempt.workspace.repo
+    || request.repo.platform !== 'github' || request.repo.instance !== 'https://github.com'
+    || !sameRepository(request.repo, closing.intent.target.repo) || !sameRepository(request.repo, attempt.workspace.repo)
     || !isDeepStrictEqual(record.machine, attempt.workspace.machine)
     || record.candidate.root !== attempt.workspace.root || record.candidate.git_dir !== attempt.workspace.git_dir
     || record.candidate.common_dir !== attempt.workspace.common_dir) {
@@ -303,10 +304,11 @@ async function controlRecord(
   else if (journal?.state === 'closed' && journal.closureId === input.closure_id) historical = artifacts.put(journal)
   assertKnownEffects(journal, historical ? parseIssueCloseReceipt(artifacts.get(historical), expected) : null,
     initial.closing, input.report.observed_at)
-  const issue = await getIssue(expected.owner, expected.repo, expected.issueNumber)
+  const [owner, name] = expected.repository.path.split('/') as [string, string]
+  const issue = await getIssue(owner, name, expected.issueNumber)
   assertOwned()
   if (issue.number !== undefined && issue.number !== expected.issueNumber) throw new Error('Issue readback identity mismatch.')
-  const comments = await getIssueComments(expected.owner, expected.repo, expected.issueNumber)
+  const comments = await getIssueComments(owner, name, expected.issueNumber)
   assertOwned()
   const kind = control.kind === 'pause' ? 'pause_observation' : 'cancellation_observation'
   const remote = artifacts.put((control.kind === 'pause' ? pauseObservationSchema : cancellationObservationSchema).parse({
@@ -337,7 +339,7 @@ export async function reconcileClosure(raw: unknown) {
   const store = new TodoStore(input.directory)
   const first = load(store, input)
   const expected = identity(input, first.closing)
-  return withClaimLock(input.directory, issueCloseLockKey(expected.owner, expected.repo, expected.issueNumber), async assertOwned => {
+  return withClaimLock(input.directory, issueCloseLockKey(expected.repository, expected.issueNumber), async assertOwned => {
     assertOwned()
     const initial = load(store, input)
     const artifacts = new ExecutionArtifacts(input.directory, input.execution_id)
@@ -393,7 +395,8 @@ export async function reconcileClosure(raw: unknown) {
       }
       else if (journal?.state === 'closed') remote = { kind: 'recorded_closed', receipt: artifacts.put(journal) }
       else {
-        const issue = await getIssue(expected.owner, expected.repo, expected.issueNumber)
+        const [owner, name] = expected.repository.path.split('/') as [string, string]
+        const issue = await getIssue(owner, name, expected.issueNumber)
         assertOwned()
         if (issue.state.toLowerCase() !== 'closed') throw new Error('Issue is not observed closed; reconcile the original public request before continuing.')
         remote = { kind: 'observed_closed', receipt: artifacts.put(observationSchema.parse({

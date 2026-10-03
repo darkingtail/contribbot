@@ -1,8 +1,11 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parse, stringify } from 'yaml'
+import { parseDocument, stringify } from 'yaml'
+import { z } from 'zod'
 import { todayDate } from '../utils/format.js'
-import { safeWriteFileSync } from '../utils/fs.js'
+import { assertNoSymlinks, safeWriteFileSync } from '../utils/fs.js'
+import { repositoryDigest, repositoryRefSchema, type RepositoryRef } from '../utils/repository-ref.js'
+import { DAILY_COMMIT_ACTIONS, UPSTREAM_ITEM_STATUSES, TODO_DIFFICULTIES } from '../enums.js'
 import type { UpstreamItemStatus, UpstreamVersionStatus, DailyCommitAction, TodoDifficulty } from '../enums.js'
 
 export interface UpstreamItem {
@@ -34,11 +37,67 @@ interface DailyData {
 }
 
 interface RepoData {
+  repository: RepositoryRef
   versions: UpstreamVersion[]
   daily: DailyData
 }
 
 type UpstreamFile = Record<string, RepoData>
+type ArchiveFile = Record<string, { repository: RepositoryRef; commits: DailyCommit[] }>
+
+const commitSchema = z.object({
+  sha: z.string(), message: z.string(), type: z.string(), date: z.string(),
+  action: z.enum(DAILY_COMMIT_ACTIONS).nullable(), ref: z.string().nullable(),
+}).strict()
+const sourceSchema = z.object({
+  repository: repositoryRefSchema,
+  versions: z.array(z.object({
+    version: z.string(), status: z.enum(['active', 'done']),
+    items: z.array(z.object({
+      title: z.string(), type: z.enum(['feature', 'bug', 'chore']),
+      difficulty: z.enum(TODO_DIFFICULTIES).nullable(),
+      status: z.enum(UPSTREAM_ITEM_STATUSES), pr: z.number().int().nullable(),
+    }).strict()),
+  }).strict()),
+  daily: z.object({ last_checked: z.string().nullable(), commits: z.array(commitSchema) }).strict(),
+}).strict()
+const archiveSourceSchema = z.object({
+  repository: repositoryRefSchema, commits: z.array(commitSchema),
+}).strict()
+
+function sourceKey(repository: RepositoryRef): string {
+  return repositoryDigest(repositoryRefSchema.parse(repository))
+}
+
+function sameCommit(left: DailyCommit, right: DailyCommit): boolean {
+  return left.sha === right.sha
+    && left.message === right.message
+    && left.type === right.type
+    && left.date === right.date
+    && left.action === right.action
+    && left.ref === right.ref
+}
+
+function readSources<T extends { repository: RepositoryRef }>(path: string, schema: z.ZodType<T>): Record<string, T> {
+  assertNoSymlinks(path)
+  if (!existsSync(path)) return {}
+  const document = parseDocument(readFileSync(path, 'utf8'), { uniqueKeys: true })
+  const problem = document.errors[0] ?? document.warnings[0]
+  if (problem) throw new Error(`Invalid upstream schema in ${path}: ${problem.message}`)
+  const envelope = z.object({
+    schema_version: z.literal(1),
+    sources: z.record(z.string().regex(/^[a-f0-9]{64}$/), schema),
+  }).strict().safeParse(document.toJS({ maxAliasCount: 0 }))
+  if (!envelope.success) {
+    throw new Error(`Invalid upstream identity format in ${path}; no data was converted: ${envelope.error.message}`)
+  }
+  for (const [key, source] of Object.entries(envelope.data.sources)) {
+    if (sourceKey(source.repository) !== key) {
+      throw new Error(`Upstream repository identity does not match its key in ${path}: ${key}`)
+    }
+  }
+  return envelope.data.sources
+}
 
 export class UpstreamStore {
   private baseDir: string
@@ -49,23 +108,24 @@ export class UpstreamStore {
     this.yamlPath = join(baseDir, 'upstream.yaml')
   }
 
-  listRepos(): string[] {
+  listRepos(): RepositoryRef[] {
     const data = this.load()
-    return Object.keys(data)
+    return Object.values(data).map(source => source.repository)
   }
 
   // --- Versions ---
 
-  listVersions(repo: string): UpstreamVersion[] {
+  listVersions(repo: RepositoryRef): UpstreamVersion[] {
+    const key = sourceKey(repo)
     const data = this.load()
-    return data[repo]?.versions ?? []
+    return data[key]?.versions ?? []
   }
 
   /**
    * Get the latest tracked version tag for a given upstream repo.
    * Returns null if no versions are tracked.
    */
-  getLatestVersionTag(repo: string): string | null {
+  getLatestVersionTag(repo: RepositoryRef): string | null {
     const versions = this.listVersions(repo)
     if (versions.length === 0) return null
     // Return the last version in the array (most recently added)
@@ -74,7 +134,7 @@ export class UpstreamStore {
   }
 
   addVersion(
-    repo: string,
+    repo: RepositoryRef,
     version: string,
     items: { title: string; type: 'feature' | 'bug' | 'chore' }[],
   ): void {
@@ -99,13 +159,14 @@ export class UpstreamStore {
   }
 
   updateVersionItem(
-    repo: string,
+    repo: RepositoryRef,
     version: string,
     itemIndex: number,
     fields: Partial<Pick<UpstreamItem, 'status' | 'pr' | 'difficulty'>>,
   ): void {
+    const key = sourceKey(repo)
     const data = this.load()
-    const repoData = data[repo]
+    const repoData = data[key]
     if (!repoData) return
 
     const ver = repoData.versions.find(v => v.version === version)
@@ -127,13 +188,14 @@ export class UpstreamStore {
 
   // --- Daily ---
 
-  getDaily(repo: string): DailyData {
+  getDaily(repo: RepositoryRef): DailyData {
+    const key = sourceKey(repo)
     const data = this.load()
-    return data[repo]?.daily ?? { last_checked: null, commits: [] }
+    return data[key]?.daily ?? { last_checked: null, commits: [] }
   }
 
   addDailyCommits(
-    repo: string,
+    repo: RepositoryRef,
     commits: { sha: string; message: string; type: string; date: string }[],
   ): void {
     const data = this.load()
@@ -160,12 +222,13 @@ export class UpstreamStore {
   }
 
   updateDailyCommit(
-    repo: string,
+    repo: RepositoryRef,
     sha: string,
     fields: Partial<Pick<DailyCommit, 'action' | 'ref'>>,
   ): void {
+    const key = sourceKey(repo)
     const data = this.load()
-    const repoData = data[repo]
+    const repoData = data[key]
     if (!repoData) return
 
     const commit = repoData.daily.commits.find(c => c.sha === sha)
@@ -181,11 +244,12 @@ export class UpstreamStore {
    * Batch update multiple daily commits in a single file write.
    */
   updateDailyCommitBatch(
-    repo: string,
+    repo: RepositoryRef,
     updates: Array<{ sha: string; fields: Partial<Pick<DailyCommit, 'action' | 'ref'>> }>,
   ): number {
+    const key = sourceKey(repo)
     const data = this.load()
-    const repoData = data[repo]
+    const repoData = data[key]
     if (!repoData) return 0
 
     let count = 0
@@ -206,9 +270,10 @@ export class UpstreamStore {
    * Mark all pending daily commits on or before a given date as 'synced'.
    * Used when a version sync covers those commits.
    */
-  markDailyAsSynced(repo: string, beforeDate: string): number {
+  markDailyAsSynced(repo: RepositoryRef, beforeDate: string): number {
+    const key = sourceKey(repo)
     const data = this.load()
-    const repoData = data[repo]
+    const repoData = data[key]
     if (!repoData) return 0
 
     let count = 0
@@ -229,9 +294,10 @@ export class UpstreamStore {
    * Compact daily commits for a repo: move old processed entries to upstream.archive.yaml.
    * Only moves commits that have been acted on (action !== null).
    */
-  compactDaily(repo: string, options: { before?: string; keep?: number }): { removed: number; remaining: number } {
+  compactDaily(repo: RepositoryRef, options: { before?: string; keep?: number }): { removed: number; remaining: number } {
+    const key = sourceKey(repo)
     const data = this.load()
-    const repoData = data[repo]
+    const repoData = data[key]
     if (!repoData) return { removed: 0, remaining: 0 }
 
     const commits = repoData.daily.commits
@@ -260,7 +326,7 @@ export class UpstreamStore {
     return { removed, remaining: repoData.daily.commits.length }
   }
 
-  getDailyStats(repo: string): { total: number; pending: number; processed: number; oldest: string | null } {
+  getDailyStats(repo: RepositoryRef): { total: number; pending: number; processed: number; oldest: string | null } {
     const daily = this.getDaily(repo)
     const pending = daily.commits.filter(c => c.action === null).length
     const processed = daily.commits.length - pending
@@ -274,28 +340,41 @@ export class UpstreamStore {
     return join(this.baseDir, 'upstream.archive.yaml')
   }
 
-  private appendToArchive(repo: string, commits: DailyCommit[]): void {
-    let archive: Record<string, DailyCommit[]> = {}
-    if (existsSync(this.archivePath)) {
-      const content = readFileSync(this.archivePath, 'utf-8')
-      archive = (parse(content) as Record<string, DailyCommit[]> | null) ?? {}
+  private appendToArchive(repo: RepositoryRef, commits: DailyCommit[]): void {
+    const key = sourceKey(repo)
+    const archive: ArchiveFile = readSources(this.archivePath, archiveSourceSchema)
+    if (!archive[key]) archive[key] = { repository: repositoryRefSchema.parse(repo), commits: [] }
+    const existing = new Map<string, DailyCommit>()
+    for (const commit of archive[key].commits) {
+      const previous = existing.get(commit.sha)
+      if (previous && !sameCommit(previous, commit)) {
+        throw new Error(`Conflicting archived commit ${commit.sha} for ${JSON.stringify(repo)}.`)
+      }
+      existing.set(commit.sha, commit)
     }
 
-    if (!archive[repo]) archive[repo] = []
-    archive[repo].push(...commits)
-
-    if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
-    safeWriteFileSync(this.archivePath, stringify(archive))
+    let changed = false
+    for (const commit of commits) {
+      const previous = existing.get(commit.sha)
+      if (previous) {
+        if (!sameCommit(previous, commit)) {
+          throw new Error(`Conflicting archived commit ${commit.sha} for ${JSON.stringify(repo)}.`)
+        }
+        continue
+      }
+      archive[key].commits.push(commit)
+      existing.set(commit.sha, commit)
+      changed = true
+    }
+    if (changed) this.writeSources(this.archivePath, archive)
   }
 
-  listArchived(repo: string): DailyCommit[] {
-    if (!existsSync(this.archivePath)) return []
-    const content = readFileSync(this.archivePath, 'utf-8')
-    const archive = (parse(content) as Record<string, DailyCommit[]> | null) ?? {}
-    return archive[repo] ?? []
+  listArchived(repo: RepositoryRef): DailyCommit[] {
+    const key = sourceKey(repo)
+    return readSources(this.archivePath, archiveSourceSchema)[key]?.commits ?? []
   }
 
-  getArchiveStats(repo: string): { total: number; oldest: string | null } {
+  getArchiveStats(repo: RepositoryRef): { total: number; oldest: string | null } {
     const archived = this.listArchived(repo)
     return {
       total: archived.length,
@@ -306,24 +385,28 @@ export class UpstreamStore {
   // --- Private ---
 
   private load(): UpstreamFile {
-    if (!existsSync(this.yamlPath)) return {}
-    const content = readFileSync(this.yamlPath, 'utf-8')
-    const data = parse(content) as UpstreamFile | null
-    return data ?? {}
+    return readSources(this.yamlPath, sourceSchema)
   }
 
   private save(data: UpstreamFile): void {
-    if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
-    safeWriteFileSync(this.yamlPath, stringify(data))
+    this.writeSources(this.yamlPath, data)
   }
 
-  private ensureRepo(data: UpstreamFile, repo: string): RepoData {
-    if (!data[repo]) {
-      data[repo] = {
+  private writeSources(path: string, sources: UpstreamFile | ArchiveFile): void {
+    assertNoSymlinks(path)
+    if (!existsSync(this.baseDir)) mkdirSync(this.baseDir, { recursive: true })
+    safeWriteFileSync(path, stringify({ schema_version: 1, sources }))
+  }
+
+  private ensureRepo(data: UpstreamFile, repo: RepositoryRef): RepoData {
+    const key = sourceKey(repo)
+    if (!data[key]) {
+      data[key] = {
+        repository: repositoryRefSchema.parse(repo),
         versions: [],
         daily: { last_checked: null, commits: [] },
       }
     }
-    return data[repo]
+    return data[key]
   }
 }

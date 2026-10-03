@@ -5,7 +5,7 @@ import { RecordFiles } from '../../storage/record-files.js'
 import type { ArchivedTodoItem, TodoItem } from '../../storage/todo-store.js'
 import { currentTodoExecution, isTerminalTodo, TodoStore } from '../../storage/todo-store.js'
 import { withClaimLock } from '../core/todo-claim.js'
-import { getContribDir } from '../../utils/config.js'
+import type { RepositoryInput, RepositoryRef } from '../../utils/repository-ref.js'
 import { todayDate } from '../../utils/format.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
 import { ExecutionArtifacts } from '../../execution/artifacts.js'
@@ -32,7 +32,7 @@ interface IssueCloseReceiptMatch {
 
 function clearConfirmedCloseReceipt(contribDir: string, identity: IssueCloseIdentity): void {
   const path = issueCloseReceiptPath(
-    contribDir, identity.owner, identity.repo, identity.issueNumber, identity.todoId, identity.executionId,
+    contribDir, identity.repository, identity.issueNumber, identity.todoId, identity.executionId,
   )
   if (!existsSync(path)) return
   if (readIssueCloseReceipt(path, identity).state !== 'closed') {
@@ -50,12 +50,7 @@ function findIssueCloseReceipts(
   for (const executionId of executionIds) {
     const identity = { ...base, executionId }
     const path = issueCloseReceiptPath(
-      contribDir,
-      identity.owner,
-      identity.repo,
-      identity.issueNumber,
-      identity.todoId,
-      identity.executionId,
+      contribDir, identity.repository, identity.issueNumber, identity.todoId, identity.executionId,
     )
     if (existsSync(path)) {
       const { receipt, content } = readIssueCloseJournalSnapshot(path, identity)
@@ -90,14 +85,16 @@ function archivedTodoMatchesClose(
 async function issueCloseLocked(
   owner: string,
   name: string,
+  contribDir: string,
   issueNumber: number,
+  repository: RepositoryRef,
   comment?: string,
   todoItem?: string,
   assertOwned?: () => void,
   completion?: LinkedClosure,
 ): Promise<string> {
   const results: string[] = []
-  const contribDir = getContribDir(owner, name)
+  const repoGuidance = JSON.stringify(repository)
   const store = todoItem ? new TodoStore(contribDir) : undefined
   let linkedTodo: { id: string; executionId: string | null; lifecycleRevision: number } | undefined
   let receiptIdentity: IssueCloseIdentity | undefined
@@ -193,11 +190,11 @@ async function issueCloseLocked(
       const archived = await closeManagedWithReadback({
         ...completion, directory: contribDir, todo_id: todoItem,
         target: {
-          kind: 'issue', repo: `${owner}/${name}`, issue_number: issueNumber,
+          kind: 'issue', repo: repository, issue_number: issueNumber,
           comment_digest: createHash('sha256').update(comment ?? '').digest('hex'),
         },
       })
-      clearConfirmedCloseReceipt(contribDir, { owner, repo: name, issueNumber, todoId: todoItem, executionId: completion.execution_id })
+      clearConfirmedCloseReceipt(contribDir, { repository, issueNumber, todoId: todoItem, executionId: completion.execution_id })
       return `Reconciled completion of managed Todo ${archived.id}; no remote effects repeated.`
     }
     const resolved = store.transaction(() => {
@@ -212,17 +209,17 @@ async function issueCloseLocked(
         const closed = await closeManagedWithReadback({
           ...completion, directory: contribDir, todo_id: todoItem,
           target: {
-            kind: 'issue', repo: `${owner}/${name}`, issue_number: issueNumber,
+            kind: 'issue', repo: repository, issue_number: issueNumber,
             comment_digest: createHash('sha256').update(comment ?? '').digest('hex'),
           },
         })
-        clearConfirmedCloseReceipt(contribDir, { owner, repo: name, issueNumber, todoId: todoItem, executionId: completion.execution_id })
+        clearConfirmedCloseReceipt(contribDir, { repository, issueNumber, todoId: todoItem, executionId: completion.execution_id })
         return `GitHub issue #${issueNumber} and managed Todo ${closed.id} were already closed; no remote effects repeated.`
       }
       if (archived?.id) {
         const receipts = findIssueCloseReceipts(
           contribDir,
-          { owner, repo: name, issueNumber, todoId: archived.id },
+          { repository, issueNumber, todoId: archived.id },
           new Set<string | null>([null, ...archived.executions.map(execution => execution.id)]),
         )
         const confirmed = receipts.filter(({ receipt }) =>
@@ -254,7 +251,7 @@ async function issueCloseLocked(
       }
       if (identified.status !== 'done') throw new Error('Stopped Todo cannot be completed by an Issue event. Reopen explicitly.')
       const receipts = findIssueCloseReceipts(contribDir,
-        { owner, repo: name, issueNumber, todoId: identified.id },
+        { repository, issueNumber, todoId: identified.id },
         new Set<string | null>([null, ...identified.executions.map(execution => execution.id)]))
       if (receipts.length) {
         for (const { receipt } of receipts) assertRequestedReceipt(receipt)
@@ -271,9 +268,9 @@ async function issueCloseLocked(
       executionId: currentTodoExecution(identified)?.id ?? null,
       lifecycleRevision: identified.lifecycle_revision ?? 0,
     }
-    receiptIdentity = { owner, repo: name, issueNumber, todoId: linkedTodo.id, executionId: linkedTodo.executionId }
+    receiptIdentity = { repository, issueNumber, todoId: linkedTodo.id, executionId: linkedTodo.executionId }
     const receipts = findIssueCloseReceipts(
-      contribDir, { owner, repo: name, issueNumber, todoId: linkedTodo.id },
+      contribDir, { repository, issueNumber, todoId: linkedTodo.id },
       new Set<string | null>([null, ...identified.executions.map(execution => execution.id)]),
     )
     const conflictingReceipt = receipts.find(({ receipt }) => receipt.executionId !== linkedTodo!.executionId)
@@ -285,7 +282,7 @@ async function issueCloseLocked(
     }
     const currentMatch = receipts.find(({ receipt }) => receipt.executionId === linkedTodo!.executionId)
     receiptPath = currentMatch?.path
-      ?? issueCloseReceiptPath(contribDir, owner, name, issueNumber, linkedTodo.id, linkedTodo.executionId)
+      ?? issueCloseReceiptPath(contribDir, repository, issueNumber, linkedTodo.id, linkedTodo.executionId)
     currentReceipt = currentMatch?.receipt
     currentReceiptContent = currentMatch?.content
     if (currentReceipt && currentReceipt.lifecycleRevision !== linkedTodo.lifecycleRevision) {
@@ -318,7 +315,7 @@ async function issueCloseLocked(
       managedClosure = {
         ...completion, directory: contribDir, todo_id: identified.id,
         target: {
-          kind: 'issue', repo: `${owner}/${name}`, issue_number: issueNumber,
+          kind: 'issue', repo: repository, issue_number: issueNumber,
           comment_digest: createHash('sha256').update(comment ?? '').digest('hex'),
         },
       }
@@ -556,7 +553,10 @@ async function issueCloseLocked(
       if (!commentState) throw error
       throw new Error(
         `${commentState}, but GitHub issue #${issueNumber} could not be closed: ${message}. `
-        + `Retry issue_close(issue_number=${issueNumber}, comment=${JSON.stringify(comment)}, ${linkedTodo ? `todo_item="${linkedTodo.id}", ` : ''}repo="${owner}/${name}"); the operation journal and comment marker prevent duplicate side effects.`,
+        + (managedClosure
+          ? 'Retry the original issue_close request with its unchanged completion; '
+          : `Retry issue_close(issue_number=${issueNumber}, comment=${JSON.stringify(comment)}, ${linkedTodo ? `todo_item="${linkedTodo.id}", ` : ''}repo=${repoGuidance}); `)
+        + 'the operation journal and comment marker prevent duplicate side effects.',
       )
     }
     results.push(`Closed **${owner}/${name}#${issueNumber}**`)
@@ -595,7 +595,7 @@ async function issueCloseLocked(
         `GitHub issue #${issueNumber} was closed successfully, but local todo completion failed: ${message}. `
         + (managedClosure
           ? 'Retry the original issue_close request with its unchanged completion. To retain changed files, inspect the original request and use local reconcile-close after explicit user approval to continue locally. '
-          : `Retry issue_close(issue_number=${issueNumber}, comment=${JSON.stringify(comment)}, todo_item="${linkedTodo.id}", repo="${owner}/${name}"); `)
+          : `Retry issue_close(issue_number=${issueNumber}, ${comment === undefined ? '' : `comment=${JSON.stringify(comment)}, `}todo_item="${linkedTodo.id}", repo=${repoGuidance}); `)
         + 'the dedicated close journal makes the retry local-only.',
       )
     }
@@ -608,18 +608,20 @@ export async function issueClose(
   issueNumber: number,
   comment?: string,
   todoItem?: string,
-  repo?: string,
+  repo?: RepositoryInput,
   completion?: LinkedClosure,
 ): Promise<string> {
   if (completion) {
     completion = completionSchema.parse(completion)
     if (!todoItem?.trim()) throw new Error('Managed completion requires an exact stable Todo identity; no GitHub changes were attempted.')
   }
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
-  const lockDigest = issueCloseLockKey(owner, name, issueNumber)
+  const { owner, name, directory: contribDir, repository } = await resolveRepo(repo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error('issue_close supports GitHub.com repositories only; no remote changes were attempted.')
+  }
+  const lockDigest = issueCloseLockKey(repository, issueNumber)
   return withClaimLock(contribDir, lockDigest, async (assertOwned) => {
     assertOwned()
-    return issueCloseLocked(owner, name, issueNumber, comment, todoItem, assertOwned, completion)
+    return issueCloseLocked(owner, name, contribDir, issueNumber, repository, comment, todoItem, assertOwned, completion)
   })
 }

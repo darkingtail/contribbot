@@ -1,9 +1,9 @@
-import { parseRepo, createIssue } from '../../clients/github.js'
+import { createIssue } from '../../clients/github.js'
 import { RecordFiles } from '../../storage/record-files.js'
 import { TodoStore } from '../../storage/todo-store.js'
 import { UpstreamStore } from '../../storage/upstream-store.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import { repositoryRefSchema, type RepositoryInput, type RepositoryRef } from '../../utils/repository-ref.js'
 import { todayDate } from '../../utils/format.js'
 import { detectTypeFromLabels } from '../../utils/github-helpers.js'
 
@@ -12,12 +12,15 @@ export async function issueCreate(
   body?: string,
   labels?: string,
   upstreamSha?: string,
-  upstreamRepo?: string,
+  upstreamRepo?: RepositoryRef,
   autoTodo?: boolean,
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+  const source = upstreamRepo === undefined ? undefined : repositoryRefSchema.parse(upstreamRepo)
+  const { owner, name, directory: contribDir, repository } = await resolveRepo(repo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error('issue_create supports GitHub.com repositories only; no remote changes were attempted.')
+  }
 
   const labelList = labels ? labels.split(',').map(l => l.trim()).filter(Boolean) : undefined
   const issue = await createIssue(owner, name, title, body, labelList)
@@ -28,13 +31,12 @@ export async function issueCreate(
 
   try {
     // Link to upstream daily commit if provided
-    if (upstreamSha && upstreamRepo) {
-      const { owner: upOwner, name: upName } = parseRepo(upstreamRepo)
+    if (upstreamSha && source) {
       const store = new UpstreamStore(contribDir)
-      const daily = store.getDaily(`${upOwner}/${upName}`)
+      const daily = store.getDaily(source)
       const commit = daily.commits.find(c => c.sha === upstreamSha || c.sha.startsWith(upstreamSha))
       if (commit) {
-        store.updateDailyCommit(`${upOwner}/${upName}`, commit.sha, {
+        store.updateDailyCommit(source, commit.sha, {
           action: 'issue',
           ref: `#${issue.number}`,
         })
@@ -59,11 +61,11 @@ export async function issueCreate(
     const message = error instanceof Error ? error.message : String(error)
     const recovery: string[] = []
     if (autoTodo !== false) {
-      recovery.push(`todo_add(text=${JSON.stringify(title)}, ref="#${issue.number}", repo="${owner}/${name}")`)
+      recovery.push(`todo_add(text=${JSON.stringify(title)}, ref="#${issue.number}", repo=${JSON.stringify(repository)})`)
     }
-    if (upstreamSha && upstreamRepo) {
+    if (upstreamSha && source) {
       recovery.push(
-        `upstream_daily_act(upstream_repo="${upstreamRepo}", sha="${upstreamSha}", action="issue", ref="#${issue.number}", repo="${owner}/${name}")`,
+        `upstream_daily_act(upstream_repo=${JSON.stringify(source)}, sha=${JSON.stringify(upstreamSha)}, action="issue", ref="#${issue.number}", repo=${JSON.stringify(repository)})`,
       )
     }
     throw new Error(

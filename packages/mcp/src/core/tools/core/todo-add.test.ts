@@ -1,10 +1,10 @@
+import { testProjectDirectory, testRepository } from '../../utils/test-repository.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TodoStore } from '../../storage/todo-store.js'
 import { RecordFiles } from '../../storage/record-files.js'
-import { getContribDir } from '../../utils/config.js'
 import { todoActivate } from './todo-activate.js'
 import { todoUpdate } from './todo-update.js'
 import { todoAdd, todoDelete } from './todos.js'
@@ -16,7 +16,10 @@ const github = vi.hoisted(() => ({
 vi.mock('../../clients/github.js', () => github)
 
 vi.mock('../../utils/resolve-repo.js', () => ({
-  resolveRepo: vi.fn().mockResolvedValue({ owner: 'owner', name: 'repo' }),
+  resolveRepo: vi.fn().mockImplementation(async () => ({
+    owner: 'owner', name: 'repo', directory: testProjectDirectory(),
+    repository: { platform: 'github', instance: 'https://github.com', path: 'owner/repo' },
+  })),
 }))
 
 describe('todoAdd', () => {
@@ -48,6 +51,7 @@ describe('todoAdd', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllEnvs()
     rmSync(home, { recursive: true, force: true })
   })
@@ -59,14 +63,14 @@ describe('todoAdd', () => {
     }) => void> = []
     github.getIssue.mockImplementation(() => new Promise(resolve => releases.push(resolve)))
 
-    const firstAdd = todoAdd('', '#42', 'owner/repo')
-    const secondAdd = todoAdd('', '#42', 'owner/repo')
+    const firstAdd = todoAdd('', '#42', testRepository)
+    const secondAdd = todoAdd('', '#42', testRepository)
     await vi.waitFor(() => expect(github.getIssue).toHaveBeenCalledTimes(2))
 
     releases[0]!({ title: 'First issue title', labels: ['bug'] })
     await firstAdd
 
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const recordPath = join(contribDir, 'todos', '42.md')
     appendFileSync(recordPath, '\nFirst owner note.\n', 'utf-8')
 
@@ -82,67 +86,67 @@ describe('todoAdd', () => {
   })
 
   it('recreates a missing owner-specific record when duplicate todo_add is retried', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const store = new TodoStore(contribDir)
     const records = new RecordFiles(contribDir)
     const legacyPath = seedLegacyArchivedRecord(contribDir, records)
 
     const createRecord = vi.spyOn(RecordFiles.prototype, 'createTodoRecord')
       .mockImplementationOnce(() => { throw new Error('injected record failure') })
-    await expect(todoAdd('Current owner', 'shared-ref', 'owner/repo')).rejects.toThrow('injected record failure')
+    await expect(todoAdd('Current owner', 'shared-ref', testRepository)).rejects.toThrow('injected record failure')
     createRecord.mockRestore()
 
     const current = store.findByRef('shared-ref')!
     expect(records.readRecord('shared-ref', current.id)).toBeNull()
 
-    const result = await todoAdd('Ignored retry title', 'shared-ref', 'owner/repo')
+    const result = await todoAdd('Ignored retry title', 'shared-ref', testRepository)
     expect(result).toContain('Todo already exists')
     expect(records.readRecord('shared-ref', current.id)).toContain('# Current owner')
     expect(readFileSync(legacyPath, 'utf-8')).toContain('# Legacy historical owner')
 
-    await todoDelete(current.id!, 'owner/repo')
+    await todoDelete(current.id!, testRepository)
     expect(existsSync(legacyPath)).toBe(true)
     expect(readFileSync(legacyPath, 'utf-8')).toContain('# Legacy historical owner')
   })
 
   it('recreates a missing owner-specific record before appending a note', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const store = new TodoStore(contribDir)
     const records = new RecordFiles(contribDir)
     const legacyPath = seedLegacyArchivedRecord(contribDir, records)
 
     const createRecord = vi.spyOn(RecordFiles.prototype, 'createTodoRecord')
       .mockImplementationOnce(() => { throw new Error('injected record failure') })
-    await expect(todoAdd('Current owner', 'shared-ref', 'owner/repo')).rejects.toThrow('injected record failure')
+    await expect(todoAdd('Current owner', 'shared-ref', testRepository)).rejects.toThrow('injected record failure')
     createRecord.mockRestore()
 
     const current = store.findByRef('shared-ref')!
-    await todoUpdate(current.id!, { note: 'Recovered note.' }, 'owner/repo')
+    await todoUpdate(current.id!, { note: 'Recovered note.' }, testRepository)
 
     expect(records.readRecord('shared-ref', current.id)).toContain('Recovered note.')
     expect(readFileSync(legacyPath, 'utf-8')).not.toContain('Recovered note.')
   })
 
   it('recreates a missing owner-specific record during activation', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     const store = new TodoStore(contribDir)
     const records = new RecordFiles(contribDir)
     const legacyPath = seedLegacyArchivedRecord(contribDir, records)
 
     const createRecord = vi.spyOn(RecordFiles.prototype, 'createTodoRecord')
       .mockImplementationOnce(() => { throw new Error('injected record failure') })
-    await expect(todoAdd('Current owner', 'shared-ref', 'owner/repo')).rejects.toThrow('injected record failure')
+    await expect(todoAdd('Current owner', 'shared-ref', testRepository)).rejects.toThrow('injected record failure')
     createRecord.mockRestore()
 
     const current = store.findByRef('shared-ref')!
-    await todoActivate(current.id!, undefined, 'owner/repo')
+    await todoActivate(current.id!, undefined, testRepository)
 
     expect(records.readRecord('shared-ref', current.id)).toContain('# Current owner')
     expect(readFileSync(legacyPath, 'utf-8')).toContain('# Legacy historical owner')
   })
 
   it('reports an existing legacy todo even when its canonical record has an orphan owner marker', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     mkdirSync(contribDir, { recursive: true })
     writeFileSync(join(contribDir, 'todos.yaml'), `todos:
   - ref: orphan-record
@@ -159,7 +163,7 @@ describe('todoAdd', () => {
     const records = new RecordFiles(contribDir)
     records.createTodoRecord('orphan-record', 'Stale owner', 'chore', '2025-01-01', 't-stale-owner')
 
-    const result = await todoAdd('Ignored title', 'orphan-record', 'owner/repo')
+    const result = await todoAdd('Ignored title', 'orphan-record', testRepository)
     const current = new TodoStore(contribDir).findByRef('orphan-record')!
 
     expect(result).toContain('Todo already exists')
@@ -168,7 +172,7 @@ describe('todoAdd', () => {
   })
 
   it('keeps unambiguous legacy prose readable after activation assigns an id', async () => {
-    const contribDir = getContribDir('owner', 'repo')
+    const contribDir = testProjectDirectory()
     mkdirSync(contribDir, { recursive: true })
     writeFileSync(join(contribDir, 'todos.yaml'), `todos:
   - ref: legacy-activation
@@ -186,7 +190,7 @@ describe('todoAdd', () => {
     const legacyPath = records.createTodoRecord('legacy-activation', 'Legacy activation', 'chore', '2025-01-01')
     appendFileSync(legacyPath, '\nLegacy prose survives activation.\n', 'utf-8')
 
-    await todoActivate('legacy-activation', undefined, 'owner/repo')
+    await todoActivate('legacy-activation', undefined, testRepository)
 
     const current = new TodoStore(contribDir).findByRef('legacy-activation')!
     expect(current.id).toMatch(/^t-/)

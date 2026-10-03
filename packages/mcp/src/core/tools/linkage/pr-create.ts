@@ -1,15 +1,15 @@
-import { parseRepo, createPull, getRepoPulls } from '../../clients/github.js'
+import { createPull, getRepoPulls } from '../../clients/github.js'
 import { RecordFiles } from '../../storage/record-files.js'
-import { RepoConfig } from '../../storage/repo-config.js'
 import { currentTodoExecution, isTerminalTodo, TodoStore } from '../../storage/todo-store.js'
-import { getContribDir } from '../../utils/config.js'
 import { todayDate } from '../../utils/format.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 import { assertDispatchAllowed } from '../../execution/workflow.js'
 import { RemoteEffects } from '../../storage/remote-effects.js'
 import type { RemoteEffectRequest } from '../../storage/remote-effects.js'
 import { isDeepStrictEqual } from 'node:util'
 import { linkTodoPull } from '../../storage/todo-pulls.js'
+import { sameRepository } from '../../utils/repository-ref.js'
 
 export async function prCreate(
   title: string,
@@ -18,10 +18,12 @@ export async function prCreate(
   body?: string,
   draft?: boolean,
   todoItem?: string,
-  repo?: string,
+  repo?: RepositoryInput,
 ): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const contribDir = getContribDir(owner, name)
+  const { owner, name, directory: contribDir, repository } = await resolveRepo(repo)
+  if (repository.platform !== 'github' || repository.instance !== 'https://github.com') {
+    throw new Error('pr_create supports GitHub.com repositories only; no remote changes were attempted.')
+  }
   const store = new TodoStore(contribDir)
 
   // Resolve todo first — may provide branch for head
@@ -51,18 +53,10 @@ export async function prCreate(
     }
   }
 
-  // Auto-fill head from todo branch if not provided
+  // A Todo branch belongs to the managed repository; never infer a fork from parent.
   let effectiveHead = head
   if (!effectiveHead && resolved?.item.branch) {
-    // For cross-repo PRs, prefix with fork owner
-    const config = new RepoConfig(contribDir)
-    const repoConfig = config.load()
-    if (repoConfig?.fork) {
-      const forkOwner = parseRepo(repoConfig.fork).owner
-      effectiveHead = `${forkOwner}:${resolved.item.branch}`
-    } else {
-      effectiveHead = resolved.item.branch
-    }
+    effectiveHead = resolved.item.branch
   }
 
   if (!effectiveHead) {
@@ -71,13 +65,13 @@ export async function prCreate(
 
   const effects = linkedTodo ? new RemoteEffects(contribDir, linkedTodo.id) : null
   const request: RemoteEffectRequest = {
-    kind: 'pr', repo: `${owner}/${name}`, execution_id: linkedTodo?.executionId ?? null,
+    kind: 'pr', repo: repository, execution_id: linkedTodo?.executionId ?? null,
     payload: { title, head: effectiveHead, base: base ?? 'main', body: body ?? '', draft: draft ?? false },
   }
   const submitted = store.transaction(() => {
     if (linkedTodo && effects) {
       const existing = effects.find(request) ?? effects.list().find(effect => effect.state !== 'linked'
-        && effect.request.kind === 'pr' && effect.request.repo === request.repo
+        && effect.request.kind === 'pr' && sameRepository(effect.request.repo, request.repo)
         && isDeepStrictEqual(effect.request.payload, request.payload))
       if (existing) return { effect: existing }
       const current = store.resolveItemById(linkedTodo.id)?.item
@@ -123,7 +117,7 @@ export async function prCreate(
         const current = store.resolveItemById(identity.id)
         if (!current) throw new Error(`linked todo ${identity.id} changed or was removed`)
         if (effects!.list().find(effect => effect.id === submitted.effect!.id)?.state === 'linked') return current.item
-        const updated = store.update(current.storeIndex, linkTodoPull(current.item, `${owner}/${name}`, number))
+        const updated = store.update(current.storeIndex, linkTodoPull(current.item, repository, number))
         if (!updated) throw new Error(`linked todo ${identity.id} could not be updated`)
         effects!.linked(submitted.effect!.id)
         return updated

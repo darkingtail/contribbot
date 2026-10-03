@@ -1,8 +1,10 @@
 import { BOUNTY_RAILS, BOUNTY_STATUSES, BountyStore } from '../../storage/bounty-store.js'
 import type { BountyItem, BountyRail, BountyStatus } from '../../storage/bounty-store.js'
-import { getContribDir } from '../../utils/config.js'
+import { RepoConfig } from '../../storage/repo-config.js'
 import { markdownTable } from '../../utils/format.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import { parseRepo } from '../../clients/github.js'
+import { repositoryDisplay, type RepositoryInput } from '../../utils/repository-ref.js'
 
 export interface BountyCreateInput {
   ref?: string | null
@@ -37,25 +39,17 @@ function assertStatus(status: string): asserts status is BountyStatus {
   }
 }
 
-function repoParts(repo: string): { owner: string, name: string } {
-  const [owner, name] = repo.split('/')
-  if (!owner || !name || repo.split('/').length !== 2) {
-    throw new Error('repo is required. Pass owner/name.')
+async function getStore(repo: RepositoryInput): Promise<{ owner: string, name: string, store: BountyStore }> {
+  const { owner, name } = parseRepo(repo)
+  const { repository, directory } = await resolveRepo(repo)
+  if (!new RepoConfig(directory).load()) {
+    throw new Error(`Bounty project ${repositoryDisplay(repository)} is not initialized.`)
   }
-  return { owner, name }
+  return { owner, name, store: new BountyStore(directory) }
 }
 
-async function getStore(repo: string, baseDir?: string): Promise<{ owner: string, name: string, store: BountyStore }> {
-  if (baseDir) {
-    const { owner, name } = repoParts(repo)
-    return { owner, name, store: new BountyStore(baseDir) }
-  }
-  const { owner, name } = await resolveRepo(repo)
-  return { owner, name, store: new BountyStore(getContribDir(owner, name)) }
-}
-
-function getStoreSync(repo: string, baseDir: string): { owner: string, name: string, store: BountyStore } {
-  const { owner, name } = repoParts(repo)
+function getStoreSync(repo: RepositoryInput, baseDir: string): { owner: string, name: string, store: BountyStore } {
+  const { owner, name } = parseRepo(repo)
   return { owner, name, store: new BountyStore(baseDir) }
 }
 
@@ -102,9 +96,9 @@ function settlementInstruction(bounty: BountyItem, input: BountySettleInput): st
   ].join('\n')
 }
 
-export function bountyCreate(input: BountyCreateInput, repo: string, baseDir: string): string
-export async function bountyCreate(input: BountyCreateInput, repo: string, baseDir?: undefined): Promise<string>
-export function bountyCreate(input: BountyCreateInput, repo: string, baseDir?: string): string | Promise<string> {
+export function bountyCreate(input: BountyCreateInput, repo: RepositoryInput, baseDir: string): string
+export async function bountyCreate(input: BountyCreateInput, repo: RepositoryInput, baseDir?: undefined): Promise<string>
+export function bountyCreate(input: BountyCreateInput, repo: RepositoryInput, baseDir?: string): string | Promise<string> {
   assertRail(input.rail)
   const run = ({ owner, name, store }: { owner: string, name: string, store: BountyStore }) => {
     const bounty = store.add({
@@ -129,9 +123,9 @@ export function bountyCreate(input: BountyCreateInput, repo: string, baseDir?: s
   return getStore(repo).then(run)
 }
 
-export function bountyList(repo: string, status: string | undefined, baseDir: string): string
-export async function bountyList(repo: string, status?: string, baseDir?: undefined): Promise<string>
-export function bountyList(repo: string, status?: string, baseDir?: string): string | Promise<string> {
+export function bountyList(repo: RepositoryInput, status: string | undefined, baseDir: string): string
+export async function bountyList(repo: RepositoryInput, status?: string, baseDir?: undefined): Promise<string>
+export function bountyList(repo: RepositoryInput, status?: string, baseDir?: string): string | Promise<string> {
   if (status) assertStatus(status)
   const run = ({ owner, name, store }: { owner: string, name: string, store: BountyStore }) => {
     const all = store.list()
@@ -161,9 +155,9 @@ export function bountyList(repo: string, status?: string, baseDir?: string): str
   return getStore(repo).then(run)
 }
 
-export function bountyDetail(idOrRef: string, repo: string, baseDir: string): string
-export async function bountyDetail(idOrRef: string, repo: string, baseDir?: undefined): Promise<string>
-export function bountyDetail(idOrRef: string, repo: string, baseDir?: string): string | Promise<string> {
+export function bountyDetail(idOrRef: string, repo: RepositoryInput, baseDir: string): string
+export async function bountyDetail(idOrRef: string, repo: RepositoryInput, baseDir?: undefined): Promise<string>
+export function bountyDetail(idOrRef: string, repo: RepositoryInput, baseDir?: string): string | Promise<string> {
   const run = ({ owner, name, store }: { owner: string, name: string, store: BountyStore }) => {
     const bounty = requireBounty(store, idOrRef)
     return [
@@ -188,9 +182,9 @@ export function bountyDetail(idOrRef: string, repo: string, baseDir?: string): s
   return getStore(repo).then(run)
 }
 
-export function bountyClaim(idOrRef: string, input: BountyClaimInput, repo: string, baseDir: string): string
-export async function bountyClaim(idOrRef: string, input: BountyClaimInput, repo: string, baseDir?: undefined): Promise<string>
-export function bountyClaim(idOrRef: string, input: BountyClaimInput, repo: string, baseDir?: string): string | Promise<string> {
+export function bountyClaim(idOrRef: string, input: BountyClaimInput, repo: RepositoryInput, baseDir: string): string
+export async function bountyClaim(idOrRef: string, input: BountyClaimInput, repo: RepositoryInput, baseDir?: undefined): Promise<string>
+export function bountyClaim(idOrRef: string, input: BountyClaimInput, repo: RepositoryInput, baseDir?: string): string | Promise<string> {
   const run = ({ owner, name, store }: { owner: string, name: string, store: BountyStore }) => {
     const bounty = store.claim(idOrRef, input)
     if (!bounty) throw new Error(`Bounty not found: "${idOrRef}". Use bounty_list to see available bounties.`)
@@ -208,9 +202,9 @@ export function bountyClaim(idOrRef: string, input: BountyClaimInput, repo: stri
   return getStore(repo).then(run)
 }
 
-export function bountyLinkPr(idOrRef: string, pr: number, repo: string, baseDir: string): string
-export async function bountyLinkPr(idOrRef: string, pr: number, repo: string, baseDir?: undefined): Promise<string>
-export function bountyLinkPr(idOrRef: string, pr: number, repo: string, baseDir?: string): string | Promise<string> {
+export function bountyLinkPr(idOrRef: string, pr: number, repo: RepositoryInput, baseDir: string): string
+export async function bountyLinkPr(idOrRef: string, pr: number, repo: RepositoryInput, baseDir?: undefined): Promise<string>
+export function bountyLinkPr(idOrRef: string, pr: number, repo: RepositoryInput, baseDir?: string): string | Promise<string> {
   const run = ({ owner, name, store }: { owner: string, name: string, store: BountyStore }) => {
     const bounty = store.linkPr(idOrRef, pr)
     if (!bounty) throw new Error(`Bounty not found: "${idOrRef}". Use bounty_list to see available bounties.`)
@@ -220,9 +214,9 @@ export function bountyLinkPr(idOrRef: string, pr: number, repo: string, baseDir?
   return getStore(repo).then(run)
 }
 
-export function bountyMarkReady(idOrRef: string, repo: string, baseDir: string): string
-export async function bountyMarkReady(idOrRef: string, repo: string, baseDir?: undefined): Promise<string>
-export function bountyMarkReady(idOrRef: string, repo: string, baseDir?: string): string | Promise<string> {
+export function bountyMarkReady(idOrRef: string, repo: RepositoryInput, baseDir: string): string
+export async function bountyMarkReady(idOrRef: string, repo: RepositoryInput, baseDir?: undefined): Promise<string>
+export function bountyMarkReady(idOrRef: string, repo: RepositoryInput, baseDir?: string): string | Promise<string> {
   const run = ({ store }: { owner: string, name: string, store: BountyStore }) => {
     const bounty = store.markReady(idOrRef)
     if (!bounty) throw new Error(`Bounty not found: "${idOrRef}". Use bounty_list to see available bounties.`)
@@ -232,9 +226,9 @@ export function bountyMarkReady(idOrRef: string, repo: string, baseDir?: string)
   return getStore(repo).then(run)
 }
 
-export function bountySettle(idOrRef: string, input: BountySettleInput, repo: string, baseDir: string): string
-export async function bountySettle(idOrRef: string, input: BountySettleInput, repo: string, baseDir?: undefined): Promise<string>
-export function bountySettle(idOrRef: string, input: BountySettleInput, repo: string, baseDir?: string): string | Promise<string> {
+export function bountySettle(idOrRef: string, input: BountySettleInput, repo: RepositoryInput, baseDir: string): string
+export async function bountySettle(idOrRef: string, input: BountySettleInput, repo: RepositoryInput, baseDir?: undefined): Promise<string>
+export function bountySettle(idOrRef: string, input: BountySettleInput, repo: RepositoryInput, baseDir?: string): string | Promise<string> {
   assertRail(input.rail)
   const run = ({ store }: { owner: string, name: string, store: BountyStore }) => {
     const bountyBefore = requireBounty(store, idOrRef)

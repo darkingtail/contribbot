@@ -3,8 +3,8 @@ import { z } from 'zod'
 import { currentTodoExecution, isTerminalTodo, TodoStore } from '../../storage/todo-store.js'
 import type { TodoItem } from '../../storage/todo-store.js'
 import { unresolvedOperations } from '../../execution/workflow.js'
-import { getContribDir } from '../../utils/config.js'
 import { resolveRepo } from '../../utils/resolve-repo.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 export const archiveSelectionSchema = z.object({
   todo_id: z.string().min(1),
@@ -39,9 +39,9 @@ function assertSettledTerminal(todo: TodoItem): void {
 
 const cell = (value: string) => value.replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ')
 
-export async function archiveTodos(repo?: string, selections?: ArchiveSelection[], prepare = false): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = new TodoStore(getContribDir(owner, name))
+export async function archiveTodos(repo?: RepositoryInput, selections?: ArchiveSelection[], prepare = false): Promise<string> {
+  const { directory } = await resolveRepo(repo)
+  const store = new TodoStore(directory)
   if (prepare && selections !== undefined) throw new Error('Prepare identities and confirm archival in separate calls.')
   if (selections === undefined) {
     return store.transaction(() => {
@@ -103,9 +103,9 @@ export async function archiveTodos(repo?: string, selections?: ArchiveSelection[
   return lines.join('\n')
 }
 
-export async function todoRestore(item: string, repo?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const store = new TodoStore(getContribDir(owner, name))
+export async function todoRestore(item: string, repo?: RepositoryInput): Promise<string> {
+  const { directory } = await resolveRepo(repo)
+  const store = new TodoStore(directory)
   return store.transaction(() => {
     if (store.resolveItemFromAll(item)?.id !== item) throw new Error('Exact stable Todo id required to restore.')
     const restored = store.restoreArchived(item)
@@ -115,14 +115,14 @@ export async function todoRestore(item: string, repo?: string): Promise<string> 
   })
 }
 
-export async function todoReopen(item: string, repo?: string): Promise<string> {
-  const { owner, name } = await resolveRepo(repo)
-  const result = new TodoStore(getContribDir(owner, name)).reopen(item)
+export async function todoReopen(item: string, repo?: RepositoryInput): Promise<string> {
+  const { directory } = await resolveRepo(repo)
+  const result = new TodoStore(directory).reopen(item)
   return `Reopened: ${result.item.title} · backlog · Todo ID: \`${item}\`. No execution started; use todo_activate when work begins.`
 }
 
-export async function todoCancel(repo: string, todoId: string, expectedLifecycleRevision: number, decision: string) {
-  const { owner, name } = await resolveRepo(repo)
-  const todo = new TodoStore(getContribDir(owner, name)).cancelTodo(todoId, expectedLifecycleRevision, decision)
+export async function todoCancel(repo: RepositoryInput, todoId: string, expectedLifecycleRevision: number, decision: string) {
+  const { owner, name, directory } = await resolveRepo(repo)
+  const todo = new TodoStore(directory).cancelTodo(todoId, expectedLifecycleRevision, decision)
   return { schema_version: 1 as const, repo: `${owner}/${name}`, todo_id: todoId, todo, archived: false }
 }

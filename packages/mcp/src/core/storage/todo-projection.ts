@@ -1,4 +1,5 @@
 import type { TodoItem } from './todo-store.js'
+import { repositoryDisplay } from '../utils/repository-ref.js'
 
 export const WORKFLOW_START = '<!-- contribbot:workflow:start -->'
 export const WORKFLOW_END = '<!-- contribbot:workflow:end -->'
@@ -30,7 +31,7 @@ export function renderTodoWorkflow(todo: TodoItem): string {
   if (todo.pull_requests?.length) {
     lines.push('', '### Linked PRs', '', '| Repository | PR | Note |', '| --- | --- | --- |')
     for (const pull of todo.pull_requests) {
-      lines.push(`| ${text(pull.repo)} | #${pull.number} | Association only; not an acceptance result or required-delivery declaration |`)
+      lines.push(`| ${text(repositoryDisplay(pull.repo))} | #${pull.number} | Association only; not an acceptance result or required-delivery declaration |`)
     }
   }
   for (const execution of todo.executions) {
@@ -88,9 +89,9 @@ export function renderTodoWorkflow(todo: TodoItem): string {
         for (const delivery of plan.content.deliverables) {
           const target = delivery.target.kind === 'file' ? `file: ${delivery.target.path}`
             : delivery.target.kind === 'commit' ? `commit: ${delivery.target.scope.join(', ')}`
-              : delivery.target.kind === 'remote_ref' ? `${delivery.target.repo} ${delivery.target.ref} (${delivery.target.scope.join(', ')})`
+              : delivery.target.kind === 'remote_ref' ? `${repositoryDisplay(delivery.target.repo)} ${delivery.target.ref} (${delivery.target.scope.join(', ')})`
                 : delivery.target.kind === 'remote_pull'
-                  ? `${delivery.target.repo}#${delivery.target.number} ${delivery.target.endpoint} -> ${delivery.target.base} (${delivery.target.scope.join(', ')}; draft=${delivery.target.allow_draft})`
+                  ? `${repositoryDisplay(delivery.target.repo)}#${delivery.target.number} ${delivery.target.endpoint} -> ${delivery.target.base} (${delivery.target.scope.join(', ')}; draft=${delivery.target.allow_draft})`
                   : 'workspace'
           lines.push(`| ${text(delivery.id)} | ${text(target)} | ${delivery.required} | ${text(delivery.acceptance_ids.join(', '))} | ${text(delivery.description)} |`)
         }

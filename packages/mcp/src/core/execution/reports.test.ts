@@ -12,6 +12,7 @@ import { TodoStore } from '../storage/todo-store.js'
 import { ExecutionArtifacts } from './artifacts.js'
 import { runLocalCommand } from './local.js'
 import { recordCheckReport } from './reports.js'
+import { fixtureProjectDirectory, fixtureRepository, saveFixtureProjectConfig } from './__fixtures__/repository.js'
 
 describe('candidate-bound manual and review observations', () => {
   let home: string
@@ -24,7 +25,7 @@ describe('candidate-bound manual and review observations', () => {
   let workers: { child: ChildProcess; done: Promise<Result> }[]
   const state = () => store.list()[0]!.executions[0]!.workflow!
   const local = (action: string, input: Record<string, unknown> = {}) => runLocalCommand({
-    action, repo: 'fixture/reports', data_root: join(home, 'data'),
+    action, repo: fixtureRepository('fixture/reports'), data_root: join(home, 'data'),
     todo_id: todoId, execution_id: executionId, ...input,
   })
   const input = (id = 'review') => ({
@@ -79,7 +80,7 @@ describe('candidate-bound manual and review observations', () => {
     workers = []
     home = mkdtempSync(join(tmpdir(), 'contribbot-report-'))
     workspace = join(home, 'workspace')
-    directory = join(home, 'data/fixture/reports')
+    directory = fixtureProjectDirectory(join(home, 'data'), 'fixture/reports')
     mkdirSync(workspace)
     const git = (...args: string[]) => execFileSync('git', [
       '-c', 'core.hooksPath=nonexistent-hooks', '-c', 'commit.gpgSign=false', ...args,
@@ -91,10 +92,10 @@ describe('candidate-bound manual and review observations', () => {
     writeFileSync(join(workspace, 'README.md'), 'Reviewed candidate A')
     git('add', '.')
     git('commit', '--quiet', '-m', 'fixture')
+    saveFixtureProjectConfig(directory, 'fixture/reports')
     store = new TodoStore(directory)
     todoId = store.add({ ref: 'review', title: 'Inspect document', type: 'docs' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
     await local('apply', { request_id: 'plan', expected_revision: 0, command: {
       action: 'propose_plan', plan_id: 'plan', plan: {
         goal: 'Deliver an inspected document', completion_scope: 'task', remaining_scope: [], non_goals: [], scope: ['README.md'], risk: 'high',

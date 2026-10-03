@@ -11,6 +11,7 @@ import type { WorkflowPlanInput } from './contracts.js'
 import { runLocalCommand } from './local.js'
 import { planDigest } from './workflow.js'
 import { verifyReadiness } from './verification.js'
+import { fixtureProjectDirectory, fixtureRepository, saveFixtureProjectConfig } from './__fixtures__/repository.js'
 
 const acceptance = { id: 'review', description: 'Inspect the delivered content', kind: 'manual' as const, required: true, independent: false }
 const legacyPlan: WorkflowPlanInput = {
@@ -77,7 +78,7 @@ describe('delivery verification against actual candidates and report receipts', 
   let serial: number
   const state = () => store.get(0)!.executions[0]!.workflow!
   const local = (action: string, payload: Record<string, unknown> = {}) => runLocalCommand({
-    action, repo: 'fixture/delivery', data_root: join(home, 'data'),
+    action, repo: fixtureRepository('fixture/delivery'), data_root: join(home, 'data'),
     todo_id: todoId, execution_id: executionId, ...payload,
   })
   const mutation = () => ({ request_id: `fixture-${++serial}`, expected_revision: state()?.revision ?? 0 })
@@ -108,7 +109,7 @@ describe('delivery verification against actual candidates and report receipts', 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'contribbot-delivery-'))
     workspace = join(home, 'workspace')
-    directory = join(home, 'data/fixture/delivery')
+    directory = fixtureProjectDirectory(join(home, 'data'), 'fixture/delivery')
     mkdirSync(workspace)
     const git = (...args: string[]) => execFileSync('git', [
       '-c', 'core.hooksPath=nonexistent-hooks', '-c', 'commit.gpgSign=false', ...args,
@@ -121,10 +122,10 @@ describe('delivery verification against actual candidates and report receipts', 
     writeFileSync(join(workspace, '.gitignore'), 'ignored.md\n')
     git('add', '.')
     git('commit', '--quiet', '-m', 'fixture')
+    saveFixtureProjectConfig(directory, 'fixture/delivery')
     store = new TodoStore(directory)
     todoId = store.add({ ref: 'delivery', title: 'Deliver a report', type: 'docs' }).id!
     executionId = store.activateExecution(0).execution.id
-    writeFileSync(join(directory, 'config.yaml'), 'fork: null\nupstream: null\n')
     serial = 0
   })
   afterEach(() => { rmSync(home, { recursive: true, force: true }) })
@@ -314,7 +315,7 @@ describe('delivery verification against actual candidates and report receipts', 
 
   it('retains legacy absence and does not derive requirements from PR associations', async () => {
     await setup(legacyPlan)
-    store.update(0, { pr: 42, pull_requests: [{ repo: 'fixture/delivery', number: 42 }] })
+    store.update(0, { pr: 42, pull_requests: [{ repo: fixtureRepository('fixture/delivery'), number: 42 }] })
     await report()
     expect((await local('inspect')).readiness).toMatchObject({ ready: true, deliveries: [] })
     expect((await local('context')).delivery_requirements).toMatchObject({ declared: false, items: [] })

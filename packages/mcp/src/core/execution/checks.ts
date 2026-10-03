@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { isAbsolute, relative, sep } from 'node:path'
@@ -111,6 +111,7 @@ function outsideWorkspace(directory: string, root: string): void {
 async function execute(
   command: z.infer<typeof checkCommandSchema>, cwd: string,
   onSpawn: (pid: number, lifetime: { spawned_at: number; alive: () => boolean }) => Promise<void>,
+  terminator: (child: ChildProcess) => Promise<void> = terminateProcessTree,
 ): Promise<z.infer<typeof processResultSchema>> {
   return new Promise((resolve) => {
     const started = performance.now()
@@ -123,6 +124,7 @@ async function execute(
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
     let tracking: Promise<void> = Promise.resolve()
+    let termination: Promise<void> | null = null
     let settleTimer: ReturnType<typeof setTimeout> | undefined
     const child = spawn(command.executable, command.argv, {
       cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32',
@@ -132,12 +134,13 @@ async function execute(
       if (finished) return
       finished = true
       clearTimeout(timer)
-      clearTimeout(settleTimer)
       child.stdout.destroy()
       child.stderr.destroy()
       const duration = Math.max(0, performance.now() - started)
-      // Metadata publication can finish after the command, but must precede its result receipt.
-      void tracking.then(() => {
+      // Tracking may itself request termination; both attempts precede publication.
+      void tracking.then(async () => {
+        if (termination) await termination
+        clearTimeout(settleTimer)
         resolve({
           exit_code: exitCode, signal, timed_out: timedOut, output_limited: outputLimited, error,
           stdout: redact(Buffer.concat(stdout).toString('utf8')), stderr: redact(Buffer.concat(stderr).toString('utf8')),
@@ -148,18 +151,30 @@ async function execute(
       })
     }
     const terminate = () => {
-      if (finished) return
-      if (child.pid) {
-        if (process.platform === 'win32') {
-          const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
-          killer.on('error', () => { child.kill('SIGKILL') })
-        }
-        else {
-          try { process.kill(-child.pid, 'SIGKILL') }
-          catch { child.kill('SIGKILL') }
-        }
-      }
-      settleTimer ??= setTimeout(() => { child.kill('SIGKILL'); finish(null, null) }, 2000)
+      if (finished || termination) return
+      const watchdog = new Promise<void>(resolveWatchdog => {
+        settleTimer = setTimeout(() => {
+          try { child.kill('SIGKILL') }
+          catch { /* The direct child may already have exited. */ }
+          error ??= 'Process-tree termination did not settle within 2000ms; descendant liveness is unknown.'
+          resolveWatchdog()
+          finish(null, null)
+        }, 2000)
+      })
+      termination = Promise.race([
+        Promise.resolve().then(() => terminator(child)).catch(failure => {
+          error ??= `Process-tree termination failed: ${redact(failure instanceof Error ? failure.message : String(failure))}`
+          try { child.kill('SIGKILL') }
+          catch { /* Best effort for the direct child only. */ }
+        }),
+        watchdog,
+      ])
+      // Tracking may outlive termination. Do not let the watchdog report a
+      // settled termination merely because publication or identity lookup is slow.
+      void termination.then(() => {
+        clearTimeout(settleTimer)
+        settleTimer = undefined
+      })
     }
     const collect = (data: Buffer, target: Buffer[]) => {
       const remaining = Math.max(0, command.max_output_bytes - total)
@@ -184,6 +199,45 @@ async function execute(
     child.on('close', finish)
     const timer = setTimeout(() => { timedOut = true; terminate() }, command.timeout_ms)
   })
+}
+
+export function terminateProcessTree(
+  child: ChildProcess,
+  hooks: { platform?: NodeJS.Platform; spawn?: typeof spawn } = {},
+): Promise<void> {
+  if (!child.pid) return Promise.resolve()
+  const platform = hooks.platform ?? process.platform
+  if (platform === 'win32') {
+    return new Promise(resolve => {
+      let settled = false
+      const fallback = () => {
+        try { child.kill('SIGKILL') }
+        catch { /* The child may have exited while taskkill was finishing. */ }
+      }
+      const settle = (code: number | null, signal: NodeJS.Signals | null) => {
+        if (settled) return
+        settled = true
+        if (code !== 0 || signal !== null) fallback()
+        resolve()
+      }
+      try {
+        const killer = (hooks.spawn ?? spawn)('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+          windowsHide: true, stdio: 'ignore',
+        })
+        killer.once('error', () => settle(null, null))
+        killer.once('exit', settle)
+        killer.once('close', settle)
+      } catch {
+        settle(null, null)
+      }
+    })
+  }
+  try { process.kill(-child.pid, 'SIGKILL') }
+  catch {
+    try { child.kill('SIGKILL') }
+    catch { /* The child may have exited while the group kill was attempted. */ }
+  }
+  return Promise.resolve()
 }
 
 function outcome(receipt: CheckReceipt): CheckRunResult['outcome'] {
@@ -332,7 +386,9 @@ export async function runCheck(
 }
 
 /** Claim once before effects and publish a real result independently of the requesting helper. */
-export async function executeReservedCheck(rawInput: unknown): Promise<void> {
+export async function executeReservedCheck(
+  rawInput: unknown, terminator: (child: ChildProcess) => Promise<void> = terminateProcessTree,
+): Promise<void> {
   const input = runRequestSchema.parse(rawInput)
   const store = new TodoStore(input.directory)
   const artifacts = new ExecutionArtifacts(input.directory, input.execution_id)
@@ -408,7 +464,7 @@ export async function executeReservedCheck(rawInput: unknown): Promise<void> {
         || current.plan_id !== reservation.plan.id || current.attempt_id !== reservation.attempt.id) {
         throw new Error('Check reservation changed before command startup; command was not started.')
       }
-      return { result: execute(reservation.command, before.root, onSpawn) }
+      return { result: execute(reservation.command, before.root, onSpawn, terminator) }
     })
     receipt.process = await started.result
     const after = captureCandidate(before.root)

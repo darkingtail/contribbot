@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { getContribDir } from '../../utils/config.js'
+import { projectDirectory, repositoryDisplay, repositoryRefSchema, type RepositoryRef } from '../../utils/repository-ref.js'
+import { RepoConfig } from '../../storage/repo-config.js'
 import {
   authorizationSchema, bindingSchema, decisionSchema, digest, digestSchema, grantSpecSchema, idSchema,
   occupiesLocal, packetInputSchema, purposeSchema, reconcileInputSchema, runtimeInputSchema, scopeSchema, textSchema,
@@ -7,7 +8,7 @@ import {
 import { createConsultStore } from '../../consult/composition.js'
 import { buildPacket, scopeAllows } from '../../consult/packet.js'
 
-export const consultRepoSchema = z.string().regex(/^[\w][\w.-]*\/[\w][\w.-]*$/)
+export const consultRepoSchema = repositoryRefSchema
 export const consultStartSchema = z.object({
   repo: consultRepoSchema, request_id: idSchema, discussion_id: idSchema.optional(),
   todo_id: idSchema.optional(), purpose: purposeSchema.default('design'),
@@ -71,9 +72,13 @@ export const consultPurgeSchema = z.object({
   confirmed_digest: digestSchema.optional(), decision: decisionSchema.optional(),
 }).strict()
 
-export function consultStore(repo: string) {
-  const [owner, name] = consultRepoSchema.parse(repo).split('/')
-  return createConsultStore(getContribDir(owner!, name!))
+export function consultStore(repo: RepositoryRef) {
+  const repository = consultRepoSchema.parse(repo)
+  const directory = projectDirectory(repository)
+  if (!new RepoConfig(directory).load()) {
+    throw new Error(`Project ${repositoryDisplay(repository)} is not initialized. Use project_init first.`)
+  }
+  return createConsultStore(directory)
 }
 
 type ConsultPrepareInput = z.infer<typeof consultPrepareSchema>

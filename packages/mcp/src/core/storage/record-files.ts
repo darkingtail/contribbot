@@ -1,8 +1,10 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, join, resolve, sep } from 'node:path'
-import { safeWriteFileSync } from '../utils/fs.js'
+import { assertNoSymlinks, safeWriteFileSync } from '../utils/fs.js'
 import { assertSafeFileName, assertSafeTodoRef } from '../utils/todo-ref.js'
+import { markdownTable } from '../utils/format.js'
+import { repositoryDigest, repositoryRefSchema, type RepositoryRef } from '../utils/repository-ref.js'
 import type { TodoItem } from './todo-store.js'
 import type { DocumentProjection } from './todo-projection.js'
 import { renderTodoWorkflow, replaceWorkflowRegion } from './todo-projection.js'
@@ -232,16 +234,17 @@ export class RecordFiles {
     const filePath = this.resolveOwnedRefPath(`#${issueNumber}`, todoId)
     if (!filePath || !existsSync(filePath)) return
 
+    const issueFields = markdownTable(['Field', 'Value'], [
+      ['Link', info.link],
+      ['Labels', info.labels],
+      ['Author', info.author],
+      ['Created', info.createdAt],
+    ])
     const issueSection = [
       ISSUE_DETAILS_START,
       '## Issue Details',
       '',
-      `| Field | Value |`,
-      `|-------|-------|`,
-      `| Link | ${info.link} |`,
-      `| Labels | ${info.labels} |`,
-      `| Author | ${info.author} |`,
-      `| Created | ${info.createdAt} |`,
+      issueFields,
       '',
       info.body ? `> ${info.body}` : '',
       '',
@@ -292,9 +295,10 @@ export class RecordFiles {
     return readFileSync(filePath, 'utf-8')
   }
 
-  readUpstreamRecord(ref: string): string | null {
-    const filePath = this.resolveUpstreamRefPath(ref)
-    if (!filePath || !existsSync(filePath)) return null
+  readUpstreamRecord(repository: RepositoryRef, version: string): string | null {
+    const filePath = this.resolveUpstreamRefPath(repository, version)
+    assertNoSymlinks(filePath)
+    if (!existsSync(filePath)) return null
     return readFileSync(filePath, 'utf-8')
   }
 
@@ -354,26 +358,16 @@ export class RecordFiles {
     return join(this.baseDir, 'todos', `${ref}.md`)
   }
 
-  resolveUpstreamRefPath(ref: string): string | null {
-    // Upstream ref: owner/repo@version
-    const atIndex = ref.indexOf('@')
-    if (atIndex === -1) return null
-    const repo = ref.slice(0, atIndex)
-    const version = ref.slice(atIndex + 1)
-    const parts = repo.split('/')
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      throw new Error(`Invalid upstream ref: "${ref}".`)
-    }
-    const owner = parts[0]
-    const name = parts[1]
-    assertSafeFileName(owner, 'upstream owner')
-    assertSafeFileName(name, 'upstream repo')
+  resolveUpstreamRefPath(repository: RepositoryRef, version: string): string {
+    const source = repositoryRefSchema.parse(repository)
+    const digest = repositoryDigest(source)
+    assertSafeFileName(digest, 'upstream repository digest')
     assertSafeFileName(version, 'upstream version')
 
     const root = resolve(this.baseDir, 'upstream')
-    const filePath = resolve(root, owner, name, `${version}.md`)
+    const filePath = resolve(root, digest, `${version}.md`)
     if (!filePath.startsWith(`${root}${sep}`)) {
-      throw new Error(`Invalid upstream ref: "${ref}".`)
+      throw new Error('Invalid upstream record path.')
     }
     return filePath
   }

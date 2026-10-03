@@ -1,6 +1,7 @@
 import { getCommitDetail, getCompareCommits, parseRepo } from '../../clients/github.js'
 import type { CompareResult, GitHubCommitDetail, GitHubPullFile } from '../../clients/github.js'
 import { markdownTable, truncate } from '../../utils/format.js'
+import type { RepositoryInput } from '../../utils/repository-ref.js'
 
 const MAX_PATCH_CHARS = 4_000
 
@@ -47,13 +48,13 @@ export function renderCompareRefs(repo: string, base: string, head: string, resu
   ].join('\n')
 }
 
-export async function commitDetail(ref: string, repo?: string): Promise<string> {
+export async function commitDetail(ref: string, repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
   const detail = await getCommitDetail(owner, name, ref)
   return renderCommitDetail(`${owner}/${name}`, detail)
 }
 
-export async function compareRefs(base: string, head: string, repo?: string): Promise<string> {
+export async function compareRefs(base: string, head: string, repo?: RepositoryInput): Promise<string> {
   const { owner, name } = parseRepo(repo)
   const result = await getCompareCommits(owner, name, base, head)
   return renderCompareRefs(`${owner}/${name}`, base, head, result)
