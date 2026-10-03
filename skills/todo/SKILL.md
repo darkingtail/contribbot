@@ -4,7 +4,7 @@ description: "Todo 全生命周期管理：查看、添加、详情、推进执�
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: <owner/repo> [action] [args...]
+  argument-hint: <repository> [action] [args...]
 ---
 
 # Todo — 任务日常管理
@@ -28,7 +28,8 @@ execution ID、方案和恢复建议，再读 [执行闭环](references/executio
 
 ## 前置
 
-- 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
+- 从已确认的会话项目或用户线索取得完整 `{platform, instance, path}`；
+  每次仓库范围 MCP 工具显式传该对象。无法核实目标时再问用户。
 
 ## 动作路由
 
@@ -139,7 +140,8 @@ PR 观察不是验收证据，不自动完成、取消或归档 Todo；现有 PR
 3. 让用户选择要领取的项
 4. 调用 `todo_claim` 发布评论 + 本地记录
 
-评论模板可通过 `~/.contribbot/{owner}/{repo}/templates/todo_claim.md` 文件自定义。
+评论模板保存在当前项目的 v3 数据目录 `templates/todo_claim.md`；
+不要从 `owner/repo` 猜目录。
 
 ---
 

@@ -121,17 +121,18 @@ ID 冲突时核对原请求，不通过随机更换 ID 重复副作用。
 命令格式：
 
 ```sh
-contribbot-exec <action> --repo owner/repo --request request.json
+contribbot-exec <action> --request request.json
 contribbot-exec <action> --help
 contribbot-exec <action> --schema
 ```
 
-先查询动作的 `--help` / `--schema` 获取实际输入结构，无需初始化或提供 repo，
+先查询动作的 `--help` / `--schema` 获取实际输入结构，无需初始化或提供仓库身份，
 不会读取请求文件或创建任务。JSON Schema 仅描述结构，不能证明状态允许、事实真实、
 用户已授权或任务已交付；`x-contribbot.validation` 标明此限制。
 `apply --schema` 只包含公开宿主动作，不通过内部状态转换自行填写完成结果。
 
-请求 JSON 内含稳定 Todo/execution ID。`--request -` 支持 stdin；
+请求 JSON 顶层必填 `repo: { "platform": "...", "instance": "...", "path": "..." }`，
+以及稳定 Todo/execution ID。`--request -` 支持 stdin；
 `--data-root` 可显式指定隔离数据根。CLI 与 MCP 必须访问同一套任务数据，
 本地操作必须在工作区所在机器执行，不把远端 MCP 路径当成本机工作区。
 

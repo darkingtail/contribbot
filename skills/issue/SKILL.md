@@ -4,7 +4,7 @@ description: "Issue 管理：浏览、查看详情、创建、关闭、评论。
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: <owner/repo> [action] [args...]
+  argument-hint: <repository> [action] [args...]
 ---
 
 # Issue — Issue 管理
@@ -13,7 +13,9 @@ metadata:
 
 ## 前置
 
-- 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
+- 使用已确认会话项目，或核实用户提供的仓库线索，构造完整
+  `{platform, instance, path}`。每次仓库范围工具显式传该对象；
+  当前 Issue 工具只支持 GitHub.com，不把其他平台交给 GitHub API。
 
 ## 动作路由
 
@@ -54,7 +56,8 @@ metadata:
 - `labels`（可选）
 - `auto_todo`（可选）：是否自动创建对应 todo
 - `upstream_sha`（可选）：关联的 upstream commit SHA
-- `upstream_repo`（可选）：upstream commit 来源
+- `upstream_repo`（可选）：upstream commit 来源的完整 `{platform, instance, path}` 对象；
+  不能只传 `path`，不同实例的同名来源必须分别关联
 
 创建后如有 `auto_todo`，工具会自动创建对应 todo。
 如有 `upstream_sha`，工具会自动更新对应 upstream commit 状态。

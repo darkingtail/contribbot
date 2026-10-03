@@ -4,7 +4,7 @@ description: "周回顾：贡献统计、todo 进展、上游同步覆盖率、�
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: "[owner/repo]"
+  argument-hint: "[repository]"
 ---
 
 # Weekly Review — 周回顾
@@ -13,13 +13,15 @@ metadata:
 
 ## 前置
 
-- 用户提供 `repo` 则为单项目回顾
+- 用户指定项目或当前会话已确认项目时，先核实完整身份，仓库范围工具显式传
+  `{platform, instance, path}`；自然语言简称不是工具入参
 - 未提供则为跨项目回顾
 
 ## 跨项目模式
 
 1. 调用 `project_list` — 所有已跟踪项目概况
-2. 调用 `contribution_stats`（repo="all"）— 跨项目贡献统计
+2. 调用 `contribution_stats`（省略 `repo`）— 跨项目贡献统计；
+   当前只支持 GitHub.com 项目，若列表含不支持的平台先说明限制
 3. 对每个活跃项目执行精简版单项目检查
 4. 汇总输出
 
@@ -30,6 +32,7 @@ metadata:
 ### 1. 贡献统计
 
 调用 `contribution_stats`，参数：`repo`、`days=7`。
+非 GitHub.com 项目不调用该工具，报告不支持，不能把私有 GitLab 当作 GitHub。
 
 ### 2. Todo 进展
 
@@ -72,7 +75,7 @@ PR 进度独立；需要时用 `todo_detail` 查看，不因提交或合并 PR �
 组成的 `selections`，不默认归档全部、不扩大到确认后新增的完成项。
 不回复就保留；done / cancelled 均不自动归档。
 
-如果归档数据量较大（提示用户），可调用 `todo_compact` / `upstream_compact` 清理旧数据。
+`todo_compact` / `upstream_compact` 会删除历史；周回顾不自动执行，需另行明确授权。
 
 ### 6. 输出报告
 
@@ -82,10 +85,10 @@ PR 进度独立；需要时用 `todo_detail` 查看，不因提交或合并 PR �
 **模式**: {mode}
 
 ### 贡献统计
-| 指标 | 本周 |
-|------|------|
-| PRs | {n} merged / {n} opened |
-| Issues | {n} closed / {n} opened |
+| 指标 | 本周 | 备注 |
+|------|------|------|
+| PRs | {n} merged / {n} opened | 仅列工具实际支持并返回的数据 |
+| Issues | {n} closed / {n} opened | 仅列工具实际支持并返回的数据 |
 
 ### Todo 进展
 | 状态 | 数量 | 详情 | 备注 |
@@ -99,9 +102,9 @@ PR 进度独立；需要时用 `todo_detail` 查看，不因提交或合并 PR �
 | 卡住 | {n} | {列表 + 原因} | active 中的观察，不是独立状态 |
 
 ### 上游同步（如适用）
-| 追踪源 | 覆盖率 | Pending |
-|--------|--------|---------|
-| {source} | {%} | {n} commits |
+| 追踪源 | 覆盖率 | Pending | 备注 |
+|--------|--------|---------|------|
+| {source} | {%} | {n} commits | 无证据时标注未知 |
 
 ### 待审知识提案
 {n} 条 pending：{已采纳/已驳回/仍待定 概要}

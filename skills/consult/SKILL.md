@@ -4,7 +4,7 @@ description: "请 Claude 或 Codex 对设计、调查或代码提出只读第二
 metadata:
   author: darkingtail
   version: "1.0.0"
-  argument-hint: <owner/repo> [question]
+  argument-hint: <repository> [question]
 ---
 
 # Consult
@@ -26,7 +26,10 @@ metadata:
 
 ## 预览与授权
 
-首次进入仓库按 init 建立上下文。每次工具显式提供 `repo=owner/repo`。
+首次进入仓库按 init 建立上下文。每次仓库范围 MCP 工具显式传
+`repo={platform, instance, path}`；简称和 URL 仅供宿主确认项目身份。
+Runner 的 `--directory` 从已初始化主体项目的返回结果取得，不从
+`owner/repo` 拼接目录；已确认的会话项目也不构成 MCP 隐式绑定。
 本版仅支持本机 Claude/Codex 原生可执行文件的绝对路径；不执行仓库同名程序、
 shell wrapper 或任意第三方适配器。找不到运行时先说明，不静默换顾问。
 

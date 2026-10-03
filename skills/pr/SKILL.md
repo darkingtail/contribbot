@@ -4,7 +4,7 @@ description: "PR 管理：浏览、摘要、创建、更新、查看 review 评�
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: <owner/repo> [action] [args...]
+  argument-hint: <repository> [action] [args...]
 ---
 
 # PR — Pull Request 管理
@@ -13,7 +13,9 @@ metadata:
 
 ## 前置
 
-- 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
+- 使用已确认会话项目，或核实用户提供的仓库线索，构造完整
+  `{platform, instance, path}`。每次仓库范围工具显式传该对象；
+  当前 PR 工具只支持 GitHub.com，不把其他平台交给 GitHub API。
 
 ## 动作路由
 

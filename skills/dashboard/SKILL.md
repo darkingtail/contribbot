@@ -4,7 +4,7 @@ description: "项目仪表盘、项目归档与恢复：查看单项目或跨项
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: "[owner/repo]"
+  argument-hint: "[repository]"
 ---
 
 # Dashboard — 项目仪表盘
@@ -13,7 +13,9 @@ metadata:
 
 ## 前置
 
-- `repo`（可选）：owner/repo 格式。提供则单项目，不提供则跨项目。
+- 单项目先从用户线索或已确认的会话上下文取得完整
+  `{platform, instance, path}`，仓库范围工具显式传该对象；
+  跨项目视图不传 `repo`。简称不直接交给 MCP。
 
 ## 路由
 
@@ -49,7 +51,7 @@ metadata:
 - 用户明确要求归档某项目：调用 `project_archive({ repo })`，然后
   `project_status({ repo })` 读取 JSON 校验为 `archived`。
 - 用户明确要求恢复维护：调用 `project_restore({ repo })`，读回状态为 `active`。
-- repo 必须明确为 `owner/repo`，不清楚目标时先询问；不要批量猜测。
+- 项目身份不清楚时先核实；不要从同名项目或 parent 猜测，也不要批量归档。
 - 不删除目录、不关闭 GitHub issue/PR、不归档 GitHub 仓库、不标记未完成任务为完成。
 - 归档后历史数据保留，默认巡检不选中；显式巡检/恢复旧 Run 也会被阻止。
 - `project_init` 不自动恢复归档项目，恢复须由用户明确要求。

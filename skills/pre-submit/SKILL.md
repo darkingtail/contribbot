@@ -4,7 +4,7 @@ description: "提交前检查：审查 PR 变更、CI 状态、review 评论、�
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: <owner/repo> <pr_number>
+  argument-hint: <repository> <pr_number>
 ---
 
 # Pre-Submit — 提交前检查
@@ -13,7 +13,8 @@ metadata:
 
 ## 前置
 
-- 用户提供 `repo`（owner/repo 格式）和 `pr`（PR 编号）。如未提供，询问。
+- 从已确认会话项目或用户线索核实完整 `{platform, instance, path}`，
+  并明确 PR 编号；工具显式传完整对象。当前 PR 检查仅支持 GitHub.com。
 
 ## 步骤
 

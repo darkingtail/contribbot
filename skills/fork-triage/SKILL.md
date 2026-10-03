@@ -4,7 +4,7 @@ description: "Fork 同源追踪决策：评估上游 commits 对二开分支的�
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: <owner/repo>
+  argument-hint: <repository>
 ---
 
 # Fork Triage — 同源追踪决策
@@ -17,8 +17,10 @@ metadata:
 
 ## 前置
 
-- 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
-- 项目必须是 fork 模式且有二开分支。
+- 核实管理主体完整 `{platform, instance, path}`，工具调用显式传完整对象；
+  已确认会话项目可以沿用，无法定位时再问用户。
+- `parent.status=confirmed`，且有需要评估的二开分支。当前远端提交比较工具
+  只支持 GitHub.com，其他平台说明限制。
 
 ## 与 daily-sync 的关系
 
@@ -45,8 +47,8 @@ metadata:
 
 先获取证据：
 
-1. 对每条 pending commit 调用 `commit_detail`（`repo={fork_source}`、`ref={sha}`），读取 changed files 和 patch。
-2. 调用 `compare_refs`（`repo={fork_repo}`、`base={默认分支}`、`head={二开分支}`），确认二开分支实际修改过哪些文件。
+1. 对每条 pending commit 调用 `commit_detail`（`repo={parent.repository 完整对象}`、`ref={sha}`），读取 changed files 和 patch。
+2. 调用 `compare_refs`（`repo={管理主体完整对象}`、`base={默认分支}`、`head={二开分支}`），确认二开分支实际修改过哪些文件。
 3. 将上游 commit 与二开分支的 changed files 交叉比较，再判断相关性和冲突风险。
 
 如果 GitHub 没有返回 patch，或二开分支名称不明确，应将结论标为“观察/证据不足”，不能猜测无冲突。

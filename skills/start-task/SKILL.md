@@ -4,7 +4,7 @@ description: "开始一个任务：进入项目上下文、选择 todo、激活�
 metadata:
   author: darkingtail
   version: "3.0.0"
-  argument-hint: <owner/repo> [todo item]
+  argument-hint: <repository> [todo item]
 ---
 
 # Start Task — 开始任务
@@ -13,7 +13,8 @@ metadata:
 
 ## 前置
 
-- 用户提供 `repo`（owner/repo 格式）。如未提供，询问。
+- 使用已确认会话项目，或从用户线索核实完整 `{platform, instance, path}`；
+  每次仓库范围工具都显式传该对象。无法确定目标时再问用户。
 - 可选提供 `item`（Todo 列表全局编号、完整 ref、精确标题或标题关键词）。
 
 ## 步骤
@@ -134,8 +135,8 @@ Skill 自带源码入口，不只查 PATH 或 uv。再按同一参考提出并�
 {基于 issue 内容和项目上下文的实现建议}
 
 ### 相关资源
-- Issue: https://github.com/{owner}/{repo}/issues/{ref}
-- 实现记录: ~/.contribbot/{owner}/{repo}/todos/{ref}.md
+- Issue: {工具核实的可点击地址；非 GitHub.com 不拼 GitHub URL}
+- 实现记录: {工具返回的 v3 项目目录中的实际文件路径}
 ```
 
 ### 7. 沉淀可复用知识（可选）
