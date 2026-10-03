@@ -21,6 +21,7 @@ from .models import (
     TraceEvent,
     utc_now,
 )
+from .repository import RepositoryLike, RepositoryRef, parse_repository
 from .report import render_report
 
 
@@ -45,22 +46,23 @@ class PatrolRunner:
 
     async def run(
         self,
-        repo: str,
+        repo: RepositoryLike,
         approve_knowledge: bool = False,
         confirm_knowledge: Callable[[list[KnowledgeCandidate]], bool] | None = None,
         confirm_action: Callable[[PatrolAction], bool] | None = None,
     ) -> PatrolResult:
-        run = PatrolRun(id=self._run_id(), repo=repo)
+        repository = parse_repository(repo)
+        run = PatrolRun(id=self._run_id(), repo=repository)
         trace: list[TraceEvent] = []
         actions: list[ActionExecution] = []
         proposal_results: list[str] = []
 
         async with self.mcp:
-            await self._require_active(repo)
+            await self._require_active(repository)
             run.status = "observing"
-            observations = await self._collect_observations(repo, trace)
+            observations = await self._collect_observations(repository, trace)
             try:
-                knowledge = await self.mcp.read_knowledge(repo)
+                knowledge = await self.mcp.read_knowledge(repository)
                 trace.append(TraceEvent.create("observe", "knowledge resources", "completed", f"Loaded {len(knowledge)} entries."))
             except Exception as error:
                 knowledge = {}
@@ -73,7 +75,7 @@ class PatrolRunner:
 
             investigator = Investigator(self.mcp)
             for round_number in range(1, self.max_investigation_rounds + 1):
-                new_evidence = await investigator.investigate(repo, analysis)
+                new_evidence = await investigator.investigate(repository, analysis)
                 if not new_evidence:
                     break
                 run.status = "investigating"
@@ -86,11 +88,11 @@ class PatrolRunner:
 
             trace.append(TraceEvent.create("plan", "maintenance actions", "completed", f"Produced {len(analysis.actions)} actions."))
             actions = [
-                ActionExecution(id=self._action_id(repo, item), kind=item.kind, title=item.title, safety=item.safety)
+                ActionExecution(id=self._action_id(repository, item), kind=item.kind, title=item.title, safety=item.safety)
                 for item in analysis.actions
             ]
             by_title = {item.title: item for item in actions}
-            await self._execute_actions(repo, run, analysis.actions, actions, trace, confirm_action)
+            await self._execute_actions(repository, run, analysis.actions, actions, trace, confirm_action)
 
             candidates = analysis.knowledge_candidates
             should_propose = approve_knowledge
@@ -101,7 +103,7 @@ class PatrolRunner:
                 run.status = "executing"
                 for candidate in candidates:
                     proposal_results.append(await self.mcp.call_tool("knowledge_propose_update", {
-                        "repo": repo, "target": candidate.target, "action": candidate.action,
+                        "repo": repository.to_mcp(), "target": candidate.target, "action": candidate.action,
                         "source_type": "patrol", "source_ref": run.id, "title": candidate.title,
                         "rationale": candidate.rationale, "proposed_content": candidate.proposed_content,
                     }))
@@ -116,7 +118,7 @@ class PatrolRunner:
             run.completed_at = utc_now()
             report = render_report(run, snapshot, analysis, proposal_results, by_title)
             record_result = await self.mcp.call_tool("patrol_record", {
-                "repo": repo,
+                "repo": repository.to_mcp(),
                 "run_id": run.id,
                 "report": report,
                 "snapshot_json": snapshot.model_dump_json(),
@@ -130,15 +132,16 @@ class PatrolRunner:
 
     async def resume(
         self,
-        repo: str,
+        repo: RepositoryLike,
         run_id: str,
         confirm_action: Callable[[PatrolAction], bool] | None = None,
     ) -> PatrolResult:
+        repository = parse_repository(repo)
         async with self.mcp:
-            await self._require_active(repo)
-            stored = json.loads(await self.mcp.call_tool("patrol_run_get", {"repo": repo, "run_id": run_id}))
+            await self._require_active(repository)
+            stored = json.loads(await self.mcp.call_tool("patrol_run_get", {"repo": repository.to_mcp(), "run_id": run_id}))
             run = PatrolRun.model_validate(stored["run"])
-            if run.repo != repo or run.id != run_id:
+            if run.repo != repository or run.id != run_id:
                 raise ValueError("Stored patrol Run identity does not match the requested repo/run_id.")
             snapshot = PatrolSnapshot.model_validate(stored["snapshot"])
             from .models import PatrolAnalysis
@@ -147,12 +150,12 @@ class PatrolRunner:
             trace = [TraceEvent.model_validate(value) for value in stored["trace"]]
             actions = []
             for proposal in analysis.actions:
-                action_id = self._action_id(repo, proposal)
+                action_id = self._action_id(repository, proposal)
                 actions.append(prior.get(action_id) or ActionExecution(
                     id=action_id, kind=proposal.kind, title=proposal.title, safety=proposal.safety,
                 ))
             trace.append(TraceEvent.create("plan", "resume patrol run", "started", run_id))
-            await self._execute_actions(repo, run, analysis.actions, actions, trace, confirm_action, resume=True)
+            await self._execute_actions(repository, run, analysis.actions, actions, trace, confirm_action, resume=True)
             failed_actions = any(item.status == "failed" for item in actions)
             run.status = "partial" if failed_actions or not run.coverage_complete else "succeeded"
             run.completed_at = utc_now()
@@ -164,16 +167,16 @@ class PatrolRunner:
             proposal_results=[], record_result=record_result,
         )
 
-    async def _require_active(self, repo: str) -> None:
-        state = json.loads(await self.mcp.call_tool("project_status", {"repo": repo}))
+    async def _require_active(self, repo: RepositoryRef) -> None:
+        state = json.loads(await self.mcp.call_tool("project_status", {"repo": repo.to_mcp()}))
         if state.get("status") == "archived":
-            raise ArchivedProjectError(f"Project {state.get('repo', repo)} is archived. Use project_restore first.")
+            raise ArchivedProjectError(f"Project {repo.display()} is archived. Use project_restore first.")
         if state.get("status") != "active":
             raise ValueError("Unable to verify project lifecycle. Update/reconnect contribbot MCP before patrol.")
 
     async def _execute_actions(
         self,
-        repo: str,
+        repo: RepositoryRef,
         run: PatrolRun,
         proposals: list[PatrolAction],
         actions: list[ActionExecution],
@@ -206,10 +209,10 @@ class PatrolRunner:
             trace.append(TraceEvent.create("act", proposal.title, "started", "Creating local todo."))
             try:
                 create_result = await self.mcp.call_tool(
-                    "todo_add", {"repo": repo, "text": proposal.title, "ref": execution.id}
+                    "todo_add", {"repo": repo.to_mcp(), "text": proposal.title, "ref": execution.id}
                 )
                 run.status = "verifying"
-                verification = await self.mcp.call_tool("todo_detail", {"repo": repo, "item": execution.id})
+                verification = await self.mcp.call_tool("todo_detail", {"repo": repo.to_mcp(), "item": execution.id})
                 if not verification.strip():
                     raise RuntimeError("Todo verification returned an empty result.")
                 execution.result = f"{create_result}\nVerified todo: {execution.id}"
@@ -225,7 +228,7 @@ class PatrolRunner:
 
     async def _record(self, run, snapshot, analysis, actions, trace, report) -> str:
         return await self.mcp.call_tool("patrol_record", {
-            "repo": run.repo,
+            "repo": run.repo.to_mcp(),
             "run_id": run.id,
             "report": report,
             "snapshot_json": snapshot.model_dump_json(),
@@ -235,7 +238,7 @@ class PatrolRunner:
             "actions_json": json.dumps([item.model_dump(mode="json") for item in actions], ensure_ascii=False),
         })
 
-    async def _collect_observations(self, repo: str, trace: list[TraceEvent]) -> list[Observation]:
+    async def _collect_observations(self, repo: RepositoryRef, trace: list[TraceEvent]) -> list[Observation]:
         config = await self._observe("repo_config", repo)
         observed = await asyncio.gather(*(self._observe(tool, repo) for tool in OBSERVATION_TOOLS))
         items = [config, *observed]
@@ -244,13 +247,13 @@ class PatrolRunner:
         return items
 
     async def _analyze(self, snapshot: PatrolSnapshot, trace: list[TraceEvent], label: str = "repository snapshot"):
-        trace.append(TraceEvent.create("analyze", label, "started", snapshot.repo))
+        trace.append(TraceEvent.create("analyze", label, "started", snapshot.repo.display()))
         analysis = await self.analyzer.analyze(snapshot)
         trace.append(TraceEvent.create("analyze", label, "completed", analysis.summary))
         return analysis
 
-    async def _observe(self, tool: str, repo: str) -> Observation:
-        arguments: dict[str, object] = {"repo": repo}
+    async def _observe(self, tool: str, repo: RepositoryRef) -> Observation:
+        arguments: dict[str, object] = {"repo": repo.to_mcp()}
         if tool == "knowledge_proposals":
             arguments["status"] = "pending"
         try:
@@ -264,6 +267,6 @@ class PatrolRunner:
         return f"{stamp}-{uuid.uuid4().hex[:6]}"
 
     @staticmethod
-    def _action_id(repo: str, action: PatrolAction) -> str:
-        identity = f"{repo}\0{action.kind}\0{action.title}".encode()
+    def _action_id(repo: RepositoryRef, action: PatrolAction) -> str:
+        identity = f"{repo.identity_key()}\0{action.kind}\0{action.title}".encode()
         return f"patrol-{hashlib.sha256(identity).hexdigest()[:12]}"

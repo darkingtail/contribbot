@@ -6,6 +6,10 @@ import pytest
 
 from contribbot_agent.investigator import Investigator
 from contribbot_agent.models import PatrolAnalysis
+from contribbot_agent.repository import parse_repository
+
+
+REPO = parse_repository("owner/repo").to_mcp()
 
 
 class FakeMcp:
@@ -52,8 +56,8 @@ async def test_investigator_collects_pr_and_check_evidence_once() -> None:
 
     assert [item.name for item in first] == ["pr_summary#820", "actions_status#820"]
     assert second == []
-    assert ("pr_summary", {"repo": "owner/repo", "pr_number": 820}) in mcp.calls
-    assert ("actions_status", {"repo": "owner/repo", "pr_number": 820}) in mcp.calls
+    assert ("pr_summary", {"repo": REPO, "pr_number": 820}) in mcp.calls
+    assert ("actions_status", {"repo": REPO, "pr_number": 820}) in mcp.calls
 
 
 @pytest.mark.asyncio
@@ -64,5 +68,5 @@ async def test_investigator_prefers_structured_requests() -> None:
     assert [item.name for item in observations] == [
         "pr_review_comments#42", "commit_detail#abc123", "compare_refs#main...feature"
     ]
-    assert ("commit_detail", {"repo": "owner/repo", "ref": "abc123"}) in mcp.calls
-    assert ("compare_refs", {"repo": "owner/repo", "base": "main", "head": "feature"}) in mcp.calls
+    assert ("commit_detail", {"repo": REPO, "ref": "abc123"}) in mcp.calls
+    assert ("compare_refs", {"repo": REPO, "base": "main", "head": "feature"}) in mcp.calls

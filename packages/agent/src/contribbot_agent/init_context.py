@@ -1,32 +1,57 @@
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
+import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .mcp_client import ContribbotMcpClient
+from .repository import RepositoryLike, RepositoryRef, parse_repository, parse_repository_ref
 
 
-def canonical_repo_from_context(context: str, fallback: str) -> str:
-    match = re.search(r"^- Canonical repository: `([^`]+)`$", context, re.MULTILINE)
-    return match.group(1) if match else fallback
+@dataclass(frozen=True)
+class ProjectContext:
+    repository: RepositoryRef
+    directory: str
+    tracking_status: str
 
 
-def normalize_repo_url(value: str) -> str:
-    value = value.strip().removesuffix("/").removesuffix(".git")
-    if value.startswith("git@") and ":" in value:
-        value = value.split(":", 1)[1]
-    else:
-        value = re.sub(r"^https?://[^/]+/", "", value)
-        value = re.sub(r"^ssh://git@[^/]+/", "", value)
-    parts = value.split("/")
-    if len(parts) != 2 or not all(re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in parts):
-        raise ValueError(f"Unable to derive owner/repo from remote URL: {value}")
-    return "/".join(parts)
+def parse_project_context(value: Any, requested: RepositoryRef) -> ProjectContext:
+    if not isinstance(value, dict) or type(value.get("schema_version")) is not int or value["schema_version"] != 1:
+        raise ValueError("project_init requires structuredContent schema_version 1.")
+    repository = parse_repository_ref(value.get("repository"))
+    # GitHub may return canonical casing, but never a different project or instance.
+    same_path = repository.path == requested.path or (
+        requested.platform == "github" and repository.path.lower() == requested.path.lower()
+    )
+    if repository.platform != requested.platform or repository.instance != requested.instance or not same_path:
+        raise ValueError("project_init returned a different repository identity.")
+    directory = value.get("directory")
+    if not isinstance(directory, str) or not directory.strip():
+        raise ValueError("project_init returned no usable data directory.")
+    parts = re.split(r"[/\\]", directory)
+    if ".." in parts or parts[-3:] != ["projects", "v1", repository.digest()]:
+        raise ValueError("project_init directory does not match the repository identity.")
+    lifecycle = value.get("lifecycle")
+    if not isinstance(lifecycle, dict) or lifecycle.get("status") not in ("active", "archived"):
+        raise ValueError("project_init returned an invalid lifecycle status.")
+    tracking = value.get("tracking")
+    if not isinstance(tracking, dict) or tracking.get("status") not in ("pending", "configured", "none"):
+        raise ValueError("project_init returned an invalid tracking status.")
+    return ProjectContext(repository, directory, tracking["status"])
 
 
-def detect_local_repo(path: Path | None = None) -> tuple[Path, str]:
+def normalize_repo_url(value: str) -> RepositoryRef:
+    """Parse a local Git remote into the schema v3 repository identity."""
+    try:
+        return parse_repository(value)
+    except ValueError as error:
+        raise ValueError(f"Unable to derive a schema v3 repository identity from remote URL: {value}") from error
+
+
+def detect_local_repo(path: Path | None = None) -> tuple[Path, RepositoryRef]:
     cwd = (path or Path.cwd()).resolve()
     try:
         root = Path(subprocess.check_output(
@@ -45,57 +70,68 @@ def detect_local_repo(path: Path | None = None) -> tuple[Path, str]:
     return root, normalize_repo_url(remote)
 
 
-def upstream_status_from_context(context: str) -> str | None:
-    match = re.search(r"^<!-- contribbot:upstream-status=(pending|configured|none) -->$", context, re.MULTILINE)
-    return match.group(1) if match else None
+def validate_tracking(values: list[RepositoryLike]) -> list[RepositoryRef]:
+    if not values:
+        raise ValueError("Tracking requires at least one repository; use --no-tracking to explicitly choose none.")
+    return [parse_repository(value) for value in values]
 
 
-def validate_upstream(value: str) -> str:
-    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*", value):
-        raise ValueError("External upstream must be owner/repo; use --no-upstream to explicitly choose none.")
-    return value
+def parse_tracking_prompt(answer: str) -> list[RepositoryRef] | None | str:
+    """Parse an interactive tracking decision without treating silence as 'none'."""
+    answer = answer.strip()
+    if not answer:
+        return None
+    if answer.lower() in {"n", "no", "none"}:
+        return ""
+    values = [item.strip() for item in answer.split(",") if item.strip()]
+    return validate_tracking(values)
 
 
 async def initialize_context(
-    repo: str | None = None, path: Path | None = None, *,
-    upstream: str | None = None, no_upstream: bool = False, no_input: bool = False,
+    repo: RepositoryLike | None = None, path: Path | None = None, *,
+    tracking: list[RepositoryLike] | None = None, no_tracking: bool = False, no_input: bool = False,
 ) -> str:
-    if upstream is not None and no_upstream:
-        raise ValueError("--upstream and --no-upstream are mutually exclusive.")
-    choice = validate_upstream(upstream) if upstream is not None else ("" if no_upstream else None)
+    if tracking is not None and no_tracking:
+        raise ValueError("--tracking and --no-tracking are mutually exclusive.")
+    choice: list[RepositoryRef] | str | None
+    choice = validate_tracking(tracking) if tracking is not None else ("" if no_tracking else None)
     root = path.resolve() if path else Path.cwd().resolve()
     if repo is None:
         root, repo = detect_local_repo(path)
+    repository = parse_repository(repo)
 
     async with ContribbotMcpClient() as mcp:
-        context = await mcp.call_tool("project_init", {"repo": repo})
-        canonical_repo = canonical_repo_from_context(context, repo)
-        status = upstream_status_from_context(context)
-        if choice is None and status == "pending" and not no_input and sys.stdin.isatty():
+        response = await mcp.call_tool_response("project_init", {"repo": repository.to_mcp()})
+        metadata = parse_project_context(response.structured_content, repository)
+        canonical_repo = metadata.repository
+        if choice is None and metadata.tracking_status == "pending" and not no_input and sys.stdin.isatty():
             try:
-                answer = input("Track an external repository (not the fork parent)? Enter owner/repo, n for none, or Enter to leave pending: ").strip()
-                if answer.lower() in {"n", "no"}:
-                    choice = ""
-                elif answer:
-                    choice = validate_upstream(answer)
+                answer = input(
+                    "Track repositories continuously? Enter owner/repo or URL "
+                    "(comma-separated), n for none, or Enter to leave pending: "
+                )
+                choice = parse_tracking_prompt(answer)
             except (EOFError, KeyboardInterrupt):
                 # A missing answer must never become an explicit 'none'.
                 pass
         if choice is not None:
-            await mcp.call_tool("repo_config", {"repo": canonical_repo, "upstream": choice})
-            context = await mcp.call_tool("project_init", {"repo": canonical_repo})
-        if upstream_status_from_context(context) == "pending":
-            context += "\nExternal upstream remains pending / 未确认. Use --upstream owner/repo or --no-upstream to record a decision."
-        elif upstream_status_from_context(context) is None:
-            context += "\nExternal upstream confirmation status unavailable; update the MCP server before interactive confirmation. No decision inferred."
+            tracking_value: list[dict[str, str]] | str
+            tracking_value = (
+                "" if choice == ""
+                else [source.to_mcp() for source in choice]
+            )
+            await mcp.call_tool("repo_config", {"repo": canonical_repo.to_mcp(), "tracking": tracking_value})
+            response = await mcp.call_tool_response("project_init", {"repo": canonical_repo.to_mcp()})
+            metadata = parse_project_context(response.structured_content, canonical_repo)
+        context = response.text
+        if metadata.tracking_status == "pending":
+            context += "\nTracking confirmation remains pending / 未确认. Use --tracking REPOSITORY or --no-tracking to record a decision."
 
-    canonical_repo = canonical_repo_from_context(context, repo)
-    data_path = Path.home() / ".contribbot" / canonical_repo
     return "\n".join([
         "# Contribbot Context Initialized", "",
-        f"- Requested repository: `{repo}`",
-        f"- Canonical repository: `{canonical_repo}`",
+        f"- Requested repository: `{repository.display()}`",
+        f"- Canonical repository: `{metadata.repository.display()}`",
         f"- Local path: `{root}`",
-        f"- Data path: `{data_path}`", "",
+        f"- Data path: `{metadata.directory}`", "",
         context,
     ])

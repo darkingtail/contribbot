@@ -11,7 +11,7 @@ def render_report(run: PatrolRun, snapshot: PatrolSnapshot, analysis: PatrolAnal
     actions = actions or {}
     lines = [
         "# Patrol Report", "",
-        f"> Repo: `{snapshot.repo}` | Run: `{run.id}` | Status: `{run.status}` | Health: `{analysis.health}`", "",
+        f"> Repo: `{snapshot.repo.display()}` | Run: `{run.id}` | Status: `{run.status}` | Health: `{analysis.health}`", "",
         "## Summary", "", analysis.summary, "",
         "## Run", "",
         "| Status | Coverage | Investigation Rounds | Started | Completed | Note |",

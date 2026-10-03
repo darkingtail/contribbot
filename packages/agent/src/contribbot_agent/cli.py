@@ -58,12 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
     init_config.add_argument("--config", help="Optional config path; defaults to ~/.contribbot/agent.json.")
 
     init = commands.add_parser("init", help="Initialize contribbot context from the current Git repository.")
-    init.add_argument("repo", nargs="?", help='Optional GitHub repository in "owner/repo" form.')
+    init.add_argument("repo", nargs="?", help='Optional repository identity, URL, or GitHub owner/repo shorthand.')
     init.add_argument("--path", help="Local repository path; defaults to the current directory.")
-    upstream_choice = init.add_mutually_exclusive_group()
-    upstream_choice.add_argument("--upstream", metavar="OWNER/REPO", help="Explicitly track an external repository, not the fork parent.")
-    upstream_choice.add_argument("--no-upstream", action="store_true", help="Explicitly confirm no external upstream.")
-    init.add_argument("--no-input", action="store_true", help="Do not prompt; leave unconfirmed upstream pending unless an explicit choice is provided.")
+    tracking_choice = init.add_mutually_exclusive_group()
+    tracking_choice.add_argument(
+        "--tracking", metavar="REPOSITORY", action="append",
+        help="Track a repository continuously; repeat for multiple sources.",
+    )
+    tracking_choice.add_argument("--no-tracking", action="store_true", help="Explicitly confirm no tracking sources.")
+    init.add_argument("--no-input", action="store_true", help="Do not prompt; leave unconfirmed tracking pending unless an explicit choice is provided.")
 
     remediate = commands.add_parser("remediate", help="Let Codex modify an isolated worktree and validate it without publishing.")
     remediate.add_argument("repo_path", help="Path to a clean local Git repository root.")
@@ -171,7 +174,7 @@ def main() -> None:
             from pathlib import Path
             print(asyncio.run(initialize_context(
                 args.repo, Path(args.path) if args.path else None,
-                upstream=args.upstream, no_upstream=args.no_upstream, no_input=args.no_input,
+                tracking=args.tracking, no_tracking=args.no_tracking, no_input=args.no_input,
             )))
             raise SystemExit(0)
         if args.command == "remediate":

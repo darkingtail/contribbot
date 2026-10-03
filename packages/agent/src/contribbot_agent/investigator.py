@@ -4,6 +4,7 @@ import re
 
 from .mcp_client import ContribbotMcpClient
 from .models import Observation, PatrolAnalysis
+from .repository import RepositoryLike, RepositoryRef, parse_repository
 
 
 class Investigator:
@@ -13,10 +14,11 @@ class Investigator:
         self.mcp = mcp
         self.seen: set[tuple[str, str]] = set()
 
-    async def investigate(self, repo: str, analysis: PatrolAnalysis) -> list[Observation]:
-        requests = self._structured_requests(repo, analysis)
+    async def investigate(self, repo: RepositoryLike, analysis: PatrolAnalysis) -> list[Observation]:
+        repository = parse_repository(repo)
+        requests = self._structured_requests(repository, analysis)
         if not requests:
-            requests = self._legacy_requests(repo, analysis)
+            requests = self._legacy_requests(repository, analysis)
 
         observations: list[Observation] = []
         for tool, arguments, name in requests:
@@ -32,10 +34,10 @@ class Investigator:
         return observations
 
     @staticmethod
-    def _structured_requests(repo: str, analysis: PatrolAnalysis) -> list[tuple[str, dict[str, object], str]]:
+    def _structured_requests(repo: RepositoryRef, analysis: PatrolAnalysis) -> list[tuple[str, dict[str, object], str]]:
         requests: list[tuple[str, dict[str, object], str]] = []
         for request in analysis.investigation_requests:
-            arguments: dict[str, object] = {"repo": repo}
+            arguments: dict[str, object] = {"repo": repo.to_mcp()}
             suffix = ""
             if request.pr_number is not None:
                 arguments["pr_number"] = request.pr_number
@@ -53,7 +55,7 @@ class Investigator:
         return requests
 
     @staticmethod
-    def _legacy_requests(repo: str, analysis: PatrolAnalysis) -> list[tuple[str, dict[str, object], str]]:
+    def _legacy_requests(repo: RepositoryRef, analysis: PatrolAnalysis) -> list[tuple[str, dict[str, object], str]]:
         text = "\n".join(
             [analysis.summary]
             + [f"{item.title}\n{item.evidence}\n{item.impact}" for item in analysis.findings]
@@ -63,11 +65,11 @@ class Investigator:
         for raw in re.findall(r"(?:PR|pull request)\s*#?(\d+)", text, flags=re.IGNORECASE):
             number = int(raw)
             requests.extend([
-                ("pr_summary", {"repo": repo, "pr_number": number}, f"pr_summary#{number}"),
-                ("actions_status", {"repo": repo, "pr_number": number}, f"actions_status#{number}"),
+                ("pr_summary", {"repo": repo.to_mcp(), "pr_number": number}, f"pr_summary#{number}"),
+                ("actions_status", {"repo": repo.to_mcp(), "pr_number": number}, f"actions_status#{number}"),
             ])
         for raw in re.findall(r"issue\s*#?(\d+)", text, flags=re.IGNORECASE):
             number = int(raw)
-            requests.append(("issue_detail", {"repo": repo, "issue_number": number}, f"issue_detail#{number}"))
+            requests.append(("issue_detail", {"repo": repo.to_mcp(), "issue_number": number}, f"issue_detail#{number}"))
 
         return requests

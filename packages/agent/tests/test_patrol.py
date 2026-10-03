@@ -7,6 +7,11 @@ import pytest
 
 from contribbot_agent.models import PatrolAnalysis
 from contribbot_agent.patrol import ArchivedProjectError, OBSERVATION_TOOLS, PatrolRunner
+from contribbot_agent.repository import parse_repository
+
+
+REPO = parse_repository("owner/repo")
+REPO_DATA = REPO.to_mcp()
 
 
 class FakeMcpClient:
@@ -24,7 +29,7 @@ class FakeMcpClient:
         if name == "project_status":
             return json.dumps({"repo": arguments["repo"], "status": "active"})
         if name == "patrol_record":
-            assert json.loads(arguments["snapshot_json"])["repo"] == "owner/repo"
+            assert json.loads(arguments["snapshot_json"])["repo"] == REPO_DATA
             assert json.loads(arguments["analysis_json"])["health"] == "attention"
             assert isinstance(json.loads(arguments["trace_json"]), list)
             assert json.loads(arguments["run_json"])["status"] in {"succeeded", "partial"}
@@ -36,8 +41,8 @@ class FakeMcpClient:
             return f"Todo implementation record for {arguments['item']}"
         return f"result from {name}"
 
-    async def read_knowledge(self, repo: str) -> dict[str, str]:
-        assert repo == "owner/repo"
+    async def read_knowledge(self, repo) -> dict[str, str]:
+        assert repo == REPO
         return {"ci": "# CI\n\nUse pnpm."}
 
 
@@ -48,7 +53,7 @@ async def test_archived_project_blocks_before_observations_or_record_writes(oper
         async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
             self.calls.append((name, arguments))
             assert name == "project_status"
-            return json.dumps({"repo": "owner/repo", "status": "archived"})
+            return json.dumps({"repo": REPO_DATA, "status": "archived"})
 
     mcp = ArchivedMcp()
     runner = PatrolRunner(mcp, FakeAnalyzer())
@@ -73,7 +78,7 @@ async def test_unknown_lifecycle_fails_closed() -> None:
 
 class FakeAnalyzer:
     async def analyze(self, snapshot) -> PatrolAnalysis:
-        assert snapshot.repo == "owner/repo"
+        assert snapshot.repo == REPO
         assert len(snapshot.observations) == len(OBSERVATION_TOOLS) + 1
         return PatrolAnalysis.model_validate(
             {
@@ -174,11 +179,11 @@ async def test_patrol_creates_todo_after_explicit_confirmation() -> None:
     )
 
     todo_calls = [arguments for name, arguments in mcp.calls if name == "todo_add"]
-    assert todo_calls[0]["repo"] == "owner/repo"
+    assert todo_calls[0]["repo"] == REPO_DATA
     assert todo_calls[0]["text"] == "Inspect PR #820 checks"
     assert str(todo_calls[0]["ref"]).startswith("patrol-")
     detail_calls = [arguments for name, arguments in mcp.calls if name == "todo_detail"]
-    assert detail_calls == [{"repo": "owner/repo", "item": todo_calls[0]["ref"]}]
+    assert detail_calls == [{"repo": REPO_DATA, "item": todo_calls[0]["ref"]}]
     assert result.action_results == [
         f"result from todo_add\nVerified todo: {todo_calls[0]['ref']}"
     ]
@@ -233,15 +238,15 @@ class ResumeMcpClient(FakeMcpClient):
 async def test_resume_executes_a_previously_skipped_action_without_reanalysis() -> None:
     analysis = await CreateTodoAnalyzer().analyze(None)
     action = analysis.actions[0]
-    action_id = PatrolRunner._action_id("owner/repo", action)
+    action_id = PatrolRunner._action_id(REPO, action)
     stored = {
         "run": {
-            "id": "run-1", "repo": "owner/repo", "status": "succeeded",
+            "id": "run-1", "repo": REPO_DATA, "status": "succeeded",
             "started_at": "2026-09-06T00:00:00+00:00", "completed_at": "2026-09-06T00:01:00+00:00",
             "coverage_complete": True, "investigation_rounds": 0, "error": "",
         },
         "snapshot": {
-            "repo": "owner/repo", "created_at": "2026-09-06T00:00:00+00:00",
+            "repo": REPO_DATA, "created_at": "2026-09-06T00:00:00+00:00",
             "observations": [], "knowledge": {},
         },
         "analysis": analysis.model_dump(mode="json"),

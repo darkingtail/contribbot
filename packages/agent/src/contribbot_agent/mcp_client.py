@@ -10,12 +10,21 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from .repository import RepositoryRef, parse_repository_ref
+
 
 @dataclass(frozen=True)
 class McpServerConfig:
     command: str
     args: list[str]
     cwd: str | None = None
+
+
+@dataclass(frozen=True)
+class McpToolResponse:
+    text: str
+    structured_content: Any = None
+    is_error: bool = False
 
 
 def default_mcp_server() -> McpServerConfig:
@@ -71,19 +80,41 @@ class ContribbotMcpClient:
         self._session = None
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        response = await self.call_tool_response(name, arguments)
+        return self._truncate(response.text)
+
+    async def call_tool_structured(self, name: str, arguments: dict[str, Any]) -> Any:
+        response = await self.call_tool_response(name, arguments)
+        if response.structured_content is None:
+            raise RuntimeError(f"MCP tool {name} did not return structuredContent.")
+        return response.structured_content
+
+    async def call_tool_response(self, name: str, arguments: dict[str, Any]) -> McpToolResponse:
+        response = await self._call_tool(name, arguments)
+        if response.is_error:
+            raise RuntimeError(response.text or f"MCP tool {name} failed.")
+        return response
+
+    async def _call_tool(self, name: str, arguments: dict[str, Any]) -> McpToolResponse:
         session = self._require_session()
-        result = await session.call_tool(name, arguments)
+        result = await session.call_tool(name, self._normalize_arguments(arguments))
         text = "\n".join(
             block.text for block in result.content if hasattr(block, "text")
         ).strip()
-        if result.isError:
-            raise RuntimeError(text or f"MCP tool {name} failed.")
-        return self._truncate(text)
+        structured_content = getattr(result, "structuredContent", None)
+        if structured_content is None:
+            structured_content = getattr(result, "structured_content", None)
+        return McpToolResponse(
+            text=text,
+            structured_content=structured_content,
+            is_error=bool(getattr(result, "isError", False)),
+        )
 
-    async def read_knowledge(self, repo: str) -> dict[str, str]:
+    async def read_knowledge(self, repo: RepositoryRef | dict[str, str]) -> dict[str, str]:
+        repository = parse_repository_ref(repo)
         session = self._require_session()
         listed = await session.list_resources()
-        prefix = f"knowledge://{repo}/"
+        prefix = f"knowledge://project/{repository.digest()}/"
         resources = [
             resource for resource in listed.resources if str(resource.uri).startswith(prefix)
         ]
@@ -96,6 +127,13 @@ class ContribbotMcpClient:
             ).strip()
             knowledge[str(resource.uri).removeprefix(prefix)] = self._truncate(text)
         return knowledge
+
+    @staticmethod
+    def _normalize_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(arguments)
+        if "repo" in normalized:
+            normalized["repo"] = parse_repository_ref(normalized["repo"]).to_mcp()
+        return normalized
 
     def _require_session(self) -> ClientSession:
         if not self._session:

@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .repository import RepositoryLike, RepositoryRef, parse_repository
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -22,14 +24,35 @@ class Observation(StrictModel):
 
 
 class PatrolSnapshot(StrictModel):
-    repo: str
+    repo: RepositoryRef
     created_at: str
     observations: list[Observation]
     knowledge: dict[str, str]
 
     @classmethod
-    def create(cls, repo: str, observations: list[Observation], knowledge: dict[str, str]) -> "PatrolSnapshot":
-        return cls(repo=repo, created_at=utc_now(), observations=observations, knowledge=knowledge)
+    def create(cls, repo: RepositoryLike, observations: list[Observation], knowledge: dict[str, str]) -> "PatrolSnapshot":
+        return cls(repo=parse_repository(repo), created_at=utc_now(), observations=observations, knowledge=knowledge)
+
+
+ProjectProblemCode = Literal[
+    "config_missing",
+    "config_invalid",
+    "todo_data_unreadable",
+    "upstream_data_unreadable",
+    "duplicate_repository_identity",
+]
+
+
+class ProjectProblem(StrictModel):
+    code: ProjectProblemCode
+    directory: str
+    repository: RepositoryRef | None = None
+    message: str
+
+
+class ProjectDiscovery(StrictModel):
+    projects: list[RepositoryRef]
+    problems: list[ProjectProblem] = Field(default_factory=list)
 
 
 Severity = Literal["critical", "high", "medium", "low", "info"]
@@ -141,7 +164,7 @@ class TraceEvent(StrictModel):
 
 class PatrolRun(StrictModel):
     id: str
-    repo: str
+    repo: RepositoryRef
     status: RunStatus = "queued"
     started_at: str = Field(default_factory=utc_now)
     completed_at: str | None = None
@@ -170,16 +193,17 @@ class PatrolResult(StrictModel):
 class PatrolBatchResult(StrictModel):
     started_at: str = Field(default_factory=utc_now)
     completed_at: str | None = None
-    projects: list[str]
+    projects: list[RepositoryRef]
     results: list[PatrolResult]
     failures: dict[str, str]
+    discovery_problems: list[ProjectProblem] = Field(default_factory=list)
     skipped: dict[str, str] = Field(default_factory=dict)
 
 
 class AgentConfig(StrictModel):
     enabled: bool = True
     interval_minutes: int = Field(default=1440, ge=1)
-    repos: list[str] = Field(default_factory=list)
+    repos: list[RepositoryRef] = Field(default_factory=list)
     mode: Literal["report_only", "interactive"] = "report_only"
     backend: Literal["codex", "rules"] = "codex"
     max_investigation_rounds: int = Field(default=3, ge=0, le=10)
