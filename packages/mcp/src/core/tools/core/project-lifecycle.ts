@@ -8,6 +8,7 @@ export async function projectStatus(repo: RepositoryInput): Promise<string> {
   const { repository, directory } = await resolveRepoIdentity(repo)
   const config = new RepoConfig(directory).load()
   return JSON.stringify({
+    repository,
     repo: repositoryDisplay(repository),
     configured: config !== null,
     status: config?.lifecycle.status ?? 'not_initialized',

@@ -13,7 +13,7 @@ export async function todoContext(repo: RepositoryInput, todoId: string, executi
   return {
     ...(repaired ? executionContext(directory, todoId, executionId) : context),
     ...(repaired ? { document_projection: repaired } : {}),
-    repo: `${canonical.owner}/${canonical.name}`,
+    repo: canonical.repository,
     consultations: todoConsultations(directory, todoId),
   }
 }
@@ -30,6 +30,6 @@ export async function todoWorkflowCommand(
   const directory = canonical.directory
   const workflow = applyHostCommand(directory, input)
   const context = executionContext(directory, input.todo_id, input.execution_id)
-  return { schema_version: 1 as const, repo: `${canonical.owner}/${canonical.name}`, todo_id: input.todo_id, execution_id: input.execution_id,
+  return { schema_version: 1 as const, repo: canonical.repository, todo_id: input.todo_id, execution_id: input.execution_id,
     workflow, document_projection: context.document_projection }
 }

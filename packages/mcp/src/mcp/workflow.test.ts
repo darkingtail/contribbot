@@ -230,6 +230,47 @@ describe('managed workflow over actual MCP stdio', () => {
     expect(missing.structuredContent).toMatchObject({ schema_version: 1, error: { code: 'workflow_error' } })
   })
 
+  it('returns reusable repository identity for a bound operation without changing operation or archive rules', async () => {
+    await boundFixture(false)
+    const config = readFileSync(join(directory(), 'config.yaml'))
+    const expectedRevision = state().revision
+    const command = {
+      action: 'begin_operation', operation_id: 'identity-read', kind: 'read', actor: 'primary',
+      delegated: false, step_id: 's', scope: ['.'], purpose: 'Read the synthetic workspace',
+    }
+    const result = await client.callTool({ name: 'todo_operation', arguments: {
+      ...args(), request_id: 'identity-operation', expected_revision: expectedRevision, command,
+    } })
+    expect(result.isError, JSON.stringify(result)).not.toBe(true)
+    expect.soft(result.structuredContent).toMatchObject({
+      schema_version: 1, repo: repoRef, todo_id: todoId, execution_id: executionId,
+      workflow: { operations: [expect.objectContaining({ id: 'identity-read', status: 'running' })] },
+    })
+    expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual(result.structuredContent)
+    const echoed = await client.callTool({ name: 'todo_context', arguments: {
+      ...args(), repo: (result.structuredContent as Record<string, unknown>).repo,
+    } })
+    expect.soft(echoed.isError).not.toBe(true)
+    expect.soft(echoed.structuredContent).toMatchObject({ repo: repoRef, todo: { id: todoId } })
+    const beforeStale = readFileSync(join(directory(), 'todos.yaml'))
+    expect((await client.callTool({ name: 'todo_operation', arguments: {
+      ...args(), request_id: 'stale-operation', expected_revision: expectedRevision,
+      command: { ...command, operation_id: 'stale-read' },
+    } })).isError).toBe(true)
+    expect(readFileSync(join(directory(), 'todos.yaml'))).toEqual(beforeStale)
+    const returned = await client.callTool({ name: 'todo_operation', arguments: {
+      ...args(), request_id: 'return-identity', expected_revision: state().revision,
+      command: { action: 'return_operation', operation_id: 'identity-read',
+        receipt: 'fixture:read-result', process_stopped: true, note: 'Synthetic read returned.' },
+    } })
+    expect(returned.isError).not.toBe(true)
+    expect.soft(returned.structuredContent).toMatchObject({ repo: repoRef })
+    expect(state().operations[0]!.status).toBe('returned')
+    expect(store.get(0)!.status).toBe('active')
+    expect(store.listArchived()).toEqual([])
+    expect(readFileSync(join(directory(), 'config.yaml'))).toEqual(config)
+  }, 25_000)
+
   it('closes a checked candidate through public todo_done and safely replays the exact outcome', async () => {
     await boundFixture()
     expect(state().plans[0]!.content.acceptance.map(item => item.kind)).toEqual(['command'])

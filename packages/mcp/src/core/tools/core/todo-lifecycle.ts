@@ -122,7 +122,7 @@ export async function todoReopen(item: string, repo?: RepositoryInput): Promise<
 }
 
 export async function todoCancel(repo: RepositoryInput, todoId: string, expectedLifecycleRevision: number, decision: string) {
-  const { owner, name, directory } = await resolveRepo(repo)
+  const { repository, directory } = await resolveRepo(repo)
   const todo = new TodoStore(directory).cancelTodo(todoId, expectedLifecycleRevision, decision)
-  return { schema_version: 1 as const, repo: `${owner}/${name}`, todo_id: todoId, todo, archived: false }
+  return { schema_version: 1 as const, repo: repository, todo_id: todoId, todo, archived: false }
 }
