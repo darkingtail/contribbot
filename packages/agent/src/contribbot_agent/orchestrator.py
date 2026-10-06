@@ -6,7 +6,7 @@ from collections.abc import Callable
 from .backend import Analyzer
 from .mcp_client import ContribbotMcpClient
 from .models import PatrolBatchResult, PatrolResult, utc_now
-from .patrol import PatrolRunner
+from .patrol import ArchivedProjectError, PatrolRunner
 
 
 def parse_project_list(markdown: str) -> list[str]:
@@ -34,18 +34,22 @@ class PatrolAllRunner:
         projects = repos or await tracked_projects()
         results: list[PatrolResult] = []
         failures: dict[str, str] = {}
+        skipped: dict[str, str] = {}
         for repo in projects:
             try:
                 result = await PatrolRunner(
                     ContribbotMcpClient(), self.analyzer_factory(), self.max_investigation_rounds
                 ).run(repo)
                 results.append(result)
+            except ArchivedProjectError as error:
+                skipped[repo] = str(error)
             except Exception as error:
                 failures[repo] = str(error)
         return PatrolBatchResult(
             projects=projects,
             results=results,
             failures=failures,
+            skipped=skipped,
             completed_at=utc_now(),
         )
 
@@ -53,7 +57,7 @@ class PatrolAllRunner:
 def render_batch(result: PatrolBatchResult) -> str:
     lines = [
         "# Cross-project Patrol", "",
-        f"> {len(result.projects)} projects · {len(result.results)} completed · {len(result.failures)} failed", "",
+        f"> {len(result.projects)} projects · {len(result.results)} completed · {len(result.failures)} failed · {len(result.skipped)} skipped", "",
         "| Project | Run | Status | Health | Findings | Actions | Note |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
@@ -61,6 +65,8 @@ def render_batch(result: PatrolBatchResult) -> str:
         lines.append(f"| {item.run.repo} | `{item.run.id}` | {item.run.status} | {item.analysis.health} | {len(item.analysis.findings)} | {len(item.analysis.actions)} | report recorded |")
     for repo, error in result.failures.items():
         lines.append(f"| {repo} | — | failed | unknown | — | — | {error.replace('|', '\\|')} |")
+    for repo, reason in result.skipped.items():
+        lines.append(f"| {repo} | — | skipped | — | — | — | {reason.replace('|', '\\|')} |")
     return "\n".join(lines)
 
 

@@ -33,15 +33,22 @@ contribbot 以**上游仓库（parent）为主 repo** 存储数据。`repo_confi
 
 ### 2. 确定上游追踪
 
-查看返回的配置，询问用户：
+查看返回的稳定 upstream-status 标记：pending 才询问；configured 或 none 不重复询问。旧 null 无确认依据仍为 pending，不能从 fork parent 或名称猜测。
+
+对 pending 询问用户：
 
 是否需要追踪某个**外部仓库**的变更？（跨栈复刻，非 fork source）
 - 有 → 调用 `repo_config`（repo、upstream={upstream_repo}）设置 upstream
-- 无 → 跳过
+- 明确无 → 必须调用 `repo_config`（canonical repo、upstream=""）持久确认无，不能跳过
+- 未回答/取消 → 保持 pending，停止后续同步，不得偷偷确认无
 
 注意：fork source 不算 upstream。upstream 专指跨栈追踪的外部仓库。
 
+使用解析后的 canonical repo。归档项目不得自动恢复；确认 upstream 不授权巡检或公开写入。
+
 ### 3. 首次同步（fork/upstream/fork+upstream 模式）
+
+仅在用户另行明确授权首次同步、且项目未归档时执行；pending 先完成确认，否则跳过。
 
 **如果有 fork**：
 调用 `sync_fork`（repo）

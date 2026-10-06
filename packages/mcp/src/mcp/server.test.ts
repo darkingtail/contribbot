@@ -57,6 +57,19 @@ describe('createServer tool schemas', () => {
     expect(init!.inputSchema.required ?? []).toContain('repo')
   })
 
+  it('registers lifecycle tools and an optional global list filter', async () => {
+    const { tools } = await listTools()
+    for (const name of ['project_archive', 'project_restore', 'project_status']) {
+      expect(tools.find(t => t.name === name)?.inputSchema.required).toContain('repo')
+    }
+    const list = tools.find(t => t.name === 'project_list')!
+    expect(list.inputSchema.properties).toHaveProperty('status')
+    expect(list.inputSchema.required ?? []).not.toContain('repo')
+    expect(list.inputSchema.required ?? []).not.toContain('status')
+    const result = await client!.callTool({ name: 'project_list', arguments: { status: 'invalid' } })
+    expect(result.isError).toBe(true)
+  })
+
   it('registers patrol audit and recovery tools as repository-scoped', async () => {
     const { tools } = await listTools()
     for (const name of ['patrol_record', 'patrol_run_get']) {
@@ -106,5 +119,21 @@ describe('createServer tool schemas', () => {
       expect(names).toContain(name)
       expect(tool?.inputSchema.required ?? []).toContain('repo')
     }
+  })
+})
+
+
+describe('upstream confirmation tool guidance', () => {
+  it('exposes pending and explicit-none semantics to MCP hosts', async () => {
+    const server = createServer()
+    const client = new Client({ name: 'init-contract-test', version: '0.0.0' })
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    try {
+      await Promise.all([client.connect(a), server.connect(b)])
+      const { tools } = await client.listTools()
+      expect(tools.find(t => t.name === 'project_init')?.description).toContain('pending')
+      expect(tools.find(t => t.name === 'project_init')?.description).toContain('ask')
+      expect(tools.find(t => t.name === 'repo_config')?.description).toContain('confirms none')
+    } finally { await client.close(); await server.close() }
   })
 })

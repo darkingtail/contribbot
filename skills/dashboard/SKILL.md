@@ -1,6 +1,6 @@
 ---
 name: contribbot:dashboard
-description: "项目仪表盘：查看单项目全貌或跨项目概况。触发词：'dashboard'、'项目概况'、'全局视图'。"
+description: "项目仪表盘、项目归档与恢复：查看单项目或跨项目概况。触发词：'dashboard'、'项目概况'、'全局视图'、'归档项目'、'恢复项目'。"
 metadata:
   author: darkingtail
   version: "3.0.0"
@@ -40,4 +40,16 @@ metadata:
 
 ## 跨项目仪表盘
 
-调用 `project_list` — 返回所有已跟踪项目的 todos/upstream 统计。
+调用 `project_list` — 默认返回活跃项目的 todos/upstream 统计。
+用户要求所有项目时传 `status: "all"`，要求归档项目时传 `status: "archived"`。
+
+## 项目归档与恢复
+
+- 项目状态与 Todo 状态无关；不要用 `todo_archive` 代替项目归档。
+- 用户明确要求归档某项目：调用 `project_archive({ repo })`，然后
+  `project_status({ repo })` 读取 JSON 校验为 `archived`。
+- 用户明确要求恢复维护：调用 `project_restore({ repo })`，读回状态为 `active`。
+- repo 必须明确为 `owner/repo`，不清楚目标时先询问；不要批量猜测。
+- 不删除目录、不关闭 GitHub issue/PR、不归档 GitHub 仓库、不标记未完成任务为完成。
+- 归档后历史数据保留，默认巡检不选中；显式巡检/恢复旧 Run 也会被阻止。
+- `project_init` 不自动恢复归档项目，恢复须由用户明确要求。

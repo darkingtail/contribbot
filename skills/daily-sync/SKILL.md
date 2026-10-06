@@ -19,7 +19,12 @@ metadata:
 
 ### 1. 检查项目模式
 
-调用 `repo_config`（repo）获取 config。
+先调用只读 `project_status`（repo）读取 JSON 生命周期及 canonical repo。
+若为 archived，停止，不初始化配置、不调用同步工具、不自动恢复。
+状态无法确认时也停止；后续使用返回的 canonical repo 调用 `repo_config` 获取 config。
+
+若 `status` 为 `archived`，停止巡检/同步并说明需先由用户明确要求
+`project_restore`。不要自动恢复；没有 status 的旧配置按 active 处理。
 
 根据 fork 和 upstream 字段判断模式：
 - fork + upstream → fork+upstream

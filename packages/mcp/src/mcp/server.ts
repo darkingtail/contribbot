@@ -13,6 +13,7 @@ import { upstreamCompact } from '../core/tools/core/upstream-compact.js'
 import { repoConfig } from '../core/tools/core/repo-config-tool.js'
 import { projectList } from '../core/tools/core/project-list.js'
 import { projectInit } from '../core/tools/core/project-init.js'
+import { projectArchive, projectRestore, projectStatus } from '../core/tools/core/project-lifecycle.js'
 import { contributionStats } from '../core/tools/core/contribution-stats.js'
 import { todoClaim } from '../core/tools/core/todo-claim.js'
 import { todoCompact } from '../core/tools/core/todo-compact.js'
@@ -98,7 +99,8 @@ contribbot 是开源贡献助手，帮助开发者高效参与开源项目维护
 
 ## Agent 行为规则
 
-- 首次进入项目：repo_config 查看模式，决定可用工作流
+- 首次进入项目：project_init 查看上下文与 upstream-status。pending 表示未确认，必须询问用户是否追踪外部仓库；不得根据 fork parent 或名称猜测。用户明确有时 repo_config(upstream="owner/repo")，明确无时 repo_config(upstream="") 持久记录；不回答保持 pending。configured/none 不反复询问。归档不自动恢复，确认不授权巡检或公开写入。
+- project_list 默认仅显示 active 项目；status="archived" 查看归档，status="all" 查看全部。project_archive/project_restore 管理本地项目生命周期，不删除数据、不更改 GitHub。init 不自动恢复归档项目。
 - 创建 PR 后：如有 active todo，自动 todo_update 关联
 - 创建 issue 后：如来自 upstream daily，自动 upstream_daily_act 关联
 - 关闭 issue 时：如有对应 todo，自动标记 done
@@ -157,10 +159,10 @@ export function createServer(): McpServer {
 
   server.tool(
     'repo_config',
-    'View or update repo config (role, org, fork, upstream). Auto-detects on first access.',
+    'View or update repo config (role, org, fork, upstream). Reports upstream-status=pending/configured/none. When pending, ask the user about external upstream; never infer from the fork parent. Empty upstream explicitly confirms none.',
     {
       repo: requiredRepoParam,
-      upstream: z.string().optional().describe('Set upstream repo, e.g. "upstream-org/upstream-repo"'),
+      upstream: z.string().optional().describe('Explicit external upstream decision: "owner/repo", or "" to confirm none. Omit to view without confirming.'),
     },
     wrapHandler(async ({ repo, upstream }) => repoConfig(repo as string | undefined, upstream as string | undefined)),
   )
@@ -177,14 +179,33 @@ export function createServer(): McpServer {
 
   server.tool(
     'project_list',
-    'List all tracked projects with todo and upstream stats',
-    {},
-    wrapHandler(() => projectList()),
+    'List tracked projects with stats. Defaults to active; archived projects retain all data.',
+    { status: z.enum(['active', 'archived', 'all']).optional().describe('Project lifecycle filter, default active') },
+    wrapHandler(({ status }) => projectList(status as 'active' | 'archived' | 'all' | undefined)),
+  )
+
+  server.tool(
+    'project_archive',
+    'Archive a local project without deleting data or archiving the GitHub repository.',
+    { repo: requiredRepoParam },
+    wrapHandler(({ repo }) => projectArchive(repo as string)),
+  )
+  server.tool(
+    'project_restore',
+    'Restore an archived local project to active maintenance without starting a patrol.',
+    { repo: requiredRepoParam },
+    wrapHandler(({ repo }) => projectRestore(repo as string)),
+  )
+  server.tool(
+    'project_status',
+    'Read canonical project lifecycle as JSON for patrol preflight; does not initialize the project.',
+    { repo: requiredRepoParam },
+    wrapHandler(({ repo }) => projectStatus(repo as string)),
   )
 
   server.tool(
     'project_init',
-    'Initialize a repository-scoped contribbot session: load repo config and global tracked projects without running actions.',
+    'Initialize a repository-scoped contribbot session without running actions. Reports upstream-status=pending/configured/none; pending requires the host AI to ask about an external repository, not infer from fork parent. Save explicit yes/no via repo_config; no answer stays pending.',
     { repo: requiredRepoParam },
     wrapHandler(({ repo }) => projectInit(repo as string)),
   )

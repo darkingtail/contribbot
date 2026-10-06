@@ -4,13 +4,18 @@ import { parse, stringify } from 'yaml'
 import { safeWriteFileSync } from '../utils/fs.js'
 
 export type { RepoRole } from '../enums.js'
-import type { RepoRole } from '../enums.js'
+import type { RepoRole, ProjectStatus } from '../enums.js'
 
 export interface RepoConfigData {
   role: RepoRole
   org: string | null
   fork: string | null
+  /** Only an explicit user decision sets this marker; legacy null stays pending. */
+  upstream_confirmed?: boolean
   upstream: string | null
+  /** Missing in legacy configs means active. Independent of upstream/fork mode. */
+  status?: ProjectStatus
+  archived_at?: string | null
 }
 
 /**
@@ -28,6 +33,18 @@ export function inferMode(config: RepoConfigData): ProjectMode {
   return 'none'
 }
 
+export type UpstreamStatus = 'pending' | 'configured' | 'none'
+
+export function upstreamStatus(config: RepoConfigData): UpstreamStatus {
+  if (config.upstream) return 'configured'
+  return config.upstream_confirmed === true ? 'none' : 'pending'
+}
+
+/** Stable machine-readable marker shared by MCP text output and the CLI. */
+export function upstreamStatusMarker(config: RepoConfigData): string {
+  return '<!-- contribbot:upstream-status=' + upstreamStatus(config) + ' -->'
+}
+
 export class RepoConfig {
   private configPath: string
 
@@ -42,7 +59,11 @@ export class RepoConfig {
   load(): RepoConfigData | null {
     if (!this.exists()) return null
     const content = readFileSync(this.configPath, 'utf-8')
-    return (parse(content) as RepoConfigData) ?? null
+    const config = (parse(content) as RepoConfigData) ?? null
+    if (config && config.status !== undefined && config.status !== 'active' && config.status !== 'archived') {
+      throw new Error(`Invalid project status in ${this.configPath}`)
+    }
+    return config
   }
 
   save(config: RepoConfigData): void {
@@ -57,6 +78,9 @@ export class RepoConfig {
     if (fields.org !== undefined) config.org = fields.org
     if (fields.fork !== undefined) config.fork = fields.fork
     if (fields.upstream !== undefined) config.upstream = fields.upstream
+    if (fields.upstream_confirmed !== undefined) config.upstream_confirmed = fields.upstream_confirmed
+    if (fields.status !== undefined) config.status = fields.status
+    if (fields.archived_at !== undefined) config.archived_at = fields.archived_at
     this.save(config)
     return config
   }

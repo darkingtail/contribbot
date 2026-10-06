@@ -173,6 +173,7 @@ class PatrolBatchResult(StrictModel):
     projects: list[str]
     results: list[PatrolResult]
     failures: dict[str, str]
+    skipped: dict[str, str] = Field(default_factory=dict)
 
 
 class AgentConfig(StrictModel):

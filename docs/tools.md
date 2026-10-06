@@ -1,10 +1,10 @@
 # contribbot 工具集合
 
-> 59 Tools + 1 Resource + 4 Prompts
+> 62 Tools + 1 Resource + 4 Prompts
 
 ---
 
-## 项目概览（5 Tools）
+## 项目概览（6 Tools）
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
@@ -17,14 +17,20 @@
 
 ---
 
-## 仓库管理（4 Tools）
+## 仓库管理（7 Tools）
 
 | 工具 | 说明 | 参数 |
 |------|------|------|
-| `repo_config` | 查看/更新仓库配置（role/org/fork/upstream），首次访问自动检测 | `repo`, `upstream?` |
+| `repo_config` | 查看仓库配置及生命周期，更新 upstream，首次访问自动检测 | `repo`, `upstream?` |
 | `sync_fork` | 同步 fork 默认分支到上游最新，从 config.yaml 读取 fork 信息 | `repo`, `branch?` |
-| `project_list` | 所有已跟踪项目概况（todos/upstream 统计） | — |
+| `project_list` | 项目概况，默认 active；可筛选 archived/all | `status?` |
+| `project_archive` | 归档本地项目，保留数据，不更改 GitHub | `repo` |
+| `project_restore` | 恢复活跃维护，不自动执行巡检 | `repo` |
+| `project_status` | 只读 JSON 生命周期接口，含 canonical repo，不初始化配置 | `repo` |
 | `contribution_stats` | 个人贡献统计：PRs/issues/reviews 数量 | `days?`, `author?`, `repo` |
+
+参见[项目归档与恢复](development/project-archive.md)。归档不等于 Todo 完成，
+`project_init` 不会自动恢复；Agent 巡检和恢复 Run 在执行前检查项目状态。
 
 ---
 

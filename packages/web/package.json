@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.mjs"
+    "dev": "node server.mjs",
+    "test": "node --test server.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.8.2"

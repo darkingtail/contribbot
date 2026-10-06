@@ -5,12 +5,23 @@
   "description": "Open source collaboration assistant — skills + MCP tools",
   "license": "MIT",
   "scripts": {
+    "deps:install": "pnpm install && uv sync --project packages/agent --group dev",
     "build": "pnpm -r build",
     "dev": "pnpm --filter contribbot-mcp dev",
+    "dev:setup": "node scripts/dev-setup.mjs",
+    "dev:remove": "node scripts/dev-setup.mjs --remove",
+    "dev:check": "node scripts/dev-setup.mjs --check",
+    "data:reset": "node scripts/data-reset.mjs",
+    "test:data-reset": "node --test scripts/data-reset.test.mjs",
+    "test:dev-setup": "node --test scripts/dev-setup.test.mjs",
     "web": "pnpm --filter contribbot-web dev",
-    "test": "pnpm -r test",
+    "test": "pnpm test:dev-setup && pnpm test:data-reset && pnpm -r test",
     "agent:build": "uv build --project packages/agent",
     "agent:test": "uv run --project packages/agent --group dev pytest",
     "patrol": "uv run --project packages/agent contribbot patrol"
+  },
+  "devDependencies": {
+    "smol-toml": "^1.8.0",
+    "yaml": "^2.8.2"
   }
 }

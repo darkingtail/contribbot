@@ -2,11 +2,17 @@
 
 ## Setup
 
+Prerequisites: Node.js, pnpm, and uv. The Agent requires Python 3.11 or newer.
+
 ```bash
 git clone https://github.com/darkingtail/contribbot.git
 cd contribbot
-pnpm install
+pnpm deps:install
 ```
+
+`pnpm deps:install` installs all workspace Node dependencies and synchronizes the Agent's
+Python environment, including development/test dependencies. It does not start
+services or change Codex configuration. For Node-only development, use `pnpm install`.
 
 ## Development
 
@@ -16,6 +22,9 @@ For source-based MCP, Skills, Agent, and Web UI debugging, see
 ```bash
 pnpm build        # Build MCP server
 pnpm dev          # Run MCP server with tsx (debug)
+pnpm dev:setup    # Link local MCP source and Skills into Codex (backs up old copies)
+pnpm dev:check    # Check source links without changing configuration
+pnpm dev:remove   # Remove this checkout's dev registration; verify before cleaning config backups
 pnpm test         # Run tests
 ```
 

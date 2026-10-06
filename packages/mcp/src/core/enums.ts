@@ -1,3 +1,7 @@
+export const ProjectStatus = { Active: 'active', Archived: 'archived' } as const
+export type ProjectStatus = typeof ProjectStatus[keyof typeof ProjectStatus]
+export const PROJECT_STATUSES = Object.values(ProjectStatus) as [ProjectStatus, ...ProjectStatus[]]
+
 export const TodoStatus = { Idea: 'idea', Backlog: 'backlog', Active: 'active', PrSubmitted: 'pr_submitted', Done: 'done', NotPlanned: 'not_planned' } as const
 export type TodoStatus = typeof TodoStatus[keyof typeof TodoStatus]
 export const TODO_STATUSES = Object.values(TodoStatus) as [TodoStatus, ...TodoStatus[]]

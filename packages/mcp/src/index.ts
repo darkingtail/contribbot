@@ -20,6 +20,8 @@ export { upstreamDaily, upstreamDailyAct, upstreamDailySkipNoise } from './core/
 export { repoConfig } from './core/tools/core/repo-config-tool.js'
 export { projectList } from './core/tools/core/project-list.js'
 export { projectInit } from './core/tools/core/project-init.js'
+export { projectArchive, projectRestore, projectStatus } from './core/tools/core/project-lifecycle.js'
+export { ProjectStatus, PROJECT_STATUSES } from './core/enums.js'
 export { projectGuidance } from './core/tools/core/project-guidance.js'
 export { contributionStats } from './core/tools/core/contribution-stats.js'
 export { todoClaim } from './core/tools/core/todo-claim.js'
